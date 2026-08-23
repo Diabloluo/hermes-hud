@@ -6,7 +6,7 @@
 
 A **user-level Hermes Dashboard plugin**: it does not modify the `~/.hermes/hermes-agent` core, survives Hermes upgrades, and can be disabled/rolled back in one command.
 
-![tabs](https://img.shields.io/badge/11%20Tabs-Chinese%20UI-4ade80) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
+![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
 
 ## ✨ Highlights
 
@@ -167,6 +167,12 @@ Hermes data sources (read-only)
 - Hermes v0.20+ (Dashboard plugin SDK: manifest.json + plugin_api.py + IIFE bundle)
 - The plugin itself survives Hermes upgrades; rebuild the web UI only if needed (`npm run build`)
 - Full uninstall: `hermes plugins disable hermes-hud` + remove the plugin directory
+
+## 🤝 Community
+
+- **Issues**: [Bug report](https://github.com/Diabloluo/hermes-hud/issues/new?template=bug_report.yml) / [Compatibility report](https://github.com/Diabloluo/hermes-hud/issues/new?template=compatibility_report.yml)
+- **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, tests, PR workflow and security boundary
+- **Discussions**: not enabled yet on this repo; suggested categories once enabled: General / Installation Help / Compatibility / Ideas / Show and Tell
 
 ## 📄 License
 

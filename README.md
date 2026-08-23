@@ -6,7 +6,7 @@
 
 一个**用户级 Hermes Dashboard 插件**：不修改 `~/.hermes/hermes-agent` 核心代码，Hermes 升级不覆盖，可一键禁用/回滚。
 
-![tabs](https://img.shields.io/badge/11%20Tabs-全中文-4ade80) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
+![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
 
 ## ✨ 核心亮点
 
@@ -172,6 +172,12 @@ Hermes 现有数据源（只读）
 - Hermes v0.20+（Dashboard 插件 SDK：manifest.json + plugin_api.py + IIFE bundle）
 - 升级 Hermes 后插件本体无需改动；若 Web UI 需重建再 `npm run build`
 - 完整卸载：`hermes plugins disable hermes-hud` + 删除插件目录
+
+## 🤝 社区
+
+- **Issues**：[Bug 报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=bug_report.yml) / [兼容性报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=compatibility_report.yml)
+- **Contributing**：[CONTRIBUTING.md](CONTRIBUTING.md) —— 开发环境、测试、PR 流程与安全边界
+- **Discussions**：仓库暂未启用 Discussions；建议分类：General / Installation Help / Compatibility / Ideas / Show and Tell（启用后可用）
 
 ## 📄 License
 
