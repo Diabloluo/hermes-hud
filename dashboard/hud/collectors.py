@@ -299,9 +299,10 @@ def collect_db() -> dict:
             "api_calls": row[0], "input_tokens": row[1], "output_tokens": row[2],
             "cache_read_tokens": row[3], "estimated_cost_usd": row[4],
         }
-        # 今日（CST 日界线）主会话 + 会话内 usage
-        cst_now = datetime.now(CST)
-        day_start = cst_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        # 今日（HUD statistics timezone / configured local timezone）主会话 + 会话内 usage
+        tz = get_hud_timezone()
+        now_local = datetime.now(tz)
+        day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
         day_start_epoch = day_start.astimezone(timezone.utc).timestamp()
         cur.execute(
             "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),"
@@ -803,7 +804,7 @@ def collect_dashboard_procs() -> dict:
 
 
 def collect_usage(days: int = 30) -> dict:
-    """Token/费用聚合（按 CST 日界线按天 + 按模型 + 按辅助任务类型）。
+    """Token/费用聚合（按 HUD statistics timezone / configured local timezone 按天 + 按模型 + 按辅助任务类型）。
 
     主会话读 sessions；辅助调用读 session_model_usage.task != ''；
     两者按 (session, model, task) 去重后合并，主会话与辅助调用不重复计数。
@@ -813,7 +814,7 @@ def collect_usage(days: int = 30) -> dict:
         return {"error": "state.db 只读连接失败"}
     try:
         cur = conn.cursor()
-        # CST 日界线：state.db 存的是 UTC epoch，按 Asia/Shanghai 转天
+        # 统计时区日界线：state.db 存的是 UTC epoch，按 configured local timezone 转天
         # 简化：查询全部 usage 后按本地时区在 Python 里分组
         cur.execute(
             "SELECT started_at, input_tokens, output_tokens, cache_read_tokens,"

@@ -3,6 +3,22 @@
 本文件记录 Hermes HUD 的可见变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2026-08-23
+
+### Fixed
+
+- **Fresh-install activation instructions for Dashboard plugins.** `hermes plugins
+  enable/disable` manages *native* plugins only; Dashboard plugins (manifest.json +
+  plugin_api.py) are activated via the `plugins.enabled` allowlist. Added
+  `scripts/enable_dashboard_plugin.py` (read → merge → write back, idempotent) and
+  corrected the install/uninstall instructions in README / FAQ / CONTRIBUTING. The
+  previous `hermes plugins enable hermes-hud` instruction failed with
+  "Plugin not installed or bundled".
+- **Runtime timezone regression causing `CST is not defined`.** `collect_db` referenced
+  the removed module-level `CST` constant after the v1.0.1 timezone refactor; now uses
+  `get_hud_timezone()` (HUD_TIMEZONE > system local tz > UTC). Added regression tests
+  that fail on v1.0.1 and pass on 1.0.2.
+
 ## [1.0.1] - 2026-08-23
 
 ### Security

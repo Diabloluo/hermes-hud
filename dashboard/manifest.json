@@ -3,7 +3,7 @@
   "label": "Hermes HUD",
   "description": "本地实时监控指挥中心：健康总览、实时活动、Token/费用、渠道稳定性、Cron、错误事故、系统资源。Hermes core stores read-only; HUD maintains a separate local telemetry store (~/.hermes/hud/)，不产生外部遥测。",
   "icon": "Gauge",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "tab": {
     "path": "/hud",
     "position": "after:sessions"

@@ -65,15 +65,15 @@ hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # 1. 克隆到用户插件目录
 git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
 
-# 2. 启用插件（官方增量命令，不影响你其他插件的 enabled 状态）
-hermes plugins enable hermes-hud
+# 2. 启用插件（读取→合并→写回，保留你已有的其他插件）
+python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 
 # 3. 启动 Dashboard（plugin_api.py 后端路由在启动时挂载，需要重启 dashboard 生效）
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # 浏览器打开 http://127.0.0.1:9119 → 侧边栏 "Hermes HUD"
 
-# 卸载（只禁用 HUD，不动其他插件）：
-hermes plugins disable hermes-hud
+# 卸载（只移除 HUD，其他插件全部保留）：
+python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable
 ```
 
 > 仓库已包含预构建前端（`dashboard/dist/`），无需重新构建 Hermes Web UI。
@@ -163,7 +163,7 @@ Hermes 现有数据源（只读）
 
 - **Dashboard 打开是桌面引导页（"Desktop boot failed"）**：从 Hermes 桌面 App 的 shell 里启动时继承了 `HERMES_DESKTOP=1` + `HERMES_WEB_DIST`，用 `env -u HERMES_WEB_DIST -u HERMES_DESKTOP -u HERMES_SERVE_HEADLESS hermes dashboard ...` 启动
 - **菜单语言重启后变英文**：菜单语言存浏览器 localStorage（`hermes-locale`），与服务器重启无关；HUD 设置页有一键"固定为中文菜单"
-- **插件不显示**：确认 `hermes plugins enable hermes-hud` 后重启 dashboard
+- **插件不显示**：确认运行 `scripts/enable_dashboard_plugin.py enable` 后重启 dashboard
 - **后端 401**：loopback 模式 token 注入在页面 HTML，前端自动携带；curl 需抓取
 
 ## 🧩 兼容性

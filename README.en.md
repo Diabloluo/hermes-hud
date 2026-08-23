@@ -65,15 +65,15 @@ hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # 1. Clone into your user plugins directory
 git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
 
-# 2. Enable the plugin (official incremental command — does not touch other plugins)
-hermes plugins enable hermes-hud
+# 2. Enable the plugin (read → merge → write back; preserves your other plugins)
+python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 
 # 3. Start the Dashboard (backend API routes mount at startup, so restart it)
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # Open http://127.0.0.1:9119 → "Hermes HUD" in the sidebar
 
-# Uninstall (disables only HUD, leaves other plugins untouched):
-hermes plugins disable hermes-hud
+# Uninstall (removes only HUD, keeps every other plugin):
+python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable
 ```
 
 > The repo ships prebuilt frontend assets (`dashboard/dist/`); no need to rebuild the Hermes web UI.
@@ -158,7 +158,7 @@ Hermes data sources (read-only)
 
 - **Dashboard shows the desktop boot screen** ("Desktop boot failed"): when started from a Hermes desktop-app shell, `HERMES_DESKTOP=1` + `HERMES_WEB_DIST` are inherited; start with `env -u HERMES_WEB_DIST -u HERMES_DESKTOP -u HERMES_SERVE_HEADLESS hermes dashboard ...`
 - **Menu language resets to English after restart**: menu language lives in browser localStorage (`hermes-locale`), unrelated to server restarts; the HUD Settings tab has a one-click "set Chinese menu"
-- **Plugin not showing**: make sure `hermes plugins enable hermes-hud` ran, then restart the dashboard
+- **Plugin not showing**: make sure `scripts/enable_dashboard_plugin.py enable` ran, then restart the dashboard
 - **Backend 401**: in loopback mode the token is injected into the page HTML; the frontend carries it automatically. For curl, extract it first
 
 ## 🧩 Compatibility
