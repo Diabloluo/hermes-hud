@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hermes HUD — Dashboard 插件安全启用/禁用脚本。
+"""Hermes HUD — Dashboard 插件安全启用/禁用脚本（基于 Hermes config CLI）。
 
 背景：Hermes 有两种插件机制——
   * 原生插件（plugin.yaml / __init__.py）由 `hermes plugins enable/disable` 管理；
@@ -9,67 +9,97 @@
 `hermes plugins enable hermes-hud` 对 Dashboard 插件无效（会报
 "Plugin not installed or bundled"）；而直接
 `hermes config set plugins.enabled '["hermes-hud"]'` 会覆盖用户已有的
-插件列表。本脚本采用 读取 → 合并 → 写回 的方式，只增删 hermes-hud，
-保留其他所有插件，幂等执行。
+插件列表。本脚本通过 **Hermes 自己的 config CLI**（`hermes config get
+--json plugins.enabled` 读取 → 合并/删除 → `hermes config set` 写回）完成
+启用/禁用，只增删 hermes-hud，保留其他所有配置；不自行解析 YAML。
+
+失败保护（FAIL CLOSED）：无法可靠读取现有 plugins.enabled 时退出非 0，
+并提示用户，绝不假装成功、绝不覆盖为空列表。
 
 用法：
   python3 scripts/enable_dashboard_plugin.py enable     # 追加 hermes-hud
   python3 scripts/enable_dashboard_plugin.py disable    # 仅移除 hermes-hud
 
-支持 HERMES_HOME 环境变量（默认 ~/.hermes）。
+环境变量：
+  HERMES_HOME    Hermes home（默认 ~/.hermes）
+  HUD_HERMES_CLI Hermes CLI 命令（默认 "hermes"；测试可注入 mock）
 """
 
 from __future__ import annotations
 
+import json
 import os
-import re
+import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 PLUGIN = "hermes-hud"
+_NOT_SET = "Config key not set"
 
 
-def _config_path() -> Path:
-    home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
-    return home / "config.yaml"
+def _cli() -> str:
+    return os.environ.get("HUD_HERMES_CLI", "hermes")
 
 
-def _read_config(path: Path) -> list[str]:
-    """读取 plugins.enabled 列表；无配置/无键时返回空列表。"""
-    if not path.exists():
-        return []
-    text = path.read_text(encoding="utf-8")
-    m = re.search(r"^plugins:\s*\n(\s+enabled:\s*\n((?:\s+-[ \t]*[\w.-]+\n?)*))", text, re.M)
-    if not m:
-        # plugins 段存在但无 enabled 键
-        return []
-    items = re.findall(r"^\s+-\s+[\"']?([\w.-]+)[\"']?", m.group(2), re.M)
-    return items
+def _base_env() -> dict:
+    env = dict(os.environ)
+    home = os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+    env["HERMES_HOME"] = home
+    return env
 
 
-def _write_config(path: Path, items: list[str]) -> None:
-    """把 plugins.enabled 写回 config.yaml（保留文件中其他所有内容）。"""
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
-    yaml_items = "\n".join(f"    - {i}" for i in items)
-    new_block = f"plugins:\n  enabled:\n{yaml_items}\n"
-    if re.search(r"^plugins:\s*\n\s+enabled:", text, re.M):
-        # 替换现有 plugins.enabled 块
-        text = re.sub(
-            r"^plugins:\s*\n\s+enabled:\s*\n((?:\s+-[ \t]*[\w.-]+\n?)*)",
-            new_block, text, count=1, flags=re.M)
-    elif re.search(r"^plugins:\s*\n", text, re.M):
-        # plugins 段存在但无 enabled：插入 enabled
-        text = re.sub(
-            r"^plugins:\s*\n",
-            f"plugins:\n  enabled:\n{yaml_items}\n", text, count=1, flags=re.M)
-    else:
-        text = (new_block + "\n" + text) if text.strip() else new_block
-    path.write_text(text, encoding="utf-8")
+def _fail(msg: str) -> NoReturn:
+    print(f"ERROR: {msg}", file=sys.stderr)
+    print("未做任何修改。请手动检查 config.yaml 后重试。", file=sys.stderr)
+    sys.exit(1)
+
+
+def _get_enabled() -> list[str]:
+    """读取 plugins.enabled（JSON）。
+
+    - 键不存在（CLI 报 Config key not set）→ 可靠的空列表
+    - CLI 失败 / 输出不可解析 / 非数组 → FAIL CLOSED（退出非 0）
+    """
+    try:
+        r = subprocess.run(
+            [_cli(), "config", "get", "--json", "plugins.enabled"],
+            capture_output=True, text=True, timeout=60, env=_base_env())
+    except Exception as exc:
+        _fail(f"无法执行 hermes config get: {exc}")
+
+    if r.returncode != 0:
+        stderr = r.stderr.strip()
+        if _NOT_SET in stderr:
+            return []  # 未设置 = 可靠的空列表（全新用户）
+        _fail(f"hermes config get plugins.enabled 失败 (exit {r.returncode}): {stderr or r.stdout.strip()}")
+
+    raw = r.stdout.strip()
+    if not raw:
+        _fail("hermes config get plugins.enabled 返回空输出，无法可靠读取")
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        _fail(f"hermes config get 输出不是有效 JSON（{exc}）: {raw[:120]}")
+    if not isinstance(items, list):
+        _fail(f"hermes config get plugins.enabled 不是数组: {type(items).__name__}")
+    return [str(x) for x in items]
+
+
+def _set_enabled(items: list[str]) -> None:
+    payload = json.dumps(items, ensure_ascii=False)
+    try:
+        r = subprocess.run(
+            [_cli(), "config", "set", "plugins.enabled", payload],
+            capture_output=True, text=True, timeout=60, env=_base_env())
+    except Exception as exc:
+        _fail(f"无法执行 hermes config set: {exc}")
+    if r.returncode != 0:
+        _fail(f"hermes config set plugins.enabled 失败 (exit {r.returncode}): {r.stderr.strip() or r.stdout.strip()}")
 
 
 def _run(action: str) -> int:
-    path = _config_path()
-    items = _read_config(path)
+    items = _get_enabled()
     had = PLUGIN in items
 
     if action == "enable":
@@ -77,7 +107,7 @@ def _run(action: str) -> int:
             print(f"OK: {PLUGIN} 已在 plugins.enabled 中（幂等，无变化）")
             return 0
         items.append(PLUGIN)
-        _write_config(path, items)
+        _set_enabled(items)
         print(f"OK: 已追加 {PLUGIN} → plugins.enabled（保留 {len(items)} 个插件）")
         print("提示：重启 dashboard 使后端路由挂载生效。")
         return 0
@@ -87,7 +117,7 @@ def _run(action: str) -> int:
             print(f"OK: {PLUGIN} 不在 plugins.enabled 中（幂等，无变化）")
             return 0
         items = [i for i in items if i != PLUGIN]
-        _write_config(path, items)
+        _set_enabled(items)
         print(f"OK: 已移除 {PLUGIN}（保留其他 {len(items)} 个插件）")
         print("提示：重启 dashboard 生效。")
         return 0
