@@ -1,0 +1,8 @@
+# GitGuardian 配置：豁免测试 fixture（已知测试 secret，非真实凭据）
+# 测试文件中的高熵字符串用于验证脱敏规则，属于预期测试数据。
+version: 2
+secret:
+  ignored-matches:
+    - name: test fixtures (known test secrets for redaction/security tests)
+      match:
+        path: tests/**

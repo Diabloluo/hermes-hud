@@ -21,7 +21,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
 
       - name: Install dependencies
         run: |
@@ -53,4 +52,9 @@ jobs:
         run: |
           # 防止 .env / 数据库 / 凭据被误提交
           test ! -f .env
-          test ! -e "**/*.db" 2>/dev/null || find . -name "*.db" | grep -q . && exit 1 || true
+          found=$(find . -type f \( -name "*.db" -o -name "*.db-wal" -o -name "*.db-shm" \
+            -o -name "alerts_state.json" \) -not -path "./.git/*" | head -5)
+          if [ -n "$found" ]; then
+            echo "敏感文件被提交:"; echo "$found"; exit 1
+          fi
+          echo "OK: 无敏感文件"
