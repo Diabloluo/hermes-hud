@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Hermes HUD is broken or wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill in as much as you can.
+  - type: input
+    id: hermes-version
+    attributes:
+      label: Hermes version
+      description: Output of `hermes --version`
+      placeholder: "e.g. v0.20.5"
+    validations:
+      required: true
+  - type: input
+    id: hud-version
+    attributes:
+      label: HUD version
+      description: Value in dashboard/manifest.json
+      placeholder: "e.g. 1.0.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Which tab / endpoint / data did you look at?
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Dashboard console errors or HUD API responses.
+      placeholder: "Paste output — please remove any personal data/tokens first."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed any personal data, tokens or credentials from logs
+          required: true

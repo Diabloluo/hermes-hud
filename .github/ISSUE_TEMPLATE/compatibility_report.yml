@@ -1,0 +1,43 @@
+name: Compatibility report
+description: Running Hermes HUD on a platform or Hermes version not in the tested matrix
+labels: ["compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Official support: **Tested: macOS**. Linux is expected to work (community testing
+        welcome); Windows is experimental. Reports like this help us expand the matrix.
+  - type: input
+    id: platform
+    attributes:
+      label: Platform / OS
+      description: e.g. Linux (Ubuntu 24.04), Windows 11, macOS 15
+    validations:
+      required: true
+  - type: input
+    id: hermes-version
+    attributes:
+      label: Hermes version
+      placeholder: "e.g. v0.20.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: status
+    attributes:
+      label: Result
+      options:
+        - Works
+        - Works with workarounds
+        - Fails
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What worked, what broke, what did you change to make it work?
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes for maintainers
+      description: Python version, venv vs system python, any non-standard setup.

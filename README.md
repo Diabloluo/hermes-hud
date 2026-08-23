@@ -1,3 +1,5 @@
+**中文** | [English](README.en.md)
+
 # Hermes HUD 🛰️
 
 > 本地实时监控指挥中心 —— 把 Hermes Agent 的运行状态、Token/费用、模型、记忆、会话、定时任务、渠道、错误和机器健康完整摊开，异常发生时立即看见。
@@ -5,6 +7,25 @@
 一个**用户级 Hermes Dashboard 插件**：不修改 `~/.hermes/hermes-agent` 核心代码，Hermes 升级不覆盖，可一键禁用/回滚。
 
 ![tabs](https://img.shields.io/badge/11%20Tabs-全中文-4ade80) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
+
+## ✨ 核心亮点
+
+- 🖥 **11 个中文 Tab 一屏指挥**：健康总览、实时活动、Token/费用、对话、记忆、技能、定时任务、渠道、错误事故、系统存储、设置
+- ⚡ **2 秒级实时**：共享快照缓存 + WebSocket 增量事件流，REST 与 WS 不重复采集
+- 🔒 **严格只读边界**：Hermes 核心数据全程只读（`mode=ro` + 不锁 Gateway）；日志/路径先脱敏、指纹在脱敏后生成，raw secret 零出口
+- 📊 **费用口径可信**：主/辅调用不重复计数、`api_call_count` 累计、估算/实际/未计价三类分开标注
+- 🚨 **主动告警**：可选 `hud_alert.py` 把新事故/升级/恢复实时推到 Telegram + 飞书（带防抖与恢复确认状态机）
+
+## 🚀 Quick Start
+
+```bash
+git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
+hermes plugins enable hermes-hud
+hermes dashboard --host 127.0.0.1 --port 9119 --no-open
+# 打开 http://127.0.0.1:9119 → 侧边栏 "Hermes HUD"
+```
+
+> 仓库自带预构建前端，无需重新构建 Hermes Web UI。详细安装/卸载见 [📦 安装](#-安装)。
 
 ## 📸 界面预览
 

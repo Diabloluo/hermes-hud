@@ -1,0 +1,32 @@
+name: Feature request
+description: Something you would like Hermes HUD to do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas welcome. Please describe the *problem* first, then the proposed feature.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What are you trying to see or do that HUD cannot do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed feature
+      description: What should it look like (new tab? new metric? new alert channel?)
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Any workarounds or other tools you tried?
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: I understand HUD stays read-only and does not modify Hermes core data
+          required: true
