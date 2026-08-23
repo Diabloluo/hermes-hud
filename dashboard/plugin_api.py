@@ -44,6 +44,14 @@ _last_snapshot: Optional[dict] = None
 _last_health: Optional[dict] = None
 _last_event_emit: float = 0.0
 
+# P1-1：共享 snapshot 缓存 + 单飞锁（REST / WebSocket 不各自重复跑 collector）
+_SNAPSHOT_TTL = 2.0
+_snapshot_lock = asyncio.Lock()
+_snapshot_cache: dict = {"data": None, "ts": 0.0}
+# P1-1：telemetry 落盘限频（最大每 60 秒一次，2 秒轮询不写库）
+_TELEMETRY_INTERVAL = 60.0
+_last_telemetry_ts: float = 0.0
+
 
 def _detect_events(snap: dict, prev: dict) -> list[dict]:
     """对比两次快照，产出增量事件。prev 为空时只产出现状事件。"""
@@ -140,18 +148,48 @@ def _update_telemetry(snap: dict, health: dict) -> None:
             store.recover_incident(inc["fingerprint"])
 
 
-def _compute_snapshot() -> dict:
-    """采集 + 健康评估 + 事件检测，一次完成。"""
+def _maybe_telemetry(snap: dict, health: dict) -> None:
+    """telemetry 落盘：每 60 秒最多一次（P1-1 限频），并顺带执行每日 maintenance。"""
+    global _last_telemetry_ts
+    now = time.time()
+    if now - _last_telemetry_ts < _TELEMETRY_INTERVAL:
+        return
+    _last_telemetry_ts = now
+    try:
+        _update_telemetry(snap, health)
+        # P1-2：低频 maintenance（每天最多一次，meta 表记录上次时间）
+        store.maintenance()
+    except Exception:
+        pass
+
+
+async def _get_snapshot() -> dict:
+    """共享快照：2 秒内复用 + 单飞锁。
+
+    REST /snapshot 与 WebSocket /events 共用同一份快照，
+    同一时间不会并发重复跑完整 collector，telemetry 落盘也由
+    限频统一控制 —— 前端 2 秒级实时体验不变。
+    """
     global _last_snapshot, _last_health
-    snap = collectors.build_snapshot()
-    health = rules.evaluate_snapshot(snap)
-    events = _detect_events(snap, _last_snapshot)
-    snap["_health"] = health
-    snap["_events"] = events
-    _update_telemetry(snap, health)
-    _last_snapshot = snap
-    _last_health = health
-    return snap
+    cache = _snapshot_cache
+    now = time.time()
+    if cache["data"] is not None and now - cache["ts"] < _SNAPSHOT_TTL:
+        return cache["data"]
+    async with _snapshot_lock:
+        # 双检：等待锁期间可能已被其他协程填充
+        if cache["data"] is not None and time.time() - cache["ts"] < _SNAPSHOT_TTL:
+            return cache["data"]
+        snap = await asyncio.to_thread(collectors.build_snapshot)
+        health = rules.evaluate_snapshot(snap)
+        events = _detect_events(snap, _last_snapshot)
+        snap["_health"] = health
+        snap["_events"] = events
+        _maybe_telemetry(snap, health)
+        _last_snapshot = snap
+        _last_health = health
+        cache["data"] = snap
+        cache["ts"] = time.time()
+        return snap
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +198,8 @@ def _compute_snapshot() -> dict:
 
 @router.get("/snapshot")
 async def get_snapshot() -> dict:
-    """全量快照（约 2 秒刷新频率由前端控制）。"""
-    return await asyncio.to_thread(_compute_snapshot)
+    """全量快照（约 2 秒刷新频率由前端控制，共享缓存 + 单飞）。"""
+    return await _get_snapshot()
 
 
 @router.get("/health")
@@ -169,14 +207,14 @@ async def get_health() -> dict:
     """只跑健康评估（轻量，不重算快照）。"""
     if _last_health is not None:
         return _last_health
-    snap = await asyncio.to_thread(_compute_snapshot)
+    snap = await _get_snapshot()
     return snap["_health"]
 
 
 @router.get("/data-quality")
 async def get_data_quality() -> dict:
     """数据新鲜度与采集器健康状态。"""
-    snap = await asyncio.to_thread(_compute_snapshot)
+    snap = await _get_snapshot()
     sections = {
         "gateway": snap.get("gateway", {}).get("error"),
         "system": snap.get("system", {}).get("error"),
@@ -277,6 +315,9 @@ async def get_settings() -> dict:
         },
         "telemetry": store.stats(),
         "env_overrides": [k for k in os.environ if k.startswith("HUD_")],
+        "tz": collectors.hud_tz_name(),
+        "snapshot_cache_ttl_s": _SNAPSHOT_TTL,
+        "telemetry_interval_s": _TELEMETRY_INTERVAL,
     }
 
 
@@ -298,7 +339,7 @@ async def stream_events(ws: WebSocket):
     await ws.accept()
     try:
         while True:
-            snap = await asyncio.to_thread(_compute_snapshot)
+            snap = await _get_snapshot()
             health = snap["_health"]
             events = snap.get("_events", [])
             try:
