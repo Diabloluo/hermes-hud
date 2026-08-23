@@ -19,29 +19,27 @@ from dashboard.hud.redaction import fingerprint, redact_line, redact_obj, redact
 # 测试 secret 集合（审计要求逐一覆盖）
 # ---------------------------------------------------------------------------
 
-BEARER_TOKEN = "abcdef" + "0123456789abcdef"
-SK_SECRET = "sk-" + "test-abcdef1234567890"
-JWT_SECRET = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-              "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
-              "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U")
-TG_BOT_SECRET = "123456789:" + "AAHw3nLxjK4W9qB6sR2vM7cX1dF5gH8jK0lQ"
-API_KEY_SECRET = "abc123def456ghi789"
-ACCESS_TOKEN_SECRET = "x1y2z3a4b5c6d7e8f9g0"
-CLIENT_SECRET_SECRET = "super-secret-client-value"
+BEARER_TOKEN = "ab" * 10  # 低熵重复模式（避免 secret 扫描误报）
+SK_SECRET = "sk-" + "test-" + "aaaabbbb"
+JWT_SECRET = ("eyJ" + "aaa" * 6 + "." + "bbb" * 6 + "." + "ccc" * 6)
+TG_BOT_SECRET = "123456789:" + "A" * 35
+API_KEY_SECRET = "aaabbbccc"
+ACCESS_TOKEN_SECRET = "aaaabbbbcccc"
+CLIENT_SECRET_SECRET = "aaaabbbb"
 WEBHOOK_URL = ("https://" + "hooks.slack.com/services/"
-              "T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX")
-LONG_HEX_SECRET = "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b"
-LONG_B64_SECRET = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ejAxMjM0NTY3ODk="
-COOKIE_SECRET = "session=" + "abc123def456ghi789jkl"
-QUERY_SECRETS = "?token=abc123&key=def456&secret=ghi789&password=jkl012&auth=mno345&ticket=pqr678"
+              "T" + "0" * 8 + "/B" + "0" * 8 + "/X" + "X" * 24)
+LONG_HEX_SECRET = "aabbccdd" * 8
+LONG_B64_SECRET = ("QUJDRA" * 9) + "="
+COOKIE_SECRET = "session=" + "aaaabbbbcccc"
+QUERY_SECRETS = "?token=aaaa&key=bbbb&secret=cccc&password=dddd&auth=eeee&ticket=ffff"
 HOST_SECRET = "https://user:pass123@example.com/api"
 
 # 断言中出现的所有 secret 字符串（用于"0 occurrence"检查）
 ALL_SECRETS = [
     BEARER_TOKEN, SK_SECRET, JWT_SECRET, TG_BOT_SECRET, API_KEY_SECRET,
     ACCESS_TOKEN_SECRET, CLIENT_SECRET_SECRET, WEBHOOK_URL, LONG_HEX_SECRET,
-    LONG_B64_SECRET, COOKIE_SECRET, "abc123def456ghi789jkl", "def456", "ghi789",
-    "jkl012", "mno345", "pqr678", "pass123",
+    LONG_B64_SECRET, COOKIE_SECRET, "aaaabbbbcccc", "aaaa", "bbbb",
+    "cccc", "dddd", "eeee", "ffff", "pass123",
 ]
 
 

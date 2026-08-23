@@ -65,10 +65,10 @@ def test_windows_style_path() -> None:
 
 def test_cmdline_redacts_credentials_and_paths() -> None:
     cmd = ("/Users/alice/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main "
-           "dashboard --port 9119 --token " + "sk-" + "test-abcdef123456")
+           "dashboard --port 9119 --token " + "sk-" + "test-aaaabbbb")
     out = sanitize_cmdline(cmd, 200)
     assert "alice" not in out
-    assert "sk-test-abcdef123456" not in out
+    assert "sk-test-aaaabbbb" not in out
     assert "~/" in out
     assert "[REDACTED]" in out
 

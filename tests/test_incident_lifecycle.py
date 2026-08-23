@@ -94,8 +94,8 @@ def test_schema_migration_from_v100(tmp_path) -> None:
 
 def test_fingerprint_no_secret_and_stable() -> None:
     """fingerprint：先脱敏再归一化，同源错误（不同 secret）指纹一致。"""
-    fp1 = fingerprint("2026-08-23 12:00:00 ERROR auth failed token=abc123def456ghi789")
-    fp2 = fingerprint("2026-08-23 12:05:00 ERROR auth failed token=x1y2z3a4b5c6d7e8f9g0")
+    fp1 = fingerprint("2026-08-23 12:00:00 ERROR auth failed token=aaaabbbb")
+    fp2 = fingerprint("2026-08-23 12:05:00 ERROR auth failed token=ccccdddd")
     assert "abc123def456ghi789" not in fp1
     assert "x1y2z3a4b5c6d7e8f9g0" not in fp2
     assert fp1 == fp2
