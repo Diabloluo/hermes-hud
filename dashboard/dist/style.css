@@ -1,0 +1,122 @@
+/* Hermes HUD — plugin styles.
+   尽量依赖 SDK 组件自带样式；这里只补 HUD 特有布局。 */
+
+.hud-root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px 24px;
+  max-width: 1400px;
+}
+
+/* 顶部状态条 */
+.hud-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.hud-header .hud-health-badge {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 999px;
+  letter-spacing: 0.03em;
+}
+.hud-health-normal { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.hud-health-warning { background: rgba(250, 204, 21, 0.15); color: #facc15; }
+.hud-health-critical { background: rgba(239, 68, 68, 0.18); color: #f87171; }
+.hud-kv { display: flex; gap: 6px; align-items: baseline; }
+.hud-kv .k { font-size: 11px; opacity: 0.62; text-transform: uppercase; letter-spacing: 0.05em; }
+.hud-kv .v { font-size: 13px; font-weight: 600; }
+
+/* Tab 栏 */
+.hud-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border, rgba(128,128,128,0.2));
+  padding-bottom: 6px;
+}
+.hud-tab {
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground, #999);
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  position: relative;
+  z-index: 5;
+}
+.hud-tab:hover { background: rgba(128,128,128,0.12); color: var(--foreground, #eee); }
+.hud-tab.active {
+  background: rgba(99, 102, 241, 0.18);
+  color: var(--foreground, #fff);
+  font-weight: 600;
+}
+
+/* 网格 */
+.hud-grid { display: grid; gap: 12px; }
+.hud-grid-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.hud-grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.hud-grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+
+/* 状态点 */
+.hud-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.hud-dot-ok { background: #4ade80; }
+.hud-dot-warn { background: #facc15; }
+.hud-dot-bad { background: #f87171; }
+.hud-dot-mute { background: rgba(128,128,128,0.5); }
+
+/* 表格 */
+.hud-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.hud-table th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  opacity: 0.6; padding: 6px 8px; border-bottom: 1px solid var(--border, rgba(128,128,128,0.2));
+  white-space: nowrap;
+}
+.hud-table td { padding: 6px 8px; border-bottom: 1px solid var(--border, rgba(128,128,128,0.08)); vertical-align: top; }
+.hud-table tr:hover td { background: rgba(128,128,128,0.05); }
+.hud-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hud-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+
+/* 事件流 */
+.hud-events { display: flex; flex-direction: column; gap: 2px; max-height: 520px; overflow-y: auto; font-size: 12px; }
+.hud-event { display: flex; gap: 8px; align-items: baseline; padding: 3px 4px; border-radius: 6px; }
+.hud-event:hover { background: rgba(128,128,128,0.08); }
+.hud-event .ts { color: var(--muted-foreground, #888); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* 迷你图表 */
+.hud-bars { display: flex; align-items: flex-end; gap: 2px; height: 90px; }
+.hud-bar { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: rgba(99, 102, 241, 0.55); }
+.hud-bar:hover { background: rgba(99, 102, 241, 0.9); }
+
+/* 检查项 */
+.hud-check { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; font-size: 12.5px; }
+.hud-check:hover { background: rgba(128,128,128,0.07); }
+
+/* 日志行 */
+.hud-logline { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-logline.err { color: #f87171; }
+.hud-logline.warn { color: #facc15; }
+.hud-logline.info { color: var(--muted-foreground, #999); }
+
+/* 事故卡 */
+.hud-incident { border-left: 3px solid; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px;
+  background: rgba(128,128,128,0.05); }
+.hud-incident.critical { border-color: #f87171; }
+.hud-incident.warning { border-color: #facc15; }
+.hud-incident.recovered { border-color: #4ade80; opacity: 0.65; }
+
+/* 滚动容器 */
+.hud-scroll { max-height: 460px; overflow-y: auto; }
+
+/* 详情抽屉 */
+.hud-detail { font-size: 12.5px; line-height: 1.55; }
+.hud-detail .msg { padding: 5px 8px; border-radius: 6px; margin-bottom: 4px; background: rgba(128,128,128,0.05); }
+
+/* 数据新鲜度脚注 */
+.hud-footnote { font-size: 11px; opacity: 0.55; margin-top: 10px; }

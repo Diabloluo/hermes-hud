@@ -1,0 +1,14 @@
+{
+  "name": "hermes-hud",
+  "label": "Hermes HUD",
+  "description": "本地实时监控指挥中心：健康总览、实时活动、Token/费用、渠道稳定性、Cron、错误事故、系统资源。只读 Hermes 现有状态文件与 SQLite，不产生外部遥测。",
+  "icon": "Gauge",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/hud",
+    "position": "after:sessions"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

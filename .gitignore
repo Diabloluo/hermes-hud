@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 本机数据（绝不提交）
+.env
+*.db
+*.db-wal
+*.db-shm
+alerts_state.json
+
+# Node
+node_modules/
+
+# macOS
+.DS_Store

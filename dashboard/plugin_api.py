@@ -1,0 +1,330 @@
+"""Hermes HUD — dashboard 插件后端。
+
+挂载在 /api/plugins/hermes-hud/ 下（FastAPI router）。
+所有 HTTP 路由都经过 dashboard 的 session-token 鉴权中间件；
+WebSocket 用 dashboard 的标准鉴权门（_ws_auth_ok）—— 不发明第二套 token。
+
+数据流：
+  collectors.build_snapshot() → rules.evaluate_snapshot() → telemetry 落盘
+  → REST /snapshot /health /data-quality + WS /events 增量事件
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status as http_status
+
+# 让同目录的 hud/ 包可导入（api 文件本身由 web_server 动态加载，
+# dashboard/ 目录默认不在 sys.path 上）。
+_HUD_DIR = Path(__file__).resolve().parent
+if str(_HUD_DIR) not in __import__("sys").path:
+    __import__("sys").path.insert(0, str(_HUD_DIR))
+
+from hud import collectors, rules, storage  # noqa: E402
+from hud.redaction import redact_line  # noqa: E402
+
+log = logging.getLogger(__name__)
+
+router = APIRouter()
+
+store = storage.TelemetryStore()
+
+# ---------------------------------------------------------------------------
+# 增量事件检测（内存态）
+# ---------------------------------------------------------------------------
+
+_last_snapshot: Optional[dict] = None
+_last_health: Optional[dict] = None
+_last_event_emit: float = 0.0
+
+
+def _detect_events(snap: dict, prev: dict) -> list[dict]:
+    """对比两次快照，产出增量事件。prev 为空时只产出现状事件。"""
+    events: list[dict] = []
+    now = time.time()
+
+    # 渠道状态变化
+    pl_new = snap.get("gateway", {}).get("platforms", {}) or {}
+    pl_old = (prev or {}).get("gateway", {}).get("platforms", {}) or {}
+    for name, p in pl_new.items():
+        old = pl_old.get(name)
+        if old is None:
+            events.append({"type": "channel", "sub": name, "event": "state",
+                           "state": p.get("state"), "ts": now})
+        elif old.get("state") != p.get("state"):
+            events.append({"type": "channel", "sub": name, "event": "state_change",
+                           "from": old.get("state"), "to": p.get("state"), "ts": now})
+
+    # cron 状态变化
+    jobs_new = {j["id"]: j for j in snap.get("cron", {}).get("jobs", [])}
+    jobs_old = {j["id"]: j for j in ((prev or {}).get("cron", {}) or {}).get("jobs", [])}
+    for jid, j in jobs_new.items():
+        old = jobs_old.get(jid)
+        if old is None:
+            continue
+        if old.get("state") != j.get("state"):
+            events.append({"type": "cron", "sub": j.get("name", jid), "event": "state_change",
+                           "from": old.get("state"), "to": j.get("state"), "ts": now})
+        if (old.get("last_status") or None) != (j.get("last_status") or None):
+            events.append({"type": "cron", "sub": j.get("name", jid), "event": "run_finished",
+                           "status": j.get("last_status"), "ts": now})
+
+    # 活跃会话增减
+    sess_new = {s["id"] for s in snap.get("active_sessions", [])}
+    sess_old = {s["id"] for s in ((prev or {}).get("active_sessions", []) or [])}
+    for sid in sess_new - sess_old:
+        events.append({"type": "session", "sub": sid, "event": "start", "ts": now})
+    for sid in sess_old - sess_new:
+        events.append({"type": "session", "sub": sid, "event": "end", "ts": now})
+
+    # 健康等级变化
+    if _last_health and snap.get("_health"):
+        old_lvl = _last_health.get("overall")
+        new_lvl = snap["_health"].get("overall")
+        if old_lvl != new_lvl:
+            events.append({"type": "health", "sub": "overall", "event": "change",
+                           "from": old_lvl, "to": new_lvl, "ts": now})
+
+    # gateway 存活变化
+    old_alive = bool((prev or {}).get("gateway", {}).get("alive"))
+    new_alive = bool(snap.get("gateway", {}).get("alive"))
+    if prev is not None and old_alive != new_alive:
+        events.append({"type": "gateway", "sub": "gateway", "event": "alive_change",
+                       "alive": new_alive, "ts": now})
+
+    return events
+
+
+def _update_telemetry(snap: dict, health: dict) -> None:
+    """把分钟级指标和事故写入 telemetry.db（失败静默）。"""
+    sys_ = snap.get("system") or {}
+    items: list[tuple[str, float, Optional[dict]]] = []
+    if sys_.get("cpu_percent") is not None:
+        items.append(("cpu_percent", float(sys_["cpu_percent"]), None))
+    mem = sys_.get("memory") or {}
+    if mem.get("percent") is not None:
+        items.append(("mem_percent", float(mem["percent"]), None))
+    if sys_.get("disk_free_percent") is not None:
+        items.append(("disk_free_percent", float(sys_["disk_free_percent"]), None))
+    gw = snap.get("gateway") or {}
+    if gw.get("heartbeat_age") is not None:
+        items.append(("gateway_heartbeat_age", float(gw["heartbeat_age"]), None))
+    db = snap.get("db") or {}
+    today = db.get("today_sessions") or {}
+    if today.get("estimated_cost_usd") is not None:
+        items.append(("today_est_cost", float(today["estimated_cost_usd"]),
+                      {"aux": float(today.get("aux_est_cost") or 0)}))
+    if today.get("input_tokens") is not None:
+        items.append(("today_input_tokens", float(today["input_tokens"]), None))
+    # 渠道心跳
+    for name, p in (gw.get("platforms") or {}).items():
+        if p.get("heartbeat_age") is not None:
+            items.append((f"channel_{name}_heartbeat_age", float(p["heartbeat_age"]), None))
+    if items:
+        store.record_metrics_batch("sys", items)
+    # 事故
+    for inc in health.get("incidents", []):
+        store.upsert_incident(inc["fingerprint"], inc["severity"], inc["title"], inc["detail"])
+    # 恢复不再出现的事故
+    active_incs = store.list_incidents(active_only=True)
+    now_fps = {i["fingerprint"] for i in health.get("incidents", [])}
+    for inc in active_incs:
+        if inc["fingerprint"] not in now_fps:
+            store.recover_incident(inc["fingerprint"])
+
+
+def _compute_snapshot() -> dict:
+    """采集 + 健康评估 + 事件检测，一次完成。"""
+    global _last_snapshot, _last_health
+    snap = collectors.build_snapshot()
+    health = rules.evaluate_snapshot(snap)
+    events = _detect_events(snap, _last_snapshot)
+    snap["_health"] = health
+    snap["_events"] = events
+    _update_telemetry(snap, health)
+    _last_snapshot = snap
+    _last_health = health
+    return snap
+
+
+# ---------------------------------------------------------------------------
+# HTTP 端点
+# ---------------------------------------------------------------------------
+
+@router.get("/snapshot")
+async def get_snapshot() -> dict:
+    """全量快照（约 2 秒刷新频率由前端控制）。"""
+    return await asyncio.to_thread(_compute_snapshot)
+
+
+@router.get("/health")
+async def get_health() -> dict:
+    """只跑健康评估（轻量，不重算快照）。"""
+    if _last_health is not None:
+        return _last_health
+    snap = await asyncio.to_thread(_compute_snapshot)
+    return snap["_health"]
+
+
+@router.get("/data-quality")
+async def get_data_quality() -> dict:
+    """数据新鲜度与采集器健康状态。"""
+    snap = await asyncio.to_thread(_compute_snapshot)
+    sections = {
+        "gateway": snap.get("gateway", {}).get("error"),
+        "system": snap.get("system", {}).get("error"),
+        "db": snap.get("db", {}).get("error"),
+        "cron": snap.get("cron", {}).get("error"),
+        "executions": snap.get("executions", {}).get("error"),
+        "logs": snap.get("logs", {}).get("error"),
+        "errors": snap.get("errors", {}).get("error"),
+        "memory": snap.get("memory", {}).get("error"),
+        "launchd": snap.get("launchd", {}).get("error"),
+        "dashboard": snap.get("dashboard", {}).get("error"),
+    }
+    return {
+        "collected_at": snap.get("collected_at"),
+        "tz": snap.get("tz"),
+        "sections": sections,
+        "overall": "ok" if not any(sections.values()) else "partial",
+    }
+
+
+@router.get("/sessions")
+async def get_sessions(days: int = Query(7, ge=1, le=90),
+                       limit: int = Query(100, ge=1, le=500)) -> list[dict]:
+    """最近会话摘要。"""
+    return await asyncio.to_thread(collectors.collect_recent_sessions, days, limit)
+
+
+@router.get("/sessions/search")
+async def search_sessions(q: str = Query(..., min_length=1),
+                          limit: int = Query(50, ge=1, le=200)) -> list[dict]:
+    """按标题/ID 搜索会话。"""
+    return await asyncio.to_thread(collectors.search_sessions, q, limit)
+
+
+@router.get("/usage")
+async def get_usage(days: int = Query(30, ge=1, le=365)) -> dict:
+    """Token/费用聚合（按天/模型/辅助任务）。"""
+    return await asyncio.to_thread(collectors.collect_usage, days)
+
+
+@router.get("/sessions/{session_id}")
+async def get_session_detail(session_id: str) -> dict:
+    """单会话详情（含消息摘要与 model usage）。"""
+    detail = await asyncio.to_thread(collectors.collect_session_detail, session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return detail
+
+
+@router.get("/metrics")
+async def get_metrics(kind: str = Query("sys"),
+                      name: Optional[str] = Query(None),
+                      hours: int = Query(6, ge=1, le=24 * 30)) -> list[dict]:
+    """telemetry.db 时序指标。"""
+    since = int(time.time()) - hours * 3600
+    return store.query_metrics(kind, name, since=since)
+
+
+@router.get("/incidents")
+async def get_incidents(active_only: bool = Query(False),
+                        limit: int = Query(100, ge=1, le=500)) -> dict:
+    """事故时间线（含已恢复）。"""
+    return {
+        "incidents": store.list_incidents(active_only=active_only, limit=limit),
+        "stats": store.stats(),
+    }
+
+
+@router.get("/tool-events")
+async def get_tool_events(limit: int = Query(60, ge=1, le=300)) -> list[dict]:
+    """最近工具调用事件（轻量版，从 messages 推断）。"""
+    return await asyncio.to_thread(collectors.collect_tool_events, limit)
+
+
+@router.get("/skills")
+async def get_skills() -> dict:
+    """技能目录统计（~/.hermes/skills 元数据，只读）。"""
+    return await asyncio.to_thread(collectors.collect_skills)
+
+
+@router.get("/settings")
+async def get_settings() -> dict:
+    """HUD 自身配置/阈值（只读展示）。"""
+    return {
+        "thresholds": {
+            "disk_free_critical": rules.DISK_FREE_CRITICAL,
+            "disk_free_warn": rules.DISK_FREE_WARN,
+            "mem_pressure_warn": rules.MEM_PRESSURE_WARN,
+            "heartbeat_critical_s": rules.HEARTBEAT_CRITICAL,
+            "error_burst_warn": rules.ERROR_BURST_WARN,
+            "cycle_fail_critical": rules.CYCLE_FAIL_CRITICAL,
+            "daily_budget_usd": rules.DAILY_BUDGET_USD,
+            "budget_warn_ratio": rules.BUDGET_WARN_RATIO,
+        },
+        "retention_days": {
+            "metrics": storage.METRIC_RETENTION_DAYS,
+            "incidents": storage.INCIDENT_RETENTION_DAYS,
+        },
+        "telemetry": store.stats(),
+        "env_overrides": [k for k in os.environ if k.startswith("HUD_")],
+    }
+
+
+# ---------------------------------------------------------------------------
+# WebSocket 事件流
+# ---------------------------------------------------------------------------
+
+@router.websocket("/events")
+async def stream_events(ws: WebSocket):
+    """2 秒推送一次增量事件 + 健康摘要。
+
+    鉴权委托给 dashboard 的标准 WS 门（_ws_auth_ok），兼容 loopback
+    token / gated ticket / internal 三种模式。
+    """
+    from hermes_cli.web_server import _ws_auth_ok
+    if not _ws_auth_ok(ws):
+        await ws.close(code=http_status.WS_1008_POLICY_VIOLATION)
+        return
+    await ws.accept()
+    try:
+        while True:
+            snap = await asyncio.to_thread(_compute_snapshot)
+            health = snap["_health"]
+            events = snap.get("_events", [])
+            try:
+                await ws.send_json({
+                    "ts": time.time(),
+                    "health": {"overall": health["overall"], "counts": health["counts"]},
+                    "events": events[-20:],
+                    "gateway_alive": bool((snap.get("gateway") or {}).get("alive")),
+                    "active_agents": (snap.get("gateway") or {}).get("active_agents", 0),
+                    "active_sessions": len(snap.get("active_sessions", [])),
+                    "platforms": {
+                        k: {"state": v.get("state"), "heartbeat_age": v.get("heartbeat_age")}
+                        for k, v in ((snap.get("gateway") or {}).get("platforms") or {}).items()
+                    },
+                    "cron_summary": (snap.get("cron") or {}).get("summary", {}),
+                })
+            except Exception:
+                break
+            try:
+                await asyncio.wait_for(ws.receive_text(), timeout=2.0)
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
