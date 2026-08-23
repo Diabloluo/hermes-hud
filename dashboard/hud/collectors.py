@@ -24,14 +24,39 @@ try:
 except Exception:  # pragma: no cover
     psutil = None
 
-from .redaction import redact_line
+import sys
+
+from .redaction import redact_line, sanitize_cmdline, sanitize_path
 
 # ---------------------------------------------------------------------------
 # 基础
 # ---------------------------------------------------------------------------
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
-CST = timezone(timedelta(hours=8), name="Asia/Shanghai")
+
+
+def get_hud_timezone() -> timezone:
+    """统计时区：HUD_TIMEZONE > 系统本地时区 > UTC。"""
+    tz_name = os.environ.get("HUD_TIMEZONE", "").strip()
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+            return ZoneInfo(tz_name)  # type: ignore[return-value]
+        except Exception:
+            pass
+    # 系统本地时区
+    try:
+        return datetime.now().astimezone().tzinfo  # type: ignore[return-value]
+    except Exception:
+        return timezone.utc
+
+
+def hud_tz_name() -> str:
+    tz = get_hud_timezone()
+    try:
+        return str(tz)
+    except Exception:
+        return "UTC"
 
 
 def _ro_connect(db_path: Path, timeout: float = 3.0) -> Optional[sqlite3.Connection]:
@@ -324,16 +349,30 @@ def collect_active_sessions(limit: int = 30) -> list[dict]:
             (limit,),
         )
         rows = cur.fetchall()
+        # 最近活动时间：MAX(messages.timestamp)（会话最近一条消息）
+        last_active: dict[str, float] = {}
+        try:
+            cur.execute(
+                "SELECT session_id, MAX(timestamp) FROM messages GROUP BY session_id"
+            )
+            for sid, ts in cur.fetchall():
+                if ts:
+                    last_active[sid] = ts
+        except Exception:
+            pass
         out = []
         for r in rows:
             sid, source, user_id, model, started_at, title, msgs, tools, itok, otok, cwd = r
+            running = int(_now_epoch() - (started_at or _now_epoch()))
+            last_ts = last_active.get(sid)
+            idle = int(_now_epoch() - last_ts) if last_ts else None  # 无可靠数据 = null
             out.append({
                 "id": sid, "source": source, "user_id": user_id, "model": model,
                 "started_at": started_at, "title": title, "message_count": msgs,
                 "tool_call_count": tools, "input_tokens": itok, "output_tokens": otok,
-                "cwd": cwd,
-                "idle_seconds": int(_now_epoch() - (started_at or _now_epoch())),
-                "running_seconds": int(_now_epoch() - (started_at or _now_epoch())),
+                "cwd": sanitize_path(cwd) if cwd else cwd,
+                "idle_seconds": idle,
+                "running_seconds": running,
             })
         return out
     except Exception:
@@ -473,10 +512,10 @@ def collect_cron_jobs() -> dict:
                 "last_error": redact_line(str(j.get("last_error") or ""))[:200] or None,
                 "last_delivery_error": redact_line(str(j.get("last_delivery_error") or ""))[:200] or None,
                 "failure_streak": j.get("failure_streak", 0),
-                "deliver": j.get("deliver"),
+                "deliver": redact_line(str(j.get("deliver") or ""))[:200] or None,
                 "model": j.get("model") or (j.get("model_snapshot") or {}).get("model"),
                 "provider": j.get("provider") or (j.get("provider_snapshot") or {}).get("provider"),
-                "script": j.get("script"),
+                "script": sanitize_path(str(j.get("script") or "")) or None,
                 "no_agent": bool(j.get("no_agent")),
                 "created_at": _parse_ts(j.get("created_at")),
                 "paused_at": _parse_ts(j.get("paused_at")),
@@ -692,7 +731,12 @@ def collect_launchd_check() -> dict:
     只做只读检查（launchctl print / plist 文件存在性），不修改任何东西。
     """
     out: dict[str, Any] = {"managed": False, "label": None, "plist_exists": False,
-                           "note": None}
+                           "note": None, "status": "managed" if False else "checked"}
+    if sys.platform != "darwin":
+        # 非 macOS：launchd 概念不适用，不产生告警
+        out["status"] = "not_applicable"
+        out["note"] = "launchd 仅 macOS 适用"
+        return out
     candidates = [
         Path.home() / "Library/LaunchAgents/com.nousresearch.hermes.gateway.plist",
         Path.home() / "Library/LaunchAgents/com.hermes.gateway.plist",
@@ -709,14 +753,14 @@ def collect_launchd_check() -> dict:
             with open(found[0], "rb") as f:
                 pl = plistlib.load(f)
             args = pl.get("ProgramArguments") or []
-            out["note"] = " ".join(str(a) for a in args)[:300]
+            out["note"] = sanitize_cmdline(" ".join(str(a) for a in args), 300)
         except Exception:
             pass
     # 通过 launchctl 查加载状态（只读）
     try:
         import subprocess
         r = subprocess.run(
-            ["launchctl", "print", "gui/501"],
+            ["launchctl", "print", "gui/%d" % os.getuid()],
             capture_output=True, text=True, timeout=5,
         )
         if r.returncode == 0:
@@ -726,6 +770,7 @@ def collect_launchd_check() -> dict:
             )
     except Exception:
         pass
+    out["status"] = "managed" if out["managed"] else "unmanaged"
     return out
 
 
@@ -748,7 +793,7 @@ def collect_dashboard_procs() -> dict:
                         "pid": proc.info["pid"],
                         "rss": mem.rss if mem else None,
                         "started_at": proc.info.get("create_time"),
-                        "cmdline": cmd[:200],
+                        "cmdline": sanitize_cmdline(cmd, 200),
                     })
             except Exception:
                 continue
@@ -778,19 +823,23 @@ def collect_usage(days: int = 30) -> dict:
             (time.time() - days * 86400,),
         )
         sessions_rows = cur.fetchall()
+        # 辅助调用只取 task != ''：task='' 的行是主会话的重复记账，
+        # 不能把 sessions + 全部 session_model_usage 简单相加（否则主会话翻倍）
         cur.execute(
             "SELECT last_seen, input_tokens, output_tokens, cache_read_tokens,"
             " cache_write_tokens, reasoning_tokens, estimated_cost_usd, actual_cost_usd,"
-            " model, billing_provider, task"
-            " FROM session_model_usage WHERE last_seen >= ?",
+            " model, billing_provider, task, api_call_count"
+            " FROM session_model_usage WHERE last_seen >= ? AND task != ''",
             (time.time() - days * 86400,),
         )
         usage_rows = cur.fetchall()
 
+        hud_tz = get_hud_timezone()
+
         def _cst_day(ts: Optional[float]) -> str:
             if not ts:
                 return "unknown"
-            return datetime.fromtimestamp(ts, CST).strftime("%Y-%m-%d")
+            return datetime.fromtimestamp(ts, hud_tz).strftime("%Y-%m-%d")
 
         # 按天
         days_agg: dict[str, dict] = {}
@@ -825,7 +874,7 @@ def collect_usage(days: int = 30) -> dict:
             d["reasoning"] += r[5] or 0
             d["est_cost"] += r[6] or 0
             d["actual_cost"] += r[7] or 0
-            d["api_calls"] += 1
+            d["api_calls"] += r[11] or 1
         by_day = [days_agg[k] for k in sorted(days_agg.keys())]
 
         # 按模型（合并 sessions + usage，按模型累计）
@@ -849,7 +898,7 @@ def collect_usage(days: int = 30) -> dict:
             b["output"] += r[2] or 0
             b["cache_read"] += r[3] or 0
             b["est_cost"] += r[6] or 0
-            b["api_calls"] += 1
+            b["api_calls"] += r[11] or 1
         by_model_list = sorted(by_model.values(), key=lambda x: -x["est_cost"])
 
         # 辅助任务类型（task != ''）
@@ -863,7 +912,7 @@ def collect_usage(days: int = 30) -> dict:
             b["input"] += r[1] or 0
             b["output"] += r[2] or 0
             b["est_cost"] += r[6] or 0
-            b["api_calls"] += 1
+            b["api_calls"] += r[11] or 1
         by_task_list = sorted(by_task.values(), key=lambda x: -x["est_cost"])
 
         return {
@@ -950,7 +999,7 @@ def collect_skills() -> dict:
                     "description": meta.get("description", ""),
                     "version": meta.get("version", ""),
                     "category": category,
-                    "dir": str(md.parent),
+                    "dir": sanitize_path(str(md.parent)),
                     "bytes": st.st_size,
                     "mtime": st.st_mtime,
                 })
@@ -1037,8 +1086,8 @@ def build_snapshot() -> dict:
     collected_at = _now_epoch()
     return {
         "collected_at": collected_at,
-        "generated_at_iso": datetime.now(CST).isoformat(timespec="seconds"),
-        "tz": "Asia/Shanghai",
+        "generated_at_iso": datetime.now(get_hud_timezone()).isoformat(timespec="seconds"),
+        "tz": hud_tz_name(),
         "gateway": collect_gateway(),
         "system": collect_system(),
         "db": collect_db(),

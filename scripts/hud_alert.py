@@ -38,14 +38,25 @@ MIN_REPUSH_INTERVAL = 1800    # 30 分钟
 COUNT_ESCALATION_STEP = 10    # 触发次数再增加 10 才考虑重推
 MAX_PUSH_PER_RUN = 5          # 单次最多推送条数（防风暴）
 
-PROXY = os.environ.get("HUD_TG_PROXY", "http://127.0.0.1:7897")  # Telegram 出境代理（被墙地区用；可用 HUD_TG_PROXY 覆盖）
+PROXY = os.environ.get("HUD_TG_PROXY") or None  # 默认无代理；仅用户显式配置时启用（如 http://127.0.0.1:7897）
 
 
 # ---------------------------------------------------------------------------
-# 环境变量（优先进程环境，回退 .env）
+# 环境变量（最小权限：只加载 allowlist，不把 .env 全部变量写入进程环境）
 # ---------------------------------------------------------------------------
+
+_ENV_ALLOWLIST = {
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_HOME_CHANNEL",
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "FEISHU_ALLOWED_USERS",
+    "HUD_TG_PROXY",
+}
+
 
 def _load_env() -> None:
+    """只把通知所需的 allowlisted 凭证从 .env 加载进环境，其他变量不碰。"""
     if not ENV_FILE.exists():
         return
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
@@ -53,7 +64,9 @@ def _load_env() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip())
+        k = k.strip()
+        if k in _ENV_ALLOWLIST:
+            os.environ.setdefault(k, v.strip())
 
 
 def _get(key: str) -> str:
@@ -70,16 +83,23 @@ def _active_incidents() -> list[dict]:
         return []
     try:
         conn = sqlite3.connect(f"file:{TELEMETRY_DB}?mode=ro", uri=True, timeout=3)
+        # state_changes 列在 v1.0.0 旧库可能不存在：查列后按需选择 SQL
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(incidents)").fetchall()]
+        has_sc = "state_changes" in cols
+        sel = ("fingerprint, severity, title, detail, first_seen, last_seen, count"
+               + (", state_changes" if has_sc else ", 0"))
         rows = conn.execute(
-            "SELECT fingerprint, severity, title, detail, first_seen, last_seen, count"
-            " FROM incidents WHERE status='active'"
+            f"SELECT {sel} FROM incidents WHERE status IN ('active','pending_recovery')"
         ).fetchall()
         conn.close()
-        return [
-            {"fingerprint": r[0], "severity": r[1], "title": r[2], "detail": r[3] or "",
-             "first_seen": r[4], "last_seen": r[5], "count": r[6]}
-            for r in rows
-        ]
+        out = []
+        for r in rows:
+            inc = {"fingerprint": r[0], "severity": r[1], "title": r[2], "detail": r[3] or "",
+                   "first_seen": r[4], "last_seen": r[5], "count": r[6]}
+            if has_sc:
+                inc["state_changes"] = r[7]
+            out.append(inc)
+        return out
     except Exception as exc:
         print(f"ERROR: 读取 telemetry.db 失败: {exc}", file=sys.stderr)
         return []
@@ -205,6 +225,8 @@ def _fmt_incident(inc: dict, kind: str) -> str:
     return "\n".join(lines)
 
 
+# push item 直接携带 fingerprint（不通过消息正文反查）：
+#   {"fingerprint": ..., "kind": ..., "text": ...}
 def run(dry_run: bool = False, force: bool = False) -> int:
     _load_env()
     now = int(time.time())
@@ -213,7 +235,7 @@ def run(dry_run: bool = False, force: bool = False) -> int:
     all_fps = _all_incident_fingerprints()
     state = _load_state()
 
-    pushes: list[tuple[str, str]] = []  # (kind, text)
+    pushes: list[dict] = []  # {"fingerprint", "kind", "text"}
 
     for inc in active:
         fp = inc["fingerprint"]
@@ -221,74 +243,90 @@ def run(dry_run: bool = False, force: bool = False) -> int:
         kind = None
         if prev is None:
             kind = "new"
+        elif prev.get("status") == "recovered":
+            kind = "new"  # 已恢复后再次出现 = 新事故
         elif force:
             kind = "repeat"
         elif inc["severity"] != prev.get("severity"):
             kind = "upgrade"
+        elif (prev.get("state_changes") is not None
+              and inc.get("state_changes", 0) - prev.get("state_changes", 0) >= 1
+              and now - prev.get("last_push", 0) >= MIN_REPUSH_INTERVAL):
+            # 实质状态变化（severity/title/detail 变化）且距上次推送足够久；
+            # prev 无 state_changes 键（v1.0.0 旧状态文件）时不触发，避免 0→1 误判
+            kind = "repeat"
         elif (inc["count"] - prev.get("count", 0) >= COUNT_ESCALATION_STEP
               and now - prev.get("last_push", 0) >= MIN_REPUSH_INTERVAL):
             kind = "repeat"
         if kind:
-            pushes.append((kind, _fmt_incident(inc, kind)))
+            pushes.append({"fingerprint": fp, "kind": kind, "text": _fmt_incident(inc, kind)})
 
-    # 恢复检测：之前推过的事故现在不在活跃列表 → 推"已恢复"
+    # 恢复状态机：active → 发送 recovery → 至少一渠道成功 → recovered
+    # 所有渠道失败 → pending_recovery，下一轮继续尝试；禁止“没发出去却标已恢复”
     for fp, prev in state.items():
-        if prev.get("status") == "active" and fp not in active_fps and fp in all_fps:
-            if now - prev.get("last_push", 0) >= 60:  # 恢复至少 1 分钟前推过才补推
-                pushes.append(("recover", _fmt_incident(
-                    {"fingerprint": fp, "severity": prev.get("severity", "warning"),
-                     "title": prev.get("title", fp), "detail": prev.get("detail", ""),
-                     "count": prev.get("count", 1), "last_seen": prev.get("last_push", now)},
-                    "recover")))
+        if fp in active_fps:
+            # 事故仍存在：pending_recovery 状态回归 active（不重复推 new）
+            if prev.get("status") == "pending_recovery":
+                state[fp]["status"] = "active"
+            continue
+        if prev.get("status") not in ("active", "pending_recovery"):
+            continue  # 已 recovered 且未再现
+        if fp not in all_fps:
+            continue  # telemetry 里已彻底删除（超保留期），无需通知
+        # 需要发恢复通知；限流：距上次尝试至少 60 秒
+        if now - prev.get("last_attempt", 0) < 60:
+            continue
+        pushes.append({
+            "fingerprint": fp, "kind": "recover",
+            "text": _fmt_incident({
+                "fingerprint": fp, "severity": prev.get("severity", "warning"),
+                "title": prev.get("title", fp), "detail": prev.get("detail", ""),
+                "count": prev.get("count", 1), "last_seen": prev.get("last_push", now)},
+                "recover"),
+        })
 
     pushes = pushes[:MAX_PUSH_PER_RUN]
 
     if dry_run:
         if not pushes:
             print("(无变化，无需推送)")
-        for kind, text in pushes:
-            print(f"--- [{kind}] ---\n{text}\n")
+        for item in pushes:
+            print(f"--- [{item['kind']}] {item['fingerprint']} ---\n{item['text']}\n")
         return 0
 
-    sent = 0
-    for kind, text in pushes:
+    for item in pushes:
+        fp, kind, text = item["fingerprint"], item["kind"], item["text"]
         tg_ok, fs_ok = push_all(text)
         if tg_ok or fs_ok:
-            sent += 1
-            # 更新状态（仅推送成功才记录）
-            fp = _find_fp_by_text(text, active, state)
-            if fp:
+            # 推送成功才更新状态
+            if kind == "recover":
+                state[fp]["status"] = "recovered"
+                state[fp]["last_push"] = now
+                state[fp].pop("last_attempt", None)
+            else:
                 inc = next((a for a in active if a["fingerprint"] == fp), None)
                 state[fp] = {
                     "severity": inc["severity"] if inc else "warning",
                     "count": inc["count"] if inc else 0,
+                    "state_changes": inc.get("state_changes", 0) if inc else 0,
                     "last_push": now,
                     "status": "active",
                     "title": inc["title"] if inc else "",
                     "detail": inc["detail"] if inc else "",
                 }
         else:
+            # 所有渠道失败：恢复消息保持 pending_recovery（下轮重试），
+            # 新事故保持未记录（下轮重推）—— 绝不写 recovered
+            if kind == "recover":
+                state[fp]["status"] = "pending_recovery"
+                state[fp]["last_attempt"] = now
             print(f"ERROR: 推送失败（TG/飞书均失败）: {text.splitlines()[0]}", file=sys.stderr)
-
-    # 恢复状态更新
-    for fp in list(state.keys()):
-        if state[fp].get("status") == "active" and fp not in active_fps:
-            state[fp]["status"] = "recovered"
-            state[fp]["last_push"] = now
 
     _save_state(state)
 
-    if sent == 0:
+    if not pushes:
         print(f"OK: 无新告警（活跃事故 {len(active)} 条）", file=sys.stderr)  # stderr 不触发 cron 投递
     return 0
-
-
-def _find_fp_by_text(text: str, active: list[dict], state: dict) -> str | None:
-    for a in active:
-        if a["title"] in text:
-            return a["fingerprint"]
-    # 恢复消息回退：匹配不到返回 None
-    return None
 
 
 def main() -> int:

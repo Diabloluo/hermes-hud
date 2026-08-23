@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Compile / import check
+        run: |
+          python -m compileall -q dashboard scripts tests
+          python -c "import sys; sys.path.insert(0, 'dashboard'); from hud import collectors, rules, storage, redaction; print('imports OK')"
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -q --ignore=tests/performance_verify.py
+
+  # 性能验收脚本仅语法/导入检查（完整 10 分钟跑在本地验证，CI 不执行长跑）
+  lint:
+    name: static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Syntax check all Python
+        run: |
+          python -m compileall -q dashboard scripts tests
+      - name: Verify no secrets in tree
+        run: |
+          # 防止 .env / 数据库 / 凭据被误提交
+          test ! -f .env
+          test ! -e "**/*.db" 2>/dev/null || find . -name "*.db" | grep -q . && exit 1 || true
