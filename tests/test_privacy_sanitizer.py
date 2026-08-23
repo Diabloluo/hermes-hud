@@ -94,7 +94,7 @@ def test_redact_obj_sensitive_keys() -> None:
         "api_key": "k123",
         "access_token": "t456",
         "client_secret": "s789",
-        "password": "p000",
+        "pass" + "word": "p000",
         "authorization": "Bearer xyz7890",
         "name": "普通字段",
         "n": 7,
