@@ -172,6 +172,7 @@ Hermes data sources (read-only)
 
 - **Issues**: [Bug report](https://github.com/Diabloluo/hermes-hud/issues/new?template=bug_report.yml) / [Compatibility report](https://github.com/Diabloluo/hermes-hud/issues/new?template=compatibility_report.yml)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, tests, PR workflow and security boundary
+- **Maintainers**: optionally enable GitHub community-event notifications (Star / Issue / Fork → Telegram) via `.github/workflows/community-telegram.yml`
 - **Discussions**: not enabled yet on this repo; suggested categories once enabled: General / Installation Help / Compatibility / Ideas / Show and Tell
 
 ## 📄 License

@@ -1,0 +1,35 @@
+name: Community Telegram Notifications
+
+# GitHub 社区事件 → Telegram 即时通知（New Star / New Issue / New Fork）
+# 本工作流只读取事件并发通知，不修改仓库。
+
+on:
+  watch:
+    types: [started]
+  issues:
+    types: [opened]
+  fork:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event_name == 'fork'
+      || (github.event_name == 'watch' && github.event.action == 'started')
+      || (github.event_name == 'issues' && github.event.action == 'opened')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Telegram notifier
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 scripts/github_telegram_notify.py

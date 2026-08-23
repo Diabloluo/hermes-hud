@@ -177,6 +177,7 @@ Hermes 现有数据源（只读）
 
 - **Issues**：[Bug 报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=bug_report.yml) / [兼容性报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=compatibility_report.yml)
 - **Contributing**：[CONTRIBUTING.md](CONTRIBUTING.md) —— 开发环境、测试、PR 流程与安全边界
+- **Maintainers**: 可选启用 GitHub 社区事件通知（Star/Issue/Fork → Telegram），见 `.github/workflows/community-telegram.yml`
 - **Discussions**：仓库暂未启用 Discussions；建议分类：General / Installation Help / Compatibility / Ideas / Show and Tell（启用后可用）
 
 ## 📄 License
