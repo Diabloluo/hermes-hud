@@ -27,7 +27,7 @@ X/Twitter (short). **Do not post automatically — user confirmation required fi
 
 > **I kept restarting my dashboard to check things — so I built a monitoring tab for it**
 >
-> Real background: I run Hermes as a 24/7 gateway with ~20 cron jobs (daily reviews,
+> Real background: I run Hermes as a 24/7 gateway with a number of scheduled jobs (daily reviews,
 > market briefings, watchdogs). Every morning I'd open the dashboard, click around four
 > pages to answer the same questions: did the overnight jobs run? did Telegram/Feishu
 > stay connected? what did yesterday actually cost? And twice a week I'd find out the
