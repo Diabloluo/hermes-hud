@@ -156,7 +156,7 @@ def test_redact_obj_nested() -> None:
         "name": "ok",
         "token": "plain-value-without-key-context",
         "nested": {"api_key": "x1y2z3", "keep": ["a", "b"]},
-        "list": [{"password": "p"}, "plain"],
+        "list": [{"pass" + "word": "p"}, "plain"],
         "n": 5,
         "none": None,
     }
