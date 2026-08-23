@@ -732,7 +732,7 @@
                 h("div", { style: { opacity: 0.7, fontSize: 11.5, marginTop: 2 } }, inc.detail),
                 h("div", { style: { opacity: 0.55, fontSize: 10.5, marginTop: 4 } },
                   "首次 " + fmtTime(inc.first_seen) + " · 末次 " + fmtTime(inc.last_seen) +
-                  " · 触发 " + inc.count + " 次" +
+                  " · 观测 " + (inc.observations != null ? inc.observations : inc.count) + " 次" +
                   (inc.fingerprint ? " · " + inc.fingerprint : "")));
             }))),
         card("错误指纹 TOP",
@@ -969,6 +969,13 @@
             }))
             : empty("加载中…")),
       h("div", { className: "hud-grid hud-grid-2" },
+        card("统计时区",
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+            h("div", { style: { fontSize: 20, fontWeight: 700 } }, (settings && settings.tz) || "-"),
+            h("div", { style: { fontSize: 11, opacity: 0.65 } },
+              "HUD_TIMEZONE > 系统本地时区 > UTC；快照缓存 TTL " +
+              (settings && settings.snapshot_cache_ttl_s) + "s / telemetry 落盘每 " +
+              (settings && settings.telemetry_interval_s) + "s 一次"))),
         card("telemetry.db",
           settings ? h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
             kv("指标行", String((settings.telemetry && settings.telemetry.metrics_rows) || 0)),
