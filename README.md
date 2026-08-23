@@ -4,7 +4,17 @@
 
 一个**用户级 Hermes Dashboard 插件**：不修改 `~/.hermes/hermes-agent` 核心代码，Hermes 升级不覆盖，可一键禁用/回滚。
 
-![tabs](https://img.shields.io/badge/10%20Tabs-全中文-4ade80) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
+![tabs](https://img.shields.io/badge/11%20Tabs-全中文-4ade80) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
+
+## 📸 界面预览
+
+**Token·费用页**（按模型/辅助任务归集，费用明确标注估算口径）：
+
+![Token 费用页](assets/screenshot-usage.png)
+
+**技能页**（技能目录统计与分类筛选）：
+
+![技能页](assets/screenshot-skills.png)
 
 ## ✨ 功能
 
