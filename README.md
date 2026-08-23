@@ -27,6 +27,10 @@ hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 
 > 仓库自带预构建前端，无需重新构建 Hermes Web UI。详细安装/卸载见 [📦 安装](#-安装)。
 
+## 🎬 演示（19.5 秒 · 脱敏演示数据）
+
+![Hermes HUD 演示](assets/demo.gif)
+
 ## 📸 界面预览
 
 **Token·费用页**（按模型/辅助任务归集，费用明确标注估算口径）：

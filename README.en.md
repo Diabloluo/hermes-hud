@@ -27,6 +27,10 @@ hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 
 > The repo ships prebuilt frontend assets — no need to rebuild the Hermes web UI. Full install/uninstall: see [📦 Installation](#-installation).
 
+## 🎬 Demo (19.5s · sanitized demo data)
+
+![Hermes HUD demo](assets/demo.gif)
+
 ## 📸 Screenshots
 
 **Token & Cost** (per-model / per-aux-task aggregation; costs explicitly labeled as estimated):
