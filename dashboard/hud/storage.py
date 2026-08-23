@@ -40,8 +40,10 @@ CREATE TABLE IF NOT EXISTS incidents (
     detail TEXT,                    -- 短摘要（已脱敏）
     first_seen INTEGER NOT NULL,
     last_seen INTEGER NOT NULL,
-    count INTEGER NOT NULL DEFAULT 1,
-    status TEXT NOT NULL DEFAULT 'active'   -- active / recovered
+    count INTEGER NOT NULL DEFAULT 1,      -- 观测次数（保留兼容，同 observations）
+    status TEXT NOT NULL DEFAULT 'active', -- active / recovered / pending_recovery
+    observations INTEGER NOT NULL DEFAULT 1,   -- 观测到事故存在的次数
+    state_changes INTEGER NOT NULL DEFAULT 1   -- 实质状态变化次数（severity/title/detail）
 );
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status, last_seen);
 
@@ -51,8 +53,15 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
+# 平滑迁移：v1.0.0 已存在的 telemetry.db 缺 observations/state_changes 列
+_MIGRATIONS = [
+    "ALTER TABLE incidents ADD COLUMN observations INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE incidents ADD COLUMN state_changes INTEGER NOT NULL DEFAULT 1",
+]
+
 METRIC_RETENTION_DAYS = 30
 INCIDENT_RETENTION_DAYS = 90
+MAINTENANCE_INTERVAL_S = 24 * 3600  # 每天最多一次
 
 
 class TelemetryStore:
@@ -77,6 +86,12 @@ class TelemetryStore:
         try:
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
+                # 平滑迁移旧库（列已存在时忽略）
+                for sql in _MIGRATIONS:
+                    try:
+                        conn.execute(sql)
+                    except Exception:
+                        pass
         except Exception as exc:  # pragma: no cover
             log.warning("HUD telemetry schema init failed: %s", exc)
 
@@ -109,23 +124,35 @@ class TelemetryStore:
 
     def upsert_incident(self, fingerprint: str, severity: str, title: str,
                         detail: str, now: Optional[int] = None) -> None:
+        """upsert 事故观测。
+
+        count/observations：每次观测 +1（注意：这是“观测次数”，不是真实
+        “事故触发次数”——触发语义请用 state_changes / severity 变化，
+        由告警脚本与 UI 依据 state_changes 判定恶化）。
+        state_changes：仅当 severity/title/detail 发生实质变化时 +1。
+        """
         now = now or int(time.time())
         try:
             with self._connect() as conn:
                 row = conn.execute(
-                    "SELECT id, count, status FROM incidents WHERE fingerprint=?",
+                    "SELECT id, count, status, severity, title, detail FROM incidents WHERE fingerprint=?",
                     (fingerprint,),
                 ).fetchone()
                 if row:
+                    old_sev, old_title, old_detail = row[3], row[4], row[5]
+                    changed = (old_sev != severity or old_title != title
+                               or (old_detail or "") != (detail or ""))
                     conn.execute(
-                        "UPDATE incidents SET last_seen=?, count=count+1, status='active', "
-                        "severity=?, title=?, detail=? WHERE id=?",
-                        (now, severity, title[:200], detail[:400], row[0]),
+                        "UPDATE incidents SET last_seen=?, count=count+1, "
+                        "observations=observations+1, "
+                        "state_changes=state_changes+? , "
+                        "status='active', severity=?, title=?, detail=? WHERE id=?",
+                        (now, 1 if changed else 0, severity, title[:200], detail[:400], row[0]),
                     )
                 else:
                     conn.execute(
-                        "INSERT INTO incidents(fingerprint, severity, title, detail, first_seen, last_seen, count, status)"
-                        " VALUES(?,?,?,?,?,?,1,'active')",
+                        "INSERT INTO incidents(fingerprint, severity, title, detail, first_seen, last_seen, count, status, observations, state_changes)"
+                        " VALUES(?,?,?,?,?,?,1,'active',1,1)",
                         (fingerprint, severity, title[:200], detail[:400], now, now),
                     )
         except Exception as exc:
@@ -136,11 +163,28 @@ class TelemetryStore:
         try:
             with self._connect() as conn:
                 conn.execute(
-                    "UPDATE incidents SET status='recovered', last_seen=? WHERE fingerprint=? AND status='active'",
+                    "UPDATE incidents SET status='recovered', last_seen=? WHERE fingerprint=? AND status IN ('active','pending_recovery')",
                     (now, fingerprint),
                 )
         except Exception as exc:
             log.debug("HUD incident recover failed: %s", exc)
+
+    def mark_pending_recovery(self, fingerprint: str, now: Optional[int] = None) -> None:
+        """恢复通知尝试中：保持 active 语义但标记 pending_recovery。
+
+        只有当通知渠道确认成功（或主动放弃）后才会被 recover_incident
+        置为 recovered —— 禁止“没发出去却标已恢复”。
+        """
+        now = now or int(time.time())
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE incidents SET status='pending_recovery', last_seen=? "
+                    "WHERE fingerprint=? AND status='active'",
+                    (now, fingerprint),
+                )
+        except Exception as exc:
+            log.debug("HUD incident pending_recovery failed: %s", exc)
 
     # -- 读取 --------------------------------------------------------------
 
@@ -170,9 +214,10 @@ class TelemetryStore:
             return []
 
     def list_incidents(self, active_only: bool = False, limit: int = 200) -> list[dict]:
-        q = "SELECT id, fingerprint, severity, title, detail, first_seen, last_seen, count, status FROM incidents"
+        q = ("SELECT id, fingerprint, severity, title, detail, first_seen, last_seen, "
+             "count, status, observations, state_changes FROM incidents")
         if active_only:
-            q += " WHERE status='active'"
+            q += " WHERE status IN ('active','pending_recovery')"
         q += " ORDER BY last_seen DESC LIMIT ?"
         try:
             with self._connect() as conn:
@@ -180,7 +225,8 @@ class TelemetryStore:
             return [
                 {"id": r[0], "fingerprint": r[1], "severity": r[2], "title": r[3],
                  "detail": r[4], "first_seen": r[5], "last_seen": r[6],
-                 "count": r[7], "status": r[8]}
+                 "count": r[7], "status": r[8], "observations": r[9],
+                 "state_changes": r[10]}
                 for r in rows
             ]
         except Exception as exc:
@@ -188,6 +234,34 @@ class TelemetryStore:
             return []
 
     # -- 维护 --------------------------------------------------------------
+
+    def maintenance(self) -> dict:
+        """低频维护：每天最多一次执行 prune。
+
+        最近执行时间记录在 meta 表（重启后依然生效），绝不每个 snapshot 都跑。
+        """
+        now = int(time.time())
+        try:
+            with self._connect() as conn:
+                row = conn.execute("SELECT value FROM meta WHERE key='last_prune'").fetchone()
+            last = int(row[0]) if row and row[0] else 0
+            if last and now - last < MAINTENANCE_INTERVAL_S:
+                return {"pruned": False, "next_in_s": int(MAINTENANCE_INTERVAL_S - (now - last))}
+            result = self.prune()
+            try:
+                with self._connect() as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO meta(key, value) VALUES('last_prune', ?)",
+                        (str(now),),
+                    )
+            except Exception as exc:
+                log.debug("HUD maintenance meta write failed: %s", exc)
+            result["pruned"] = True
+            result["last_prune"] = now
+            return result
+        except Exception as exc:
+            log.debug("HUD maintenance failed: %s", exc)
+            return {"error": str(exc)}
 
     def prune(self) -> dict:
         """按保留期清理，返回清理统计。"""

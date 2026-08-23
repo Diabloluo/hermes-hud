@@ -176,7 +176,11 @@ def evaluate_snapshot(snap: dict) -> dict:
 
     # ---- warning: launchd 脱管 ----
     ld = snap.get("launchd") or {}
-    if ld.get("managed"):
+    if ld.get("status") == "not_applicable":
+        # 非 macOS：launchd 概念不适用，不算告警
+        checks.append({"key": "launchd", "status": "normal", "severity": "normal",
+                       "message": "launchd 不适用（非 macOS）"})
+    elif ld.get("managed"):
         checks.append({"key": "launchd", "status": "normal", "severity": "normal",
                        "message": "Gateway 由 launchd 托管"})
     else:
@@ -207,7 +211,9 @@ def evaluate_snapshot(snap: dict) -> dict:
         if streak >= CYCLE_FAIL_CRITICAL:
             checks.append({"key": f"cron:{j['id']}", "status": "critical", "severity": "critical",
                            "message": f"任务「{j['name']}」连续失败 {streak} 次"})
-            incidents.append({"fingerprint": f"cron:{j['id']}:fail-{streak}", "severity": "critical",
+            # 指纹稳定：不随 streak 变化（cron:<id>:fail），同一任务连续失败
+            # 保持同一条事故生命周期；streak 放进 detail
+            incidents.append({"fingerprint": f"cron:{j['id']}:fail", "severity": "critical",
                               "title": f"Cron 连续失败: {j['name']}",
                               "detail": "连续失败 %d 次, 最近错误: %s" % (streak, j.get("last_error") or j.get("last_delivery_error") or "无")})
         elif streak >= 1:
