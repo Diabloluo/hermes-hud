@@ -787,8 +787,20 @@ def collect_dashboard_procs() -> dict:
     try:
         for proc in psutil.process_iter(["pid", "name", "cmdline", "create_time", "memory_info"]):
             try:
-                cmd = " ".join(proc.info.get("cmdline") or [])
-                if "hermes_cli.main" in cmd and ("dashboard" in cmd or "serve" in cmd):
+                cmdline = proc.info.get("cmdline") or []
+                cmd = " ".join(cmdline)
+                # ``hermes dashboard`` installed from the repository runs as
+                # ``python /path/to/hermes dashboard`` and does not include
+                # ``hermes_cli.main`` in its argv.  Accept both supported
+                # entrypoint forms while matching command arguments exactly.
+                is_module_entrypoint = any("hermes_cli.main" in arg for arg in cmdline)
+                is_script_entrypoint = any(
+                    Path(arg).name == "hermes" for arg in cmdline[:2]
+                )
+                is_dashboard_command = any(
+                    arg in {"dashboard", "serve"} for arg in cmdline
+                )
+                if (is_module_entrypoint or is_script_entrypoint) and is_dashboard_command:
                     mem = proc.info.get("memory_info")
                     out.append({
                         "pid": proc.info["pid"],
