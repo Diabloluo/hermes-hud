@@ -779,6 +779,30 @@ def collect_launchd_check() -> dict:
 # 8. Dashboard 进程
 # ---------------------------------------------------------------------------
 
+def _is_hermes_script_entrypoint(cmdline: list[str]) -> bool:
+    """Match direct or Python-launched ``hermes`` repository scripts."""
+    if not cmdline:
+        return False
+    executable = Path(cmdline[0]).name
+    if executable == "hermes":
+        return True
+    if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", executable) is None:
+        return False
+
+    index = 1
+    while index < len(cmdline):
+        arg = cmdline[index]
+        if arg == "--":
+            index += 1
+            break
+        if arg in {"-c", "-m"}:
+            return False
+        if not arg.startswith("-") or arg == "-":
+            break
+        index += 2 if arg in {"-W", "-X"} else 1
+    return index < len(cmdline) and Path(cmdline[index]).name == "hermes"
+
+
 def collect_dashboard_procs() -> dict:
     """正在运行的 hermes web server（dashboard）进程。"""
     if psutil is None:
@@ -794,9 +818,7 @@ def collect_dashboard_procs() -> dict:
                 # ``hermes_cli.main`` in its argv.  Accept both supported
                 # entrypoint forms while matching command arguments exactly.
                 is_module_entrypoint = any("hermes_cli.main" in arg for arg in cmdline)
-                is_script_entrypoint = any(
-                    Path(arg).name == "hermes" for arg in cmdline[:2]
-                )
+                is_script_entrypoint = _is_hermes_script_entrypoint(cmdline)
                 is_dashboard_command = any(
                     arg in {"dashboard", "serve"} for arg in cmdline
                 )
