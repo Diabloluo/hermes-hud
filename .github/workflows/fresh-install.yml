@@ -1,9 +1,12 @@
 name: Fresh Install CI
 
-# 陌生环境首次安装自动验证：clean runner → Python 3.13 → 安装 Hermes
-# （固定 GitHub v2026.8.19 发布来源——Hermes 0.20 系，PyPI 仅到 0.19.0 且
-# 其 config set 存字符串不兼容）→ 安装 HUD → 安全 enable → 启动 → HTTP smoke
-# → 回归守卫 → 精确清理。不依赖开发机状态；不使用裸 pip install hermes-agent。
+# 陌生环境首次安装自动验证（source-under-test）：
+# - clean runner · Python 3.13（<3.14）· Hermes 固定 PyPI 0.19.0
+#   （minimum supported，实证 config set 存字符串 → enable 脚本走官方 config API）
+# - 安装的 HUD 内容必须来自当前 workflow 对应的 commit/PR（$GITHUB_SHA），
+#   机械断言 installed SHA == workflow SHA，不允许静默 fallback 到 main
+# - 链路：install → enable（安全读-合-写）→ config safety → dashboard start
+#   （轮询就绪）→ HTTP smoke → CST 回归守卫 → owned-PID 清理（禁 killall/pkill）
 
 on:
   pull_request:
@@ -75,11 +78,26 @@ jobs:
           hermes config --help 2>&1 | head -12
           hermes config --help 2>&1 | tee /tmp/hermes-config-help.txt
 
-      - name: Install hermes-hud plugin (public path from INSTALL.md)
+      - name: Install hermes-hud plugin — source-under-test (current $GITHUB_SHA, no silent main)
         run: |
           mkdir -p "$HERMES_HOME/plugins"
-          git clone --depth 1 https://github.com/Diabloluo/hermes-hud "$HUD_SRC"
+          git clone --quiet https://github.com/Diabloluo/hermes-hud "$HUD_SRC"
+          # 显式 fetch 当前 workflow 的 ref（push=refs/heads/main；PR=refs/pull/N/merge）
+          git -C "$HUD_SRC" fetch --quiet --depth 1 origin "$GITHUB_REF"
+          git -C "$HUD_SRC" checkout --quiet --detach FETCH_HEAD
           ls "$HUD_SRC/dashboard/manifest.json"
+
+      - name: Assert installed HUD SHA == workflow GITHUB_SHA (mechanical)
+        run: |
+          EXPECTED="$GITHUB_SHA"
+          INSTALLED=$(git -C "$HUD_SRC" rev-parse HEAD)
+          echo "workflow SHA:   $EXPECTED"
+          echo "installed SHA:  $INSTALLED"
+          if [ "$EXPECTED" != "$INSTALLED" ]; then
+            echo "FAIL: installed HUD != workflow commit (silent main fallback?)"
+            exit 1
+          fi
+          echo "match: yes"
 
       - name: Capture plugins.enabled baseline
         run: |
