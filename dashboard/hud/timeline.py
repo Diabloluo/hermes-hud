@@ -340,6 +340,9 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
             last_scan = int(row[0]) if row and row[0] else 0
         except Exception:  # noqa: BLE001
             last_scan = 0
+    # 1. 在任何 source 查询前记录 scan_started_at（watermark commit point）
+    scan_started_at = int(time.time())
+    # 2. 查询起点继续使用 previous_watermark - 5s 安全窗口
     scan_start = max(0, last_scan - SAFETY_WINDOW_S)
     events: list[dict] = []
     events += collect_session_events(home, scan_start)
@@ -355,13 +358,16 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
             written += 1
         else:
             skipped += 1
-    now = int(time.time())
+    # 3. watermark 提交点 = scan_started_at（禁止写 scan-end now）：
+    #    scan 期间 source 写入的记录（ts ≥ scan_started_at - 5）下一轮必然被
+    #    重新扫到——不漏；重复由幂等 event_id 去重。
     try:
         with storage._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO meta(key, value) VALUES('timeline_last_scan', ?)",
-                (str(now),))
+                (str(scan_started_at),))
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: last_scan write failed: %s", exc)
     return {"written": written, "skipped": skipped,
-            "sources": ["sessions", "tools", "incidents", "skills"]}
+            "sources": ["sessions", "tools", "incidents", "skills"],
+            "scan_started_at": scan_started_at}

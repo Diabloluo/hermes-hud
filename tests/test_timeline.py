@@ -525,3 +525,66 @@ def test_watermark_race_missing_dup_zero(tmp_path) -> None:
     assert stats3["by_type"].get("session.started") == 2
     assert stats3["by_type"].get("session.completed") == 1
     # missing=0 duplicates=0（事件数精确）
+
+
+def test_watermark_commit_point_is_scan_started_at(tmp_path) -> None:
+    """watermark 提交点 = scan_started_at（不是 scan-end now）。"""
+    now = int(time.time())
+    db = tmp_path / "state.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, started_at REAL,"
+                " ended_at REAL, title TEXT)")
+    con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT,"
+                " input_tokens INT, output_tokens INT, estimated_cost_usd REAL)")
+    con.commit()
+    con.close()
+    store = storage.TelemetryStore(db_path=tmp_path / "telemetry.db")
+    with store._connect() as conn:
+        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('timeline_last_scan', ?)",
+                     (str(now - 1000),))
+    res = timeline.collect_timeline(tmp_path, store)
+    with store._connect() as conn:
+        wm = int(conn.execute(
+            "SELECT value FROM meta WHERE key='timeline_last_scan'").fetchone()[0])
+    assert wm == res["scan_started_at"]  # 写的正是 scan_started_at
+    assert wm < int(time.time()) + 1      # 不是 scan-end（现在时刻）
+
+
+def test_long_scan_race_found_exactly_once(tmp_path) -> None:
+    """>5s scan race：事件在 source 已扫过后产生（ts=T+1），scan end=T+10，
+    watermark 提交点 = scan_started_at(T) → 下一轮必须发现 exactly once。"""
+    now = int(time.time())
+    db = tmp_path / "state.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, started_at REAL,"
+                " ended_at REAL, title TEXT)")
+    con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT,"
+                " input_tokens INT, output_tokens INT, estimated_cost_usd REAL)")
+    con.commit()
+    con.close()
+    store = storage.TelemetryStore(db_path=tmp_path / "telemetry.db")
+    with store._connect() as conn:
+        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('timeline_last_scan', ?)",
+                     (str(now - 1000),))
+    # scan A：watermark 提交 = scan_started_at（T）
+    res = timeline.collect_timeline(tmp_path, store)
+    T = res["scan_started_at"]
+
+    # 事件在 source 已扫过后产生：ts = T+1（scan A 结束后写入）
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO sessions VALUES ('longrace','chat','gpt-4o',?,NULL,'T')", (T + 1,))
+    con.commit()
+    con.close()
+
+    # scan A 结束于 T+10（模拟长 scan）——watermark 仍 = T（提交点），不是 T+10
+    # scan B：查询起点 = T - 5 → ts=T+1 ≥ T-5 ✓ 必须命中
+    timeline.collect_timeline(tmp_path, store)
+    stats = store.timeline_stats()
+    assert stats["by_type"].get("session.started") == 1, stats
+    assert stats["total"] == 1
+    # 再扫两次（重叠窗口）→ 仍 exactly once（幂等去重，duplicates=0）
+    timeline.collect_timeline(tmp_path, store)
+    timeline.collect_timeline(tmp_path, store)
+    assert store.timeline_stats()["total"] == 1
+    # missing=0 / duplicates=0
+    assert store.timeline_stats()["total"] == 1
