@@ -54,6 +54,24 @@ def _bundled_locations(name: str) -> list[Path]:
 _FP_EXCLUDE_DIRS = {"__pycache__", "node_modules", ".git"}
 _FP_INCLUDE_SUFFIXES = (".py", ".sh", ".js", ".json", ".yaml", ".yml")
 
+_GLOBAL_NAME_INDEX: dict[str, Path] | None = None
+
+
+def _build_global_name_index() -> dict[str, Path]:
+    """~/.hermes/{skills,plugins,scripts} 全文件名索引（跨 skill/插件引用解析）。"""
+    global _GLOBAL_NAME_INDEX
+    if _GLOBAL_NAME_INDEX is not None:
+        return _GLOBAL_NAME_INDEX
+    idx: dict[str, Path] = {}
+    for base in (HOME / ".hermes" / "skills", HOME / ".hermes" / "plugins",
+                 HOME / ".hermes" / "scripts"):
+        if base.is_dir():
+            for p in base.rglob("*"):
+                if p.is_file() and p.suffix in (".py", ".sh"):
+                    idx.setdefault(p.name, p)
+    _GLOBAL_NAME_INDEX = idx
+    return idx
+
 
 def _collect_fingerprint_files(skill_dir: Path) -> list[tuple[str, bytes]]:
     """按规则收集 fingerprint 输入：路径排序后 (relative_path, content)。
@@ -315,12 +333,21 @@ def check_skill(skill_dir: Path) -> dict:
         base["trigger_quality"] = _trigger_quality(desc, key)
         base["trigger_quality_heuristic"] = True  # 仅启发式，不作 FAIL 条件
 
-    # 8. scripts 引用存在
+    # 8. scripts 引用存在（跳过全局/绝对路径与省略号写法）
     scripts_refs = re.findall(r"(?:scripts/|`scripts/)?([\w./-]+\.(?:py|sh))", text)
+    global_index = _build_global_name_index()
     for ref in dict.fromkeys(scripts_refs):
-        candidate = skill_dir / ref
-        if not candidate.exists() and not (skill_dir / ref.split("/")[-1]).exists():
-            base["warnings"].append(f"脚本引用不存在: {ref}")
+        if ref.startswith(("/", "~", "...")) or ref.startswith(".."):
+            continue  # 全局/绝对路径、省略号、上级目录引用——不属于 skill 本地脚本
+        # 检查链：skill 根 → scripts/ → ~/.hermes/scripts/ → 全局索引（跨 skill/插件）
+        basename = ref.split("/")[-1]
+        candidates = [skill_dir / ref, skill_dir / "scripts" / basename,
+                      HOME / ".hermes" / "scripts" / basename]
+        if any(c.exists() for c in candidates) or basename in global_index:
+            continue
+        if "/" in ref:
+            continue  # 带路径引用（外部/跨项目）——不判 skill 缺脚本
+        base["warnings"].append(f"脚本引用不存在: {ref}")
 
     # 10/11. 测试语义：has_tests / test_syntax_ok / tests_executed / tests_passed
     test_files = sorted((skill_dir / "tests").glob("test_*.py")) if (skill_dir / "tests").is_dir() else []
