@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -59,9 +61,10 @@ def _rec(key: str, **over) -> dict:
 @pytest.fixture
 def env(tmp_path, monkeypatch) -> dict:
     """临时 registry + skills 根；ledger 指向不存在路径（审计不落真账）。"""
+    from datetime import datetime, timezone as tz
     skills_root = tmp_path / "skills"
     skills_root.mkdir()
-    reg = {"generated_at": "2099-01-01T00:00:00+00:00", "skills": [], "summary": {}}
+    reg = {"generated_at": datetime.now(tz.utc).isoformat(), "skills": [], "summary": {}}
     reg_path = tmp_path / "registry.json"
     reg_path.write_text(json.dumps(reg), encoding="utf-8")
     monkeypatch.setattr(srv, "SKILLS_ROOT", skills_root)
@@ -71,8 +74,9 @@ def env(tmp_path, monkeypatch) -> dict:
 
 
 def _setup(env: dict, recs: list[dict], extra_files: dict | None = None) -> Path:
+    from datetime import datetime, timezone as tz
     env["reg_path"].write_text(json.dumps(
-        {"generated_at": "2099-01-01T00:00:00+00:00", "skills": recs, "summary": {}}), encoding="utf-8")
+        {"generated_at": datetime.now(tz.utc).isoformat(), "skills": recs, "summary": {}}), encoding="utf-8")
     d = _skill(env["skills_root"], recs[0]["key"], CLEAN_FM, extra_files)
     return d
 
@@ -130,9 +134,10 @@ def test_high_risk_unguarded_block(env) -> None:
 # ---------- 4. missing SKILL.md → BLOCK ----------
 
 def test_missing_skill_md_block(env) -> None:
+    from datetime import datetime, timezone as tz
     rec = _rec("ghost")
     env["reg_path"].write_text(json.dumps(
-        {"generated_at": "2099-01-01T00:00:00+00:00", "skills": [rec], "summary": {}}), encoding="utf-8")
+        {"generated_at": datetime.now(tz.utc).isoformat(), "skills": [rec], "summary": {}}), encoding="utf-8")
     d = env["skills_root"] / "ghost"
     d.mkdir()  # 无 SKILL.md
     code, res = _run(env, "ghost")
@@ -260,3 +265,134 @@ def test_review_does_not_execute_tests_or_write_repo(env, tmp_path) -> None:
     assert not marker.exists()  # 测试未被执行
     # 无 enable/disable 类输出/副作用：review 输出只读报告
     assert "enable" not in res["out"].lower() or "not enable" in res["out"].lower()
+
+
+# ---------- CLI 退出码契约（subprocess 级） ----------
+
+def _run_cli(env: dict, key: str, tmp_path) -> subprocess.CompletedProcess:
+    """子进程级 CLI 调用（真实退出码）。"""
+    import subprocess as sp
+    env_vars = dict(os.environ)
+    env_vars["HERMES_SKILL_REGISTRY"] = str(env["reg_path"])
+    env_vars["HERMES_SKILLS_ROOT"] = str(env["skills_root"])
+    env_vars["HERMES_JOB_LEDGER"] = str(tmp_path / "no-ledger.py")
+    script = Path(__file__).resolve().parents[1] / "tools" / "skill_review.py"
+    return sp.run([sys.executable, str(script), "review", key],
+                  capture_output=True, text=True, env=env_vars, timeout=60)
+
+
+def test_cli_exit_codes(env, tmp_path) -> None:
+    """APPROVE=0 / BLOCK=1 / WARN=2 / usage=9。"""
+    # APPROVE → 0
+    rec_ok = _rec("cli-ok", has_tests=True, test_syntax_ok=True,
+                  tests_executed=True, tests_passed=True,
+                  source="bundled-copy", source_confidence="confirmed")
+    _setup(env, [rec_ok])
+    r = _run_cli(env, "cli-ok", tmp_path)
+    assert r.returncode == 0, r.stdout
+
+    # BLOCK（fingerprint mismatch）→ 1（必须非 0）
+    rec_blk = _rec("cli-block", fingerprint="f" * 64)
+    _setup(env, [rec_blk])
+    r = _run_cli(env, "cli-block", tmp_path)
+    assert r.returncode == 1
+    assert "BLOCK" in r.stdout
+
+    # APPROVE WITH WARNINGS → 2
+    rec_warn = _rec("cli-warn")
+    _setup(env, [rec_warn])
+    r = _run_cli(env, "cli-warn", tmp_path)
+    assert r.returncode == 2
+    assert "APPROVE WITH WARNINGS" in r.stdout
+
+    # usage error（unknown key）→ 9
+    r = _run_cli(env, "no-such-skill", tmp_path)
+    assert r.returncode == 9
+
+
+def test_cli_block_never_zero(env, tmp_path) -> None:
+    """BLOCK 不返回 0：secret-like 场景走完整 CLI。"""
+    rec = _rec("cli-secret", security_findings={"dangerous_shell": [], "sensitive_path": [], "secret_like": 1})
+    _setup(env, [rec])
+    r = _run_cli(env, "cli-secret", tmp_path)
+    assert r.returncode == 1
+    assert r.returncode != 0
+
+
+# ---------- Side-effect boundary（只从 SKILL.md 判断） ----------
+
+def test_boundary_script_warning_only_not_controlled(env) -> None:
+    """scripts 里有危险操作但只有 logger.warning → NOT controlled（warning 词不算边界）。"""
+    rec = _rec("scr-warn", risk_level="high")
+    d = _setup(env, [rec])
+    # 自定义 SKILL.md（不含 read-only 等边界词）
+    (d / "SKILL.md").write_text(
+        "---\nname: scr-warn\ndescription: Use when testing script boundary.\nversion: 1.0.0\n---\n", encoding="utf-8")
+    (d / "scripts").mkdir()
+    (d / "scripts" / "run.py").write_text(
+        "import logging, os\nlogger = logging.getLogger('x')\n"
+        "logger.warning('danger zone')\nos.remove('/tmp/x')  # destructive op\n", encoding="utf-8")
+    se = srv.review_side_effects(d)
+    assert se["side_effects"]["destructive_ops"] == "yes"
+    assert se["status"] == "FAIL"  # 脚本内 warning 词不构成 SKILL.md 边界 → 不可控
+
+
+def test_boundary_readme_dangerous_only_not_controlled(env) -> None:
+    """SKILL.md 只说 'dangerous' → NOT controlled（模糊词不算边界）。"""
+    rec = _rec("readme-danger", risk_level="high")
+    d = _setup(env, [rec])
+    # 注意：不用 CLEAN_FM（其 description 含 read-only 会误判边界）
+    (d / "SKILL.md").write_text(
+        "---\nname: readme-danger\ndescription: Use when testing dangerous boundary.\nversion: 1.0.0\n---\n"
+        "\nDANGEROUS: this skill can delete things (rm -rf).\n", encoding="utf-8")
+    se = srv.review_side_effects(d)
+    assert se["side_effects"]["destructive_ops"] == "yes"
+    assert se["status"] == "FAIL"  # 只有 dangerous 词 → 无明确边界 → 不可控
+
+
+def test_boundary_skill_md_explicit_manual_confirmation_controlled(env) -> None:
+    """SKILL.md 明确 manual confirmation → controlled（WARN 而非 FAIL）。"""
+    rec = _rec("manual-confirm", risk_level="high")
+    d = _setup(env, [rec])
+    (d / "SKILL.md").write_text(
+        "---\nname: manual-confirm\ndescription: Use when testing confirmation boundary.\nversion: 1.0.0\n---\n"
+        "\nrm -rf operations require explicit manual confirmation; default dry-run.\n", encoding="utf-8")
+    se = srv.review_side_effects(d)
+    assert se["side_effects"]["destructive_ops"] == "yes"
+    assert se["status"] == "WARN"  # 有明确边界但仍是高风险 → WARN
+
+
+# ---------- Registry freshness（missing/invalid/old/future） ----------
+
+def test_registry_freshness_gates(env) -> None:
+    from datetime import datetime, timedelta, timezone as tz
+    now = datetime.now(tz.utc)
+
+    def write(gen):
+        env["reg_path"].write_text(json.dumps(
+            {"generated_at": gen, "skills": [_rec("f")], "summary": {}}), encoding="utf-8")
+
+    # missing generated_at → BLOCK
+    env["reg_path"].write_text(json.dumps({"skills": [_rec("f")]}), encoding="utf-8")
+    code, res = _run(env, "f")
+    assert code == 1 and "BLOCK" in res["out"] and "generated_at" in res["out"]
+
+    # invalid → BLOCK
+    write("not-a-timestamp")
+    code, res = _run(env, "f")
+    assert code == 1 and "BLOCK" in res["out"]
+
+    # >24h old → BLOCK
+    write((now - timedelta(hours=30)).isoformat())
+    code, res = _run(env, "f")
+    assert code == 1 and "BLOCK" in res["out"] and "过期" in res["out"]
+
+    # future beyond tolerance → BLOCK
+    write((now + timedelta(hours=5)).isoformat())
+    code, res = _run(env, "f")
+    assert code == 1 and "BLOCK" in res["out"] and "未来" in res["out"]
+
+    # fresh → 正常审核（不 BLOCK）
+    write(now.isoformat())
+    code, res = _run(env, "f")
+    assert code != 1
