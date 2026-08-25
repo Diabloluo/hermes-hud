@@ -241,7 +241,7 @@ def test_cli_get_missing_falls_back_to_hermes_api(tmp_path, monkeypatch) -> None
 
     import types
     fake_cfg = types.ModuleType("hermes_cli.config")
-    fake_cfg.get_config_value = lambda key, as_json=False: '["alpha", "beta"]'
+    fake_cfg.load_config = lambda: {"plugins": {"enabled": ["alpha", "beta"]}}
     fake_pkg = types.ModuleType("hermes_cli")
     fake_pkg.config = fake_cfg
     sys.modules["hermes_cli"] = fake_pkg
@@ -266,8 +266,9 @@ def test_api_fallback_fail_closed_when_no_hermes_module(tmp_path, monkeypatch) -
     fake_cli.chmod(0o755)
     monkeypatch.setenv("HUD_HERMES_CLI", str(fake_cli))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
-    sys.modules.pop("hermes_cli", None)
-    sys.modules.pop("hermes_cli.config", None)
+    # sys.modules=None 强制 import 抛 ImportError（真实 hermes_cli 可能在测试 venv 中）
+    monkeypatch.setitem(sys.modules, "hermes_cli", None)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", None)
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     import enable_dashboard_plugin as edp
     monkeypatch.setattr(edp, "_cli", lambda: str(fake_cli))

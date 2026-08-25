@@ -27,6 +27,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 TERM_GRACE_S = 6
 
@@ -134,12 +135,16 @@ _REDACT_PATTERNS = [
 ]
 
 
-def redact_config(path: str, out_path: str | None = None) -> str:
-    text = open(path, encoding="utf-8", errors="replace").read()
+def redact_config(path: str, out_path: str | None = None) -> str | None:
+    """对 config 快照脱敏；文件不存在 → 返回 None（调用方 SKIP，不抛 traceback）。"""
+    p = Path(path)
+    if not p.exists():
+        return None
+    text = p.read_text(encoding="utf-8", errors="replace")
     for pat, repl in _REDACT_PATTERNS:
         text = re.sub(pat, repl, text, flags=re.IGNORECASE)
     if out_path:
-        open(out_path, "w", encoding="utf-8").write(text)
+        Path(out_path).write_text(text, encoding="utf-8")
     return text
 
 
@@ -190,6 +195,9 @@ def main() -> int:
 
     if args.cmd == "redact-config":
         out = redact_config(args.file, args.out)
+        if out is None:
+            print(f"SKIP: config file not present ({args.file})")
+            return 0  # 可控状态，无 traceback
         print(out if not args.out else f"redacted -> {args.out}")
         return 0
 

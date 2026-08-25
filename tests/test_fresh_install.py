@@ -178,3 +178,18 @@ def test_redact_config_writes_out_file(tmp_path) -> None:
     out_file = tmp_path / "redacted.yaml"
     fic.redact_config(str(cfg), str(out_file))
     assert "abcdef123456" not in out_file.read_text(encoding="utf-8")
+
+
+def test_redact_missing_config_skips_without_traceback(tmp_path) -> None:
+    """P1-3：config.yaml 不存在 → SKIP（exit 0），无 FileNotFoundError traceback。"""
+    missing = tmp_path / "no-config.yaml"
+    out = tmp_path / "redacted.yaml"
+    result = fic.redact_config(str(missing), str(out))
+    assert result is None  # 返回 None = SKIP 语义
+    assert not out.exists()  # 不写输出文件
+    # CLI 级验证：exit 0 + SKIP 输出
+    r = subprocess.run([sys.executable, str(Path(fic.__file__)),
+                        "redact-config", str(missing)], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0
+    assert "SKIP" in r.stdout
+    assert "Traceback" not in r.stderr

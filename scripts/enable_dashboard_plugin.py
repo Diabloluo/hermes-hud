@@ -86,21 +86,21 @@ def _get_enabled() -> list[str]:
     if _NOT_SET in stderr:
         return []  # 未设置 = 可靠的空列表（全新用户）
     # CLI get 不存在（Hermes 0.19.x 无 config get）→ 回退官方 loader API
+    # （已实证 0.19.0：load_config() 返回真实 dict 结构）
     if "invalid choice" in stderr:
+        print("WARNING: Hermes <0.20 检测（无 `config get`）——config set 会存字符串，"
+              "HUD 官方支持 >=0.20；读取走官方 loader API 尽力兼容。", file=sys.stderr)
         try:
-            from hermes_cli.config import get_config_value  # type: ignore
-            raw = get_config_value("plugins.enabled", as_json=True)
+            from hermes_cli.config import load_config  # type: ignore
+            cfg = load_config()
         except ImportError:
             _fail("当前 Hermes 版本无 `config get`，且无法导入 hermes_cli.config"
                   "（请用 Hermes 的 python 环境运行本脚本）")
         except Exception as exc:  # noqa: BLE001
             _fail(f"Hermes config loader 读取失败: {exc}")
-        if not raw:
-            return []
-        try:
-            items = json.loads(raw)
-        except (json.JSONDecodeError, TypeError) as exc:
-            _fail(f"Hermes config loader 返回不是有效 JSON（{exc}）: {str(raw)[:120]}")
+        if not isinstance(cfg, dict):
+            _fail(f"Hermes config loader 返回类型异常: {type(cfg).__name__}")
+        items = (cfg.get("plugins") or {}).get("enabled") or []
         if not isinstance(items, list):
             _fail(f"Hermes config loader plugins.enabled 不是数组: {type(items).__name__}")
         return [str(x) for x in items]

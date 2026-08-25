@@ -1,8 +1,9 @@
 name: Fresh Install CI
 
-# 陌生环境首次安装自动验证：clean runner → 安装 Hermes → 安装 HUD →
-# 启用 Dashboard 插件 → 启动 → HTTP smoke → 回归守卫 → 精确清理。
-# 不依赖开发机已有 ~/.hermes 状态；不恢复旧的 hermes plugins enable 路径。
+# 陌生环境首次安装自动验证：clean runner → Python 3.13 → 安装 Hermes
+# （固定 GitHub v2026.8.19 发布来源——Hermes 0.20 系，PyPI 仅到 0.19.0 且
+# 其 config set 存字符串不兼容）→ 安装 HUD → 安全 enable → 启动 → HTTP smoke
+# → 回归守卫 → 精确清理。不依赖开发机状态；不使用裸 pip install hermes-agent。
 
 on:
   pull_request:
@@ -31,23 +32,50 @@ on:
 jobs:
   fresh-install:
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       HERMES_HOME: /tmp/hermes-fresh-home
       HUD_SRC: /tmp/hermes-fresh-home/plugins/hermes-hud
-      CI_PIDS: ''
+      HERMES_SOURCE: 'https://github.com/NousResearch/hermes-agent@v2026.8.19'
     steps:
       - name: Checkout hermes-hud
         uses: actions/checkout@v4
 
-      - name: Install Hermes (public release via PyPI)
+      - name: Setup Python 3.13 (fixed, <3.14)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Verify Python version
         run: |
-          python3 -m venv /tmp/fresh-venv
-          /tmp/fresh-venv/bin/pip install --quiet --upgrade pip
-          /tmp/fresh-venv/bin/pip install --quiet hermes-agent
-          /tmp/fresh-venv/bin/hermes --version
+          python --version
+          pip --version
+          python -c 'import sys; assert sys.version_info < (3, 14), "Python must be <3.14"'
+          echo "PASS: Python 3.13 ready"
+
+      - name: Install Hermes (pinned GitHub v2026.8.19 — 0.20 series)
+        run: |
+          pip install --quiet "git+$HERMES_SOURCE"
+          python - <<'PY'
+          import importlib.metadata
+          ver = importlib.metadata.version("hermes-agent")
+          print("installed hermes-agent:", ver)
+          assert ver.startswith("0.20"), f"expected 0.20.x, got {ver}"
+          PY
+          hermes --version
         env:
           PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+      - name: Diagnostic — Hermes config API capability (truth, not guess)
+        run: |
+          python - <<'PY'
+          import hermes_cli.config as c
+          for name in ("load_config", "save_config", "cfg_get", "get_config_value"):
+              print(name, hasattr(c, name))
+          PY
+          hermes config --help 2>&1 | head -12
+          hermes config --help 2>&1 | tee /tmp/hermes-config-help.txt
 
       - name: Install hermes-hud plugin (public path from INSTALL.md)
         run: |
@@ -57,26 +85,23 @@ jobs:
 
       - name: Capture plugins.enabled baseline
         run: |
-          export PATH="/tmp/fresh-venv/bin:$PATH"
-          hermes config show > /tmp/config-before.yaml 2>&1 || true
-          echo "baseline: $(cat /tmp/config-before.yaml | head -20)"
+          hermes config get --json plugins.enabled \
+            > /tmp/baseline-enabled.json 2>/tmp/baseline-err.txt || true
+          echo "baseline: $(cat /tmp/baseline-enabled.json 2>/dev/null || cat /tmp/baseline-err.txt)"
 
-      - name: Enable dashboard plugin (safe read-merge-write)
+      - name: Enable dashboard plugin (safe read-merge-write, diagnosable)
         run: |
-          export PATH="/tmp/fresh-venv/bin:$PATH"
-          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py enable
+          set -o pipefail
+          python scripts/enable_dashboard_plugin.py enable 2>&1 | tee /tmp/enable.log
           echo "--- enabled after: ---"
-          hermes config show
+          hermes config get --json plugins.enabled
 
-      - name: Config safety — hermes-hud present, no duplicates (idempotent re-enable)
+      - name: Config safety — preserved + added once + idempotent
         run: |
-          export PATH="/tmp/fresh-venv/bin:$PATH"
-          read_enabled() { hermes config show | /tmp/fresh-venv/bin/python3 -c \
-            "import json,sys,yaml; d=yaml.safe_load(sys.stdin) or {}; print(json.dumps(d.get('plugins',{}).get('enabled') or []))"; }
-          BEFORE=$(read_enabled)
-          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py enable
-          AFTER=$(read_enabled)
-          python3 - "$BEFORE" "$AFTER" <<'PY'
+          BEFORE=$(hermes config get --json plugins.enabled)
+          python scripts/enable_dashboard_plugin.py enable
+          AFTER=$(hermes config get --json plugins.enabled)
+          python - "$BEFORE" "$AFTER" <<'PY'
           import json, sys
           before = json.loads(sys.argv[1] or "[]")
           after = json.loads(sys.argv[2] or "[]")
@@ -88,25 +113,24 @@ jobs:
 
       - name: Disable only removes hermes-hud (then re-enable)
         run: |
-          export PATH="/tmp/fresh-venv/bin:$PATH"
-          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py disable
-          hermes config show | /tmp/fresh-venv/bin/python3 - <<'PY'
-          import json, sys, yaml
-          d = yaml.safe_load(sys.stdin) or {}
-          after = d.get('plugins', {}).get('enabled') or []
+          python scripts/enable_dashboard_plugin.py disable
+          python - <<'PY'
+          import json, subprocess
+          out = subprocess.run(["hermes", "config", "get", "--json",
+                                "plugins.enabled"], capture_output=True, text=True)
+          after = json.loads(out.stdout or "[]")
           assert "hermes-hud" not in after, f"disable 未移除: {after}"
           print(f"PASS: disable removed only hermes-hud (remaining: {after})")
           PY
-          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py enable
+          python scripts/enable_dashboard_plugin.py enable
 
       - name: Start dashboard and wait for readiness (polling, no bare sleep)
         run: |
-          export PATH="/tmp/fresh-venv/bin:$PATH"
           hermes dashboard --host 127.0.0.1 --port 9121 \
             --no-open > /tmp/dashboard.log 2>&1 &
           echo $! > /tmp/dashboard.pid
           echo "dashboard PID: $(cat /tmp/dashboard.pid)"
-          python3 scripts/fresh_install_check.py wait-http http://127.0.0.1:9121/ 60 1
+          python scripts/fresh_install_check.py wait-http http://127.0.0.1:9121/ 60 1
 
       - name: HTTP smoke — GET / and snapshot endpoint
         run: |
@@ -115,38 +139,44 @@ jobs:
             | sed 's/.*="//;s/"//')
           curl -sf -H "X-Hermes-Session-Token: $TOKEN" \
             -o /tmp/snapshot.json http://127.0.0.1:9121/api/plugins/hermes-hud/snapshot
-          python3 scripts/fresh_install_check.py check-json /tmp/snapshot.json \
+          python scripts/fresh_install_check.py check-json /tmp/snapshot.json \
             generated_at_iso tz db gateway system
           echo "--- snapshot size: $(wc -c < /tmp/snapshot.json) bytes"
 
       - name: Regression guards — no CST is not defined
         run: |
           cat /tmp/dashboard.log /tmp/snapshot.json > /tmp/cst-check.txt
-          python3 scripts/fresh_install_check.py check-no-cst /tmp/cst-check.txt
+          python scripts/fresh_install_check.py check-no-cst /tmp/cst-check.txt
 
       - name: Clean shutdown (owned PID only)
         if: always()
         run: |
           PID=$(cat /tmp/dashboard.pid 2>/dev/null || echo 0)
-          python3 scripts/fresh_install_check.py cleanup-owned "$PID"
+          python scripts/fresh_install_check.py cleanup-owned "$PID"
           sleep 2
           ps -p "$PID" > /dev/null 2>&1 && { echo "FAIL: orphan dashboard $PID"; exit 1; } \
             || echo "PASS: no orphan dashboard process"
 
-      - name: Upload failure artifacts (redacted)
+      - name: Upload failure artifacts (redacted, diagnosable)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: fresh-install-failure
           path: |
+            /tmp/enable.log
             /tmp/dashboard.log
             /tmp/root.html
             /tmp/snapshot.json
-            /tmp/install-notes.txt
+            /tmp/hermes-config-help.txt
+            /tmp/versions.txt
+            /tmp/config-redacted.yaml
           if-no-files-found: ignore
 
-      - name: Redact config snapshot (never upload secrets)
+      - name: Diagnosable context — versions + API summary (never upload secrets)
         if: failure()
         run: |
-          python3 scripts/fresh_install_check.py redact-config \
-            "$HERMES_HOME/config.yaml" /tmp/config-redacted.yaml || true
+          python --version 2>&1 | tee /tmp/versions.txt
+          hermes --version 2>&1 | tee -a /tmp/versions.txt
+          python -c "import hermes_cli.config as c; print([(n, hasattr(c, n)) for n in ('load_config','save_config','cfg_get','get_config_value')])" 2>&1 | tee -a /tmp/versions.txt
+          python scripts/fresh_install_check.py redact-config \
+            "$HERMES_HOME/config.yaml" /tmp/config-redacted.yaml
