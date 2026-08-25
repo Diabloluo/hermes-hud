@@ -73,3 +73,4 @@
 - telemetry.db 分钟级时序（独立于 state.db，只读 Hermes 核心数据）。
 - 健康规则引擎 + 事故生命周期（active → recovered 保留时间线）。
 - 只读安全边界：不读取 .env / auth.json、无 outbound 遥测、日志先脱敏。
+PR source-test verify (workflow SHA assertion check)
