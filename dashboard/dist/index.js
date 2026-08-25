@@ -1019,6 +1019,7 @@
     { id: "live", label: "实时活动", icon: "⚡" },
     { id: "usage", label: "Token·费用", icon: "¥" },
     { id: "sessions", label: "对话记录", icon: "☰" },
+    { id: "timeline", label: "时间线", icon: "🕒" },
     { id: "memory", label: "记忆", icon: "🧠" },
     { id: "skills", label: "技能", icon: "⚒" },
     { id: "cron", label: "定时任务", icon: "⏱" },
@@ -1027,6 +1028,183 @@
     { id: "system", label: "系统·存储", icon: "▤" },
     { id: "settings", label: "设置", icon: "⚙" },
   ];
+
+  // -------------------------------------------------------------------------
+  // Timeline（Agent Timeline v1）
+  // -------------------------------------------------------------------------
+
+  const TIMELINE_TYPES = [
+    { id: "all", label: "All" },
+    { id: "session.", label: "Sessions" },
+    { id: "skill.", label: "Skills" },
+    { id: "tool.", label: "Tools" },
+    { id: "incident.", label: "Errors" },
+  ];
+
+  const TIMELINE_STATUS = [
+    { id: "all", label: "全部状态" },
+    { id: "success", label: "成功" },
+    { id: "failed", label: "失败" },
+  ];
+
+  function tlTypeLabel(t) {
+    return (t || "").split(".")[0] || "";
+  }
+
+  function tlTime(ts) {
+    if (!ts) return "--:--:--";
+    const d = new Date(ts * 1000);
+    return d.toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit",
+      second: "2-digit", hour12: false });
+  }
+
+  function tlFmt(tokens, cost, dur) {
+    const parts = [];
+    if (dur !== null && dur !== undefined) parts.push((dur / 1000).toFixed(1) + "s");
+    if (tokens !== null && tokens !== undefined) parts.push(tokens.toLocaleString() + " tokens");
+    if (cost !== null && cost !== undefined) parts.push("$" + cost.toFixed(4));
+    return parts.length ? parts.join(" · ") : "—";
+  }
+
+  function TimelineTab() {
+    const [type, setType] = useState("all");
+    const [status, setStatus] = useState("all");
+    const [sessionId, setSessionId] = useState("");
+    const [events, setEvents] = useState([]);
+    const [hasMore, setHasMore] = useState(false);
+    const [expanded, setExpanded] = useState(null);
+    const [newCount, setNewCount] = useState(0);
+    const [loadErr, setLoadErr] = useState(null);
+    const listRef = useRef(null);
+
+    function buildUrl(extra) {
+      const p = new URLSearchParams({ limit: "100" });
+      if (type !== "all") p.set("event_type", type);
+      if (status !== "all") p.set("status", status);
+      if (sessionId.trim()) p.set("session_id", sessionId.trim());
+      if (extra) Object.keys(extra).forEach(function (k) { p.set(k, extra[k]); });
+      return API + "/timeline?" + p.toString();
+    }
+
+    // 轮询（5s；事件进入后 prepend；用户停留在历史位置时不强制跳顶）
+    const { data, error } = usePoll(buildUrl(), 5000);
+    useEffect(function () {
+      if (!data || !data.events) return;
+      setLoadErr(null);
+      setEvents(function (prev) {
+        if (!prev.length) return data.events;
+        const seen = {};
+        prev.forEach(function (e) { seen[e.event_id] = 1; });
+        const fresh = [];
+        data.events.forEach(function (e) {
+          if (!seen[e.event_id]) { seen[e.event_id] = 1; fresh.push(e); }
+        });
+        if (fresh.length) {
+          const atTop = listRef.current && listRef.current.scrollTop < 30;
+          if (atTop) {
+            setNewCount(0);
+            return fresh.concat(prev).slice(0, 300);
+          }
+          setNewCount(function (n) { return n + fresh.length; });
+        }
+        return prev;
+      });
+      setHasMore(!!data.has_more);
+    }, [data]);
+    useEffect(function () { if (error) setLoadErr(String(error)); }, [error]);
+
+    function loadMore() {
+      const last = events[events.length - 1];
+      if (!last) return;
+      SDK.fetchJSON(buildUrl({ before: String(last.timestamp), before_id: last.event_id }))
+        .then(function (d) {
+          const seen = {};
+          events.forEach(function (e) { seen[e.event_id] = 1; });
+          const more = (d.events || []).filter(function (e) { return !seen[e.event_id]; });
+          setEvents(events.concat(more));
+          setHasMore(!!d.has_more);
+        })
+        .catch(function (e) { setLoadErr(String(e && e.message ? e.message : e)); });
+    }
+
+    function showNew() {
+      setNewCount(0);
+      SDK.fetchJSON(buildUrl()).then(function (d) {
+        if (d && d.events) setEvents(d.events);
+      }).catch(function () {});
+    }
+
+    const filters = h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap",
+      alignItems: "center", marginBottom: 10 } },
+      TIMELINE_TYPES.map(function (t) {
+        return h("button", {
+          key: t.id, className: "hud-tab" + (type === t.id ? " active" : ""),
+          style: { padding: "4px 10px", fontSize: 12 },
+          onClick: function () { setType(t.id); setNewCount(0); },
+        }, t.label);
+      }),
+      h("select", {
+        value: status, style: { fontSize: 12, padding: "3px 6px" },
+        onChange: function (e) { setStatus(e.target.value); setNewCount(0); },
+      }, TIMELINE_STATUS.map(function (s) {
+        return h("option", { key: s.id, value: s.id }, s.label);
+      })),
+      h("input", {
+        placeholder: "session id…", value: sessionId, style: { fontSize: 12, padding: "3px 6px", width: 180 },
+        onChange: function (e) { setSessionId(e.target.value); setNewCount(0); },
+      }),
+      newCount > 0 && h("button", {
+        style: { fontSize: 12, padding: "4px 10px", fontWeight: 600 },
+        onClick: showNew,
+      }, "↓ " + newCount + " 条新事件"));
+
+    const rows = events.map(function (e, idx) {
+      const ok = e.status !== "failed";
+      const isInc = (e.event_type || "").indexOf("incident.") === 0;
+      const title = e.summary || (e.event_type || "");
+      const open = expanded === e.event_id;
+      const line = h("div", {
+        key: e.event_id,
+        className: "hud-tl-row",
+        style: { display: "flex", gap: 10, alignItems: "baseline", padding: "6px 4px",
+          borderBottom: "1px solid var(--border)", cursor: "pointer", fontSize: 13 },
+        onClick: function () { setExpanded(open ? null : e.event_id); },
+      },
+        h("span", { style: { fontFamily: "monospace", fontSize: 12, opacity: 0.7, width: 74, flexShrink: 0 } }, tlTime(e.timestamp)),
+        h("span", { style: { width: 16, flexShrink: 0 } }, isInc ? (ok ? "⚠" : "✕") : (ok ? "✓" : "✕")),
+        h("span", { style: { color: ok ? "var(--foreground)" : "#e5534b", width: 120, flexShrink: 0 } }, e.event_type || "—"),
+        h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, title),
+        h("span", { style: { fontFamily: "monospace", fontSize: 12, opacity: 0.75, flexShrink: 0 } }, tlFmt(e.tokens, e.cost_usd, e.duration_ms)));
+
+      const detail = open ? h("div", { key: e.event_id + "-d", style: { padding: "8px 14px 10px", fontSize: 12, background: "var(--card)", borderBottom: "1px solid var(--border)" } },
+        kv("时间", fmtTime(e.timestamp)),
+        kv("类型", e.event_type || "—"),
+        kv("状态", statusZh(e.status) || e.status || "—"),
+        kv("Session", e.session_id || "—"),
+        kv("Skill", e.skill || "—"),
+        kv("Tool", e.tool || "—"),
+        kv("时长", e.duration_ms !== null && e.duration_ms !== undefined ? (e.duration_ms / 1000).toFixed(1) + "s" : "—"),
+        kv("Tokens", e.tokens !== null && e.tokens !== undefined ? e.tokens.toLocaleString() : "—"),
+        kv("费用", e.cost_usd !== null && e.cost_usd !== undefined ? "$" + e.cost_usd.toFixed(4) : "—"),
+        kv("关联", e.correlation_id || "—"),
+        kv("来源", e.source || "—"),
+        kv("Incident", e.incident_id || "—")) : null;
+      return [line, detail];
+    });
+
+    return card("Agent Timeline — 做了什么？",
+      h("div", { ref: listRef, style: { maxHeight: "62vh", overflowY: "auto" } },
+        filters,
+        loadErr && h("div", { style: { fontSize: 12, color: "#e5534b", padding: 6 } }, "加载失败: " + loadErr),
+        events.length === 0
+          ? empty("暂无事件（全新安装的正常状态；有新活动后自动出现）")
+          : rows,
+        hasMore && h("div", { style: { textAlign: "center", padding: 8 } },
+          h("button", { style: { fontSize: 12, padding: "4px 12px" }, onClick: loadMore }, "加载更多")),
+        newCount > 0 && h("div", { style: { textAlign: "center", padding: 8 } },
+          h("button", { style: { fontSize: 12, padding: "4px 12px" }, onClick: showNew },
+            newCount + " 条新事件（点击载入）"))));
+  }
 
   function HudApp() {
     const [tab, setTab] = useState("overview");
@@ -1137,6 +1315,7 @@
       tab === "live" ? h(Live, { snap: snap, events: events, wsState: wsState }) :
       tab === "usage" ? h(Usage, null) :
       tab === "sessions" ? h(SessionsTab, null) :
+      tab === "timeline" ? h(TimelineTab, null) :
       tab === "memory" ? h(MemoryTab, { snap: snap }) :
       tab === "skills" ? h(SkillsTab, null) :
       tab === "cron" ? h(CronTab, { snap: snap }) :

@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -200,6 +201,40 @@ async def _get_snapshot() -> dict:
 async def get_snapshot() -> dict:
     """全量快照（约 2 秒刷新频率由前端控制，共享缓存 + 单飞）。"""
     return await _get_snapshot()
+
+
+@router.get("/timeline")
+async def get_timeline(limit: int = 100, before: int | None = None,
+                       before_id: str | None = None, after: int | None = None,
+                       session_id: str | None = None,
+                       event_type: str | None = None, status: str | None = None,
+                       skill: str | None = None) -> dict:
+    """Agent Timeline v1：分页查询（limit ≤ 100，limit+1 判断 has_more）。
+
+    cursor = (before, before_id)——同 timestamp 下以 event_id 精确续页不重不漏。
+    先触发增量采集（幂等），再查询——新事件进入后前端可直接 prepend。
+    """
+    limit = max(1, min(limit, 100))
+    try:
+        from hud import timeline
+        home = Path(collectors.HERMES_HOME)
+        timeline.collect_timeline(home, store)
+    except Exception as exc:  # noqa: BLE001 采集失败不阻断查询（empty/partial 安全）
+        print(f"HUD timeline collect failed: {exc}", file=sys.stderr)
+    rows = store.query_timeline(
+        limit=limit + 1, before=before, before_id=before_id, after=after,
+        session_id=session_id, event_type=event_type, status=status, skill=skill)
+    has_more = len(rows) > limit
+    return {"events": rows[:limit], "has_more": has_more, "limit": limit}
+
+
+@router.get("/timeline/stats")
+async def get_timeline_stats() -> dict:
+    """Timeline 汇总（总量 + 类型分布）。"""
+    try:
+        return store.timeline_stats()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
 
 
 @router.get("/health")

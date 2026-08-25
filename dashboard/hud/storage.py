@@ -51,6 +51,30 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS timeline_events (
+    event_id TEXT PRIMARY KEY,       -- deterministic（source+source_record_id+type+ts）
+    ts INTEGER NOT NULL,             -- epoch seconds（事件时间）
+    event_type TEXT NOT NULL,        -- session.* / skill.* / tool.* / incident.*
+    status TEXT NOT NULL DEFAULT 'success',
+    session_id TEXT,
+    skill TEXT,
+    tool TEXT,
+    tool_call_id TEXT,
+    duration_ms INTEGER,
+    tokens INTEGER,
+    cost_usd REAL,
+    incident_id TEXT,
+    summary TEXT NOT NULL,           -- 已脱敏短元数据
+    source TEXT NOT NULL,            -- hermes / job-ledger / hud
+    correlation_id TEXT,
+    source_record_id TEXT NOT NULL   -- 源记录唯一键（幂等依据）
+);
+CREATE INDEX IF NOT EXISTS idx_timeline_ts ON timeline_events(ts);
+CREATE INDEX IF NOT EXISTS idx_timeline_session ON timeline_events(session_id, ts);
+CREATE INDEX IF NOT EXISTS idx_timeline_type ON timeline_events(event_type, ts);
+CREATE INDEX IF NOT EXISTS idx_timeline_status ON timeline_events(status, ts);
+CREATE INDEX IF NOT EXISTS idx_timeline_skill ON timeline_events(skill, ts);
 """
 
 # 平滑迁移：v1.0.0 已存在的 telemetry.db 缺 observations/state_changes 列
@@ -61,6 +85,7 @@ _MIGRATIONS = [
 
 METRIC_RETENTION_DAYS = 30
 INCIDENT_RETENTION_DAYS = 90
+TIMELINE_RETENTION_DAYS = 30
 MAINTENANCE_INTERVAL_S = 24 * 3600  # 每天最多一次
 
 
@@ -235,6 +260,88 @@ class TelemetryStore:
 
     # -- 维护 --------------------------------------------------------------
 
+    def record_timeline_event(self, event: dict) -> bool:
+        """幂等写入 timeline 事件（event_id 为主键，INSERT OR IGNORE）。
+
+        返回 True=新写入，False=重复（已存在）。
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO timeline_events (event_id, ts, event_type, status,"
+                " session_id, skill, tool, tool_call_id, duration_ms, tokens, cost_usd,"
+                " incident_id, summary, source, correlation_id, source_record_id)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (event.get("event_id"), event.get("timestamp"), event.get("event_type"),
+                 event.get("status", "success"), event.get("session_id"),
+                 event.get("skill"), event.get("tool"), event.get("tool_call_id"),
+                 event.get("duration_ms"), event.get("tokens"), event.get("cost_usd"),
+                 event.get("incident_id"), event.get("summary", ""),
+                 event.get("source", "hermes"), event.get("correlation_id"),
+                 event.get("source_record_id")))
+            return cur.rowcount > 0
+
+    def query_timeline(self, limit: int = 100, before: Optional[int] = None,
+                       before_id: Optional[str] = None, after: Optional[int] = None,
+                       session_id: Optional[str] = None, event_type: Optional[str] = None,
+                       status: Optional[str] = None, skill: Optional[str] = None) -> list[dict]:
+        """分页查询 timeline（组合过滤，按 ts DESC, event_id DESC 稳定排序）。
+
+        cursor = (before, before_id)：同 timestamp 下以 event_id 精确续页，
+        不重不漏；limit+1 由调用方判断 has_more。
+        """
+        where, params = [], []
+        if before is not None:
+            if before_id:
+                # (ts, event_id) 字典序游标
+                where.append("(ts < ? OR (ts = ? AND event_id < ?))")
+                params += [before, before, before_id]
+            else:
+                where.append("ts < ?")
+                params.append(before)
+        if after is not None:
+            where.append("ts > ?")
+            params.append(after)
+        if session_id:
+            where.append("session_id = ?")
+            params.append(session_id)
+        if event_type:
+            if event_type.endswith("."):
+                # 前缀分组（如 "tool." → tool.called/completed/failed）
+                where.append("event_type LIKE ?")
+                params.append(event_type.replace("%", "") + "%")
+            else:
+                where.append("event_type = ?")
+                params.append(event_type)
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        if skill:
+            where.append("skill = ?")
+            params.append(skill)
+        sql = "SELECT event_id, ts, event_type, status, session_id, skill, tool," \
+              " tool_call_id, duration_ms, tokens, cost_usd, incident_id, summary," \
+              " source, correlation_id FROM timeline_events"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY ts DESC, event_id DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        cols = ["event_id", "timestamp", "event_type", "status", "session_id", "skill",
+                "tool", "tool_call_id", "duration_ms", "tokens", "cost_usd",
+                "incident_id", "summary", "source", "correlation_id"]
+        return [dict(zip(cols, r)) for r in rows]
+
+    def timeline_stats(self) -> dict:
+        """Timeline 汇总（总量 + 类型分布 + 最近事件时间）。"""
+        with self._connect() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM timeline_events").fetchone()[0]
+            by_type = dict(conn.execute(
+                "SELECT event_type, COUNT(*) FROM timeline_events GROUP BY event_type").fetchall())
+            last_ts = conn.execute(
+                "SELECT MAX(ts) FROM timeline_events").fetchone()[0]
+        return {"total": total, "by_type": by_type, "last_ts": last_ts}
+
     def maintenance(self) -> dict:
         """低频维护：每天最多一次执行 prune。
 
@@ -264,16 +371,19 @@ class TelemetryStore:
             return {"error": str(exc)}
 
     def prune(self) -> dict:
-        """按保留期清理，返回清理统计。"""
+        """按保留期清理，返回清理统计（metrics 30 天 / incidents 90 天 / timeline 30 天）。"""
         now = int(time.time())
         cut_metric = now - METRIC_RETENTION_DAYS * 86400
         cut_incident = now - INCIDENT_RETENTION_DAYS * 86400
+        cut_timeline = now - TIMELINE_RETENTION_DAYS * 86400
         try:
             with self._connect() as conn:
                 m = conn.execute("DELETE FROM metrics WHERE ts<?", (cut_metric,)).rowcount
                 i = conn.execute("DELETE FROM incidents WHERE last_seen<? AND status='recovered'",
                                  (cut_incident,)).rowcount
-            return {"metrics_deleted": m, "recovered_incidents_deleted": i}
+                t = conn.execute("DELETE FROM timeline_events WHERE ts<?", (cut_timeline,)).rowcount
+            return {"metrics_deleted": m, "recovered_incidents_deleted": i,
+                    "timeline_deleted": t}
         except Exception as exc:
             log.debug("HUD prune failed: %s", exc)
             return {}
