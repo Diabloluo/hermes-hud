@@ -248,33 +248,49 @@ def parse_frontmatter(text: str) -> tuple[dict | None, str | None]:
         return None, "frontmatter 顶层不是映射"
     except Exception:
         pass  # 回退到最小解析器
+    return _parse_fm_simple(fm_text)
+
+
+def _parse_fm_simple(fm_text: str) -> tuple[dict | None, str | None]:
+    """最小 YAML 解析器（无 PyYAML 环境）：支持 2 空格缩进嵌套 dict 与块标量。"""
     try:
         data: dict = {}
         lines = fm_text.splitlines()
+        stack: list[tuple[int, dict]] = [(-1, data)]  # (缩进, 所属 dict)；-1 哨兵永不被 pop
         i = 0
         while i < len(lines):
             line = lines[i]
             if not line.strip() or line.strip().startswith("#"):
                 i += 1
                 continue
-            m = re.match(r"^([A-Za-z0-9_.-]+):\s*(.*)$", line)
+            indent = len(line) - len(line.lstrip())
+            m = re.match(r"^([A-Za-z0-9_.-]+):\s*(.*)$", line.strip())
             if not m:
                 return None, f"frontmatter 行无法解析: {line[:40]}"
             key, val = m.group(1), m.group(2).strip()
+            while stack and indent <= stack[-1][0]:
+                stack.pop()
+            if not stack:
+                return None, f"缩进异常: {line[:40]}"
+            cur = stack[-1][1]
             if val in ("|", ">"):
-                # 多行块标量：收集后续缩进行
                 block = []
                 i += 1
                 while i < len(lines) and (lines[i].startswith(" ") or lines[i].startswith("\t")):
                     block.append(lines[i].strip())
                     i += 1
-                data[key] = "\n".join(block)
+                cur[key] = "\n".join(block)
                 continue
             if val.startswith('"') and val.endswith('"'):
                 val = val[1:-1]
             elif val.startswith("'") and val.endswith("'"):
                 val = val[1:-1]
-            data[key] = val
+            if not val:
+                child: dict = {}
+                cur[key] = child
+                stack.append((indent, child))
+            else:
+                cur[key] = val
             i += 1
         return data, None
     except Exception as exc:  # noqa: BLE001

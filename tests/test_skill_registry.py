@@ -115,6 +115,20 @@ def test_duplicate_key_does_not_crash(fake_root) -> None:
     assert rec["key"] == "dup-key"
 
 
+def test_frontmatter_fallback_parser_nested(tmp_path, monkeypatch) -> None:
+    """无 PyYAML 环境：最小解析器必须支持缩进嵌套（CI 无 PyYAML 的回归）。"""
+    # 强制走 fallback：import yaml 失败
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    fm_text = "name: x\nnested:\n  client_secret: abcdef123456\n"
+    data, err = sr._parse_fm_simple(fm_text)
+    assert err is None
+    assert data["nested"]["client_secret"] == "abcdef123456"
+    # 块标量
+    data2, err2 = sr._parse_fm_simple("description: |\n  line1\n  line2\n")
+    assert err2 is None
+    assert data2["description"] == "line1\nline2"
+
+
 # ---------- 8. malformed frontmatter ----------
 
 def test_malformed_frontmatter(fake_root) -> None:
