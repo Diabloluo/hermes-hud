@@ -20,12 +20,13 @@ A **user-level Hermes Dashboard plugin**: it does not modify the `~/.hermes/herm
 
 ```bash
 git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
-hermes plugins enable hermes-hud
+python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # Open http://127.0.0.1:9119 → "Hermes HUD" in the sidebar
 ```
 
-> The repo ships prebuilt frontend assets — no need to rebuild the Hermes web UI. Full install/uninstall: see [📦 Installation](#-installation).
+> Prebuilt frontend ships in the repo — no web UI rebuild needed.
+> Full install/uninstall/troubleshooting: **[INSTALL.md](INSTALL.md)** · First-run guide: **[FIRST_5_MINUTES.md](FIRST_5_MINUTES.md)** · Enabling Discussions (maintainers): **[DISCUSSIONS_GUIDE.md](DISCUSSIONS_GUIDE.md)**.
 
 ## 🎬 Demo (19.5s · sanitized demo data)
 

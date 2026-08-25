@@ -20,12 +20,13 @@
 
 ```bash
 git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
-hermes plugins enable hermes-hud
+python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # 打开 http://127.0.0.1:9119 → 侧边栏 "Hermes HUD"
 ```
 
-> 仓库自带预构建前端，无需重新构建 Hermes Web UI。详细安装/卸载见 [📦 安装](#-安装)。
+> 仓库自带预构建前端，无需重新构建 Hermes Web UI。
+> 完整安装/卸载/故障排查见 **[📦 INSTALL.md](INSTALL.md)**；首次上手见 **[⏱ FIRST_5_MINUTES.md](FIRST_5_MINUTES.md)**。
 
 ## 🎬 演示（19.5 秒 · 脱敏演示数据）
 
@@ -178,7 +179,7 @@ Hermes 现有数据源（只读）
 - **Issues**：[Bug 报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=bug_report.yml) / [兼容性报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=compatibility_report.yml)
 - **Contributing**：[CONTRIBUTING.md](CONTRIBUTING.md) —— 开发环境、测试、PR 流程与安全边界
 - **Maintainers**: 可选启用 GitHub 社区事件通知（Star/Issue/Fork → Telegram），见 `.github/workflows/community-telegram.yml`
-- **Discussions**：仓库暂未启用 Discussions；建议分类：General / Installation Help / Compatibility / Ideas / Show and Tell（启用后可用）
+- **Discussions**：仓库暂未启用 Discussions；开启指引与分类建议见 [DISCUSSIONS_GUIDE.md](DISCUSSIONS_GUIDE.md)（General / Installation Help / Compatibility / Ideas / Show and Tell）
 
 ## 📄 License
 
