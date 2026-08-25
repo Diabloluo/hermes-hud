@@ -177,9 +177,10 @@ Hermes 现有数据源（只读）
 ## 🤝 社区
 
 - **Issues**：[Bug 报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=bug_report.yml) / [兼容性报告](https://github.com/Diabloluo/hermes-hud/issues/new?template=compatibility_report.yml)
+- **Discussions**：[打开 Discussions](https://github.com/Diabloluo/hermes-hud/discussions)（需在仓库 Settings → Features 勾选启用；分类建议见 [DISCUSSIONS_GUIDE.md](DISCUSSIONS_GUIDE.md)）—— 公告 / 提问 / 创意 / Show and tell
+- **Roadmap**：[ROADMAP.md](ROADMAP.md)
 - **Contributing**：[CONTRIBUTING.md](CONTRIBUTING.md) —— 开发环境、测试、PR 流程与安全边界
 - **Maintainers**: 可选启用 GitHub 社区事件通知（Star/Issue/Fork → Telegram），见 `.github/workflows/community-telegram.yml`
-- **Discussions**：仓库暂未启用 Discussions；开启指引与分类建议见 [DISCUSSIONS_GUIDE.md](DISCUSSIONS_GUIDE.md)（General / Installation Help / Compatibility / Ideas / Show and Tell）
 
 ## 📄 License
 
