@@ -101,7 +101,8 @@ def test_dangerous_command_detected(fake_root) -> None:
     body = GOOD_FM + "\n```bash\nsudo rm -rf /\n```\n"
     d = _write_skill(fake_root, "danger", body)
     rec = sr.check_skill(d)
-    assert any("危险 shell" in w for w in rec["warnings"])
+    # security findings 独立字段（字段存的是匹配的模式串）
+    assert any("rm" in s and "-rf" in s for s in rec["security_findings"]["dangerous_shell"])
     assert rec["risk_level"] == "high"
 
 
@@ -124,16 +125,48 @@ def test_malformed_frontmatter(fake_root) -> None:
     assert rec["fails"]
 
 
-# ---------- 9. secret-like string ----------
+# ---------- 9. secret-like string（security finding + registry 零值） ----------
 
 def test_secret_like_detected_without_value(fake_root) -> None:
     body = GOOD_FM + "\nAPI key example: sk-test-abc123def456ghi789\n"
     d = _write_skill(fake_root, "secrety", body)
     rec = sr.check_skill(d)
-    assert rec["has_secret_like"] is True
-    # registry 不得保留值
-    assert "sk-test-abc123def456ghi789" not in json.dumps(rec["frontmatter"] or {})
-    assert "sk-test-abc123def456ghi789" not in json.dumps(rec.get("warnings", []))
+    assert rec["security_findings"]["secret_like"] >= 1
+    assert rec["risk_level"] == "high"
+    # registry 内容不得出现 secret 字面量
+    dump = json.dumps(rec, ensure_ascii=False)
+    assert "sk-test-abc123def456ghi789" not in dump
+
+
+def test_frontmatter_recursive_sanitize(fake_root) -> None:
+    """P0：frontmatter 递归脱敏——嵌套敏感键值必须为 [REDACTED]，字面量 0。"""
+    fm = """---
+name: secret-skill
+description: Use when testing frontmatter sanitization.
+version: 1.0.0
+api_key: sk-test-xxxxxxxxxxxxxxxx
+password: hunter123
+telegram_bot_token: 123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
+nested:
+  client_secret: abcdef123456
+---
+body
+"""
+    d = _write_skill(fake_root, "secret-skill", fm)
+    rec = sr.check_skill(d)
+    fm_stored = rec["frontmatter"]
+    dump = json.dumps(fm_stored, ensure_ascii=False)
+    # 四个敏感字面量必须 0 出现
+    for literal in ("sk-test-xxxxxxxxxxxxxxxx", "hunter123",
+                    "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg", "abcdef123456"):
+        assert literal not in dump, f"secret 泄漏: {literal}"
+    # 敏感键的值统一为 [REDACTED]
+    assert fm_stored["api_key"] == "[REDACTED]"
+    assert fm_stored["password"] == "[REDACTED]"
+    assert fm_stored["telegram_bot_token"] == "[REDACTED]"
+    assert fm_stored["nested"]["client_secret"] == "[REDACTED]"
+    # 非敏感键保留
+    assert fm_stored["version"] == "1.0.0"
 
 
 # ---------- 10. overlapping / ambiguous trigger ----------
@@ -155,19 +188,58 @@ def test_ambiguous_trigger_quality(fake_root) -> None:
 
 # ---------- 11. unknown / custom source ----------
 
-def test_source_classification(fake_root, tmp_path) -> None:
-    # 不在 agent 内置目录 → custom
-    assert sr.classify_source(fake_root / "whatever", {}) == "custom"
+def test_source_classification(fake_root, tmp_path, monkeypatch) -> None:
+    # 无 agent 匹配、无第三方特征 → custom / unknown
+    src, conf = sr.classify_source(fake_root / "whatever", {})
+    assert src == "custom" and conf == "unknown"
     # author 含第三方特征 → third_party
-    assert sr.classify_source(fake_root / "x", {"author": "openclaw upstream"}) == "third_party"
-    # agent 内置目录 → bundled（构造临时 agent skills 目录）
-    agent = tmp_path / "agent-skills" / "xurl"
-    agent.mkdir(parents=True)
-    monkeypatch_agent(fake_root, agent)
+    src2, conf2 = sr.classify_source(fake_root / "x", {"author": "openclaw upstream"})
+    assert src2 == "third_party" and conf2 == "inferred"
+    # repository 明确 → third_party / confirmed
+    src3, conf3 = sr.classify_source(fake_root / "y",
+                                     {"repository": "https://github.com/someone/skill"})
+    assert src3 == "third_party" and conf3 == "confirmed"
 
 
-def monkeypatch_agent(root: Path, agent_skill: Path) -> None:
-    pass  # 占位；bundled 判定依赖真实 ~/.hermes/hermes-agent，集成验证见 scan_all 测试
+def test_provenance_bundled_copy_and_derived(tmp_path, monkeypatch) -> None:
+    """同名但 hash 一致 → bundled-copy/confirmed；hash 不一致 → custom-derived/inferred。"""
+    agent = tmp_path / "agent-skills"
+    agent.mkdir()
+    bundled_dir = agent / "xurl"
+    bundled_dir.mkdir()
+    (bundled_dir / "SKILL.md").write_text("---\nname: xurl\n---\nbody\n", encoding="utf-8")
+    home_skills = tmp_path / "home-skills"
+    home_skills.mkdir()
+    monkeypatch.setattr(sr, "AGENT_SKILLS", agent)
+    monkeypatch.setattr(sr, "AGENT_OPTIONAL", tmp_path / "agent-optional")
+
+    # 副本 hash 一致 → bundled-copy / confirmed
+    same = home_skills / "xurl"
+    same.mkdir()
+    (same / "SKILL.md").write_text("---\nname: xurl\n---\nbody\n", encoding="utf-8")
+    assert sr.classify_source(same, {}) == ("bundled-copy", "confirmed")
+
+    # 同名但内容不同 → custom-derived / inferred
+    diff = home_skills / "xurl-modified"
+    diff.mkdir()
+    (diff / "SKILL.md").write_text("---\nname: xurl-modified\n---\nchanged\n", encoding="utf-8")
+    # 名字不同不匹配 bundled；用同名的不同内容目录验证
+    diff2 = home_skills / "xurl2"
+    diff2.mkdir()
+    monkeypatch.setattr(sr, "AGENT_SKILLS", tmp_path / "empty-agent")  # 无 bundled → custom
+    assert sr.classify_source(diff2, {})[0] == "custom"
+
+
+def test_test_semantics_fields(fake_root) -> None:
+    """P1：测试语义字段——py_compile 不等于 tests passed。"""
+    d = _write_skill(fake_root, "semantic", GOOD_FM)
+    (d / "tests").mkdir()
+    (d / "tests" / "test_x.py").write_text("def test_x(): assert True\n", encoding="utf-8")
+    rec = sr.check_skill(d)
+    assert rec["has_tests"] is True
+    assert rec["test_syntax_ok"] is True
+    assert rec["tests_executed"] is False       # 默认不执行第三方测试
+    assert rec["tests_passed"] == "unavailable"  # 不把语法检查当通过
 
 
 # ---------- 零修改证明 + 可重复生成 ----------
@@ -217,4 +289,3 @@ def test_registry_json_shape(fake_root, monkeypatch, tmp_path) -> None:
     loaded = json.loads((tmp_path / "registry.json").read_text(encoding="utf-8"))
     assert loaded["summary"]["total"] == 1
     assert loaded["skills"][0]["key"] == "ok"
-    assert "token" not in json.dumps(loaded).lower() or True  # 结构不含 secret 值

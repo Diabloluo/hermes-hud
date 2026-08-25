@@ -34,34 +34,81 @@ AGENT_OPTIONAL = HOME / ".hermes" / "hermes-agent" / "optional-skills"
 REGISTRY_DIR = HOME / ".hermes" / "skill-registry"
 REGISTRY_PATH = REGISTRY_DIR / "registry.json"
 
-# ---------- 来源判定（基于路径/元数据，不猜名称） ----------
+# ---------- 来源判定（基于路径/元数据/hash，不猜名称） ----------
 
-def classify_source(skill_dir: Path, frontmatter: dict) -> str:
-    """official/bundled/custom/third_party/unknown。
+def _bundled_locations(name: str) -> list[Path]:
+    """在 hermes-agent 内置/可选目录中查找同名 skill 目录。"""
+    found = []
+    for base in (AGENT_SKILLS, AGENT_OPTIONAL):
+        if not base.is_dir():
+            continue
+        for md in base.rglob("SKILL.md"):
+            if md.parent.name == name:
+                found.append(md.parent)
+    return found
 
-    判定链（按事实依据）：
-      1. hermes-agent/skills 下存在同名 → bundled（官方内置）
-      2. hermes-agent/optional-skills 下存在 → bundled（官方可选）
-      3. frontmatter author 含第三方来源特征 → third_party
-      4. 其余 home 内 skill → custom
+
+def classify_source(skill_dir: Path, frontmatter: dict) -> tuple[str, str]:
+    """返回 (source, confidence)。
+
+    规则：
+      - 实际路径就在 agent 内置/可选目录内       → bundled / confirmed
+      - home 副本与 bundled 内容 hash 完全一致   → bundled-copy / confirmed
+      - 同名但 hash 不一致                       → custom-derived / inferred
+      - author/source 明确第三方                 → third_party / inferred|confirmed
+      - 无可靠证据                               → custom / unknown
     """
-    rel = skill_dir.relative_to(SKILLS_ROOT) if SKILLS_ROOT in skill_dir.parents else None
-    if rel is not None:
-        # 去掉分类层，找 skill 名
-        name = rel.parts[-1]
-        cat = rel.parts[0] if len(rel.parts) > 1 else ""
-        if (AGENT_SKILLS / name).is_dir() or (AGENT_SKILLS / cat / name).is_dir():
-            return "bundled"
-        if (AGENT_OPTIONAL / name).is_dir() or (AGENT_OPTIONAL / cat / name).is_dir():
-            return "bundled"
+    name = skill_dir.name
+    # 1) 实际路径在 agent 目录内
+    in_agent = False
+    for base in (AGENT_SKILLS, AGENT_OPTIONAL):
+        if base.is_dir() and base in skill_dir.parents:
+            in_agent = True
+            break
+    if in_agent:
+        return "bundled", "confirmed"
+
+    # 2/3) home 副本 vs bundled 同名目录 hash 比较
+    bundled = _bundled_locations(name)
+    if bundled:
+        try:
+            home_hash = (skill_dir / "SKILL.md").read_bytes()
+            same = any((b / "SKILL.md").read_bytes() == home_hash for b in bundled)
+        except OSError:
+            same = False
+        if same:
+            return "bundled-copy", "confirmed"
+        return "custom-derived", "inferred"
+
+    # 4) 明确第三方来源（author/source/repository 字段）
     author = str(frontmatter.get("author", "") or "")
-    # 第三方特征：author 含非用户/非 Nous 的多方署名或明确上游仓库
+    source_field = str(frontmatter.get("source", "") or "")
+    repo = str(frontmatter.get("repository", "") or "")
     third_party_hints = ("openclaw", "xdevplatform", "github.com/", "upstream",
                          "third-party", "community")
-    if any(h in author.lower() for h in third_party_hints):
-        return "third_party"
-    # 其余（含 home 内无作者署名）→ 本地自建
-    return "custom"
+    if any(h in (author + source_field + repo).lower() for h in third_party_hints):
+        conf = "confirmed" if repo else "inferred"
+        return "third_party", conf
+
+    # 5) 无可靠证据
+    return "custom", "unknown"
+
+
+# ---------- 递归脱敏（registry 只存布尔/结构，绝不存 credential 值） ----------
+
+_SENSITIVE_KEY_RE = re.compile(
+    r"(token|secret|password|passwd|api[_-]?key|apikey|authorization|cookie|"
+    r"credential|private[_-]?key|client[_-]?secret)", re.IGNORECASE)
+
+
+def sanitize_value(v):
+    """递归脱敏：敏感键的值统一替换为 [REDACTED]。"""
+    if isinstance(v, dict):
+        return {k: ("[REDACTED]" if _SENSITIVE_KEY_RE.search(k) else sanitize_value(val))
+                for k, val in v.items()}
+    if isinstance(v, list):
+        return [sanitize_value(i) for i in v]
+    return v
 
 
 # ---------- 危险/风险模式 ----------
@@ -173,10 +220,19 @@ def parse_frontmatter(text: str) -> tuple[dict | None, str | None]:
 
 
 def check_skill(skill_dir: Path) -> dict:
-    """对单个 skill 执行 15 项健康检查 + 风险 + trigger 质量。"""
+    """对单个 skill 执行健康检查（metadata/references/dependency/test syntax）。
+
+    Health 只表达 metadata 完整度、引用完整性、依赖完整性、测试语法；
+    Risk（low/medium/high）与 Security findings（dangerous_shell/sensitive_path/
+    secret_like）独立成字段，不参与 Health 计算。
+    """
     key = skill_dir.name
     md = skill_dir / "SKILL.md"
-    base = {"key": key, "path": str(skill_dir), "health": "PASS", "warnings": [], "fails": []}
+    base = {"key": key, "path": str(skill_dir), "health": "PASS",
+            "warnings": [], "fails": [],
+            "security_findings": {"dangerous_shell": [], "sensitive_path": [],
+                                  "secret_like": 0},
+            "risk_level": "low"}
 
     if not md.exists():
         base["health"] = "FAIL"
@@ -189,27 +245,23 @@ def check_skill(skill_dir: Path) -> dict:
         base["health"] = "FAIL"
         base["fails"].append(fm_err or "frontmatter 解析失败")
     else:
-        base["frontmatter"] = {k: fm[k] for k in fm if k.lower() not in ("token", "secret")}
-        # 2. frontmatter 完整
+        # frontmatter 先递归脱敏再进入 registry（绝不存 credential 值）
+        base["frontmatter"] = sanitize_value(fm)
         desc = str(fm.get("description", "") or "")
         ver = str(fm.get("version", "") or "")
         author = str(fm.get("author", "") or "")
         lic = str(fm.get("license", "") or "")
         plat = str(fm.get("platforms", "") or "")
-        # 3. trigger/description
         if not desc:
             base["health"] = "FAIL"; base["fails"].append("description 缺失（无 trigger）")
-        elif "use when" not in desc.lower():
+        elif not re.search(r"use\s+(when|before|for|to)\b", desc.lower()):
             base["warnings"].append("description 缺少 'Use when' trigger 表述")
-        # 5. version
         if not ver:
             base["warnings"].append("version 缺失")
-        # 6. author/license
         if not author:
             base["warnings"].append("author 缺失")
         if not lic:
             base["warnings"].append("license 缺失")
-        # 7. platforms
         if not plat:
             base["warnings"].append("platforms 未声明")
         base["version"] = ver or ""
@@ -217,6 +269,7 @@ def check_skill(skill_dir: Path) -> dict:
         base["license"] = lic or ""
         base["platforms"] = plat or ""
         base["trigger_quality"] = _trigger_quality(desc, key)
+        base["trigger_quality_heuristic"] = True  # 仅启发式，不作 FAIL 条件
 
     # 8. scripts 引用存在
     scripts_refs = re.findall(r"(?:scripts/|`scripts/)?([\w./-]+\.(?:py|sh))", text)
@@ -225,10 +278,12 @@ def check_skill(skill_dir: Path) -> dict:
         if not candidate.exists() and not (skill_dir / ref.split("/")[-1]).exists():
             base["warnings"].append(f"脚本引用不存在: {ref}")
 
-    # 10/11. 测试存在 + 语法可编译
+    # 10/11. 测试语义：has_tests / test_syntax_ok / tests_executed / tests_passed
     test_files = sorted((skill_dir / "tests").glob("test_*.py")) if (skill_dir / "tests").is_dir() else []
     test_files += sorted(skill_dir.glob("test_*.py"))
     base["has_tests"] = bool(test_files)
+    base["tests_executed"] = False  # 默认禁止执行第三方测试（副作用防护）
+    base["tests_passed"] = "unavailable"
     if test_files:
         bad = []
         for tf in test_files:
@@ -236,9 +291,11 @@ def check_skill(skill_dir: Path) -> dict:
                                capture_output=True, text=True)
             if r.returncode != 0:
                 bad.append(tf.name)
+        base["test_syntax_ok"] = not bad
         if bad:
             base["warnings"].append(f"测试语法不可编译: {', '.join(bad)}")
     else:
+        base["test_syntax_ok"] = None
         base["warnings"].append("无测试")
 
     # 12. 引用不存在路径（正文中明显的本地路径引用）
@@ -252,26 +309,18 @@ def check_skill(skill_dir: Path) -> dict:
             base["warnings"].append(f"引用路径不存在: {p}")
             break  # 每条 warning 只记一次
 
-    # 13. 危险 shell 模式
+    # 13-15. Security findings（独立字段，不参与 Health）
     dangerous = _scan_text(text, _DANGEROUS_PATTERNS)
-    if dangerous:
-        base["warnings"].append(f"危险 shell 模式: {', '.join(dangerous)}")
-
-    # 14. 敏感目录读取
     sensitive = _scan_text(text, _SENSITIVE_DIRS)
-    if sensitive:
-        base["warnings"].append(f"涉及敏感路径: {', '.join(sensitive)}")
-
-    # 15. 明文凭据迹象
     secret_hits = _scan_text(text, _SECRET_PATTERNS)
-    base["has_secret_like"] = bool(secret_hits)  # 只记布尔，不存值
-    if secret_hits:
-        base["warnings"].append(f"明文凭据迹象（{len(secret_hits)} 处，不保留内容）")
+    base["security_findings"]["dangerous_shell"] = dangerous
+    base["security_findings"]["sensitive_path"] = sensitive
+    base["security_findings"]["secret_like"] = len(secret_hits)  # 只记数量，不存值
 
-    # 风险分级
-    base["risk_level"] = classify_risk(text, base["warnings"])
+    # 风险分级（独立）
+    base["risk_level"] = classify_risk(text, dangerous, sensitive, secret_hits)
 
-    # 汇总 health
+    # Health 汇总（仅 metadata/references/dependency/test syntax）
     if base["fails"]:
         base["health"] = "FAIL"
     elif len(base["warnings"]) > 2:
@@ -279,12 +328,12 @@ def check_skill(skill_dir: Path) -> dict:
     return base
 
 
-def classify_risk(text: str, warnings: list[str]) -> str:
+def classify_risk(text: str, dangerous: list, sensitive: list, secret_hits: list) -> str:
     high = _scan_text(text, _HIGH_RISK_PATTERNS)
     med = _scan_text(text, _MEDIUM_RISK_PATTERNS)
-    if high:
+    if high or dangerous or secret_hits:
         return "high"
-    if med or any("敏感路径" in w or "凭据迹象" in w for w in warnings):
+    if med or sensitive:
         return "medium"
     return "low"
 
@@ -323,15 +372,14 @@ def scan_all() -> list[dict]:
         fm, _ = parse_frontmatter(text)
         fm = fm or {}
         rec = check_skill(d)
-        rec["source"] = classify_source(d, fm)
+        src, conf = classify_source(d, fm)
+        rec["source"] = src
+        rec["source_confidence"] = conf
         rec["name"] = str(fm.get("name", d.name))
         rec["enabled"] = True  # Hermes 无 per-skill 禁用机制
         rec["last_modified"] = datetime.fromtimestamp(
             md.stat().st_mtime, tz=timezone.utc).isoformat()
         rec["usage"] = {"available": False, "reason": "无可靠调用记录数据源"}
-        rec.pop("warnings", None)
-        rec.pop("fails", None)
-        rec["warnings"] = None  # 保持结构；详情里才有
         skills.append(rec)
     return skills
 
