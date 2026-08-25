@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -48,14 +49,60 @@ def _bundled_locations(name: str) -> list[Path]:
     return found
 
 
+# ---------- 全目录 deterministic fingerprint ----------
+
+_FP_EXCLUDE_DIRS = {"__pycache__", "node_modules", ".git"}
+_FP_INCLUDE_SUFFIXES = (".py", ".sh", ".js", ".json", ".yaml", ".yml")
+
+
+def _collect_fingerprint_files(skill_dir: Path) -> list[tuple[str, bytes]]:
+    """按规则收集 fingerprint 输入：路径排序后 (relative_path, content)。
+
+    至少包含：SKILL.md、scripts/**、tests/**、*.py/*.sh/*.js/*.json/*.yaml/*.yml。
+    排除：__pycache__、node_modules、.git、.DS_Store、*.pyc、点开头临时文件。
+    """
+    out: list[tuple[str, bytes]] = []
+    for p in sorted(skill_dir.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(skill_dir)
+        parts = rel.parts
+        if any(part in _FP_EXCLUDE_DIRS for part in parts):
+            continue
+        if p.name == ".DS_Store" or p.suffix == ".pyc":
+            continue
+        if p.name.startswith(".") and p.suffix not in _FP_INCLUDE_SUFFIXES:
+            continue  # 临时/隐藏文件
+        include = (
+            rel.name == "SKILL.md"
+            or (len(parts) > 1 and parts[0] in ("scripts", "tests"))
+            or p.suffix in _FP_INCLUDE_SUFFIXES
+        )
+        if include:
+            out.append((str(rel), p.read_bytes()))
+    return out
+
+
+def fingerprint_skill(skill_dir: Path) -> str:
+    """whole-skill SHA-256：relative_path + file_content，路径排序后统一哈希。"""
+    h = hashlib.sha256()
+    for rel, content in _collect_fingerprint_files(skill_dir):
+        h.update(rel.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(content)
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
 def classify_source(skill_dir: Path, frontmatter: dict) -> tuple[str, str]:
     """返回 (source, confidence)。
 
     规则：
       - 实际路径就在 agent 内置/可选目录内       → bundled / confirmed
-      - home 副本与 bundled 内容 hash 完全一致   → bundled-copy / confirmed
-      - 同名但 hash 不一致                       → custom-derived / inferred
-      - author/source 明确第三方                 → third_party / inferred|confirmed
+      - home 副本与 bundled whole-skill fingerprint 完全一致
+                                                  → bundled-copy / confirmed
+      - 同名但 fingerprint 不同                  → custom-derived / inferred
+      - author/source/repository 明确第三方      → third_party / inferred|confirmed
       - 无可靠证据                               → custom / unknown
     """
     name = skill_dir.name
@@ -68,14 +115,11 @@ def classify_source(skill_dir: Path, frontmatter: dict) -> tuple[str, str]:
     if in_agent:
         return "bundled", "confirmed"
 
-    # 2/3) home 副本 vs bundled 同名目录 hash 比较
+    # 2/3) home 副本 vs bundled 同名目录 whole-skill fingerprint 比较
     bundled = _bundled_locations(name)
     if bundled:
-        try:
-            home_hash = (skill_dir / "SKILL.md").read_bytes()
-            same = any((b / "SKILL.md").read_bytes() == home_hash for b in bundled)
-        except OSError:
-            same = False
+        home_fp = fingerprint_skill(skill_dir)
+        same = any(fingerprint_skill(b) == home_fp for b in bundled)
         if same:
             return "bundled-copy", "confirmed"
         return "custom-derived", "inferred"
@@ -375,6 +419,7 @@ def scan_all() -> list[dict]:
         src, conf = classify_source(d, fm)
         rec["source"] = src
         rec["source_confidence"] = conf
+        rec["fingerprint"] = fingerprint_skill(d)
         rec["name"] = str(fm.get("name", d.name))
         rec["enabled"] = True  # Hermes 无 per-skill 禁用机制
         rec["last_modified"] = datetime.fromtimestamp(

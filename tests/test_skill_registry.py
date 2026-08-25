@@ -242,6 +242,65 @@ def test_test_semantics_fields(fake_root) -> None:
     assert rec["tests_passed"] == "unavailable"  # 不把语法检查当通过
 
 
+# ---------- Provenance Fingerprint（whole-skill，非仅 SKILL.md） ----------
+
+def _make_skill_dir(base: Path, name: str, script_content: str) -> Path:
+    d = base / name
+    (d / "scripts").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: fp-skill\n---\nbody\n", encoding="utf-8")
+    (d / "scripts" / "run.py").write_text(script_content, encoding="utf-8")
+    return d
+
+
+def test_provenance_whole_skill_fingerprint(tmp_path, monkeypatch) -> None:
+    """SKILL.md 相同但 scripts/run.py 不同 → custom-derived / inferred。"""
+    agent = tmp_path / "agent-skills"
+    bundled_dir = _make_skill_dir(agent, "fp-skill", script_content="official")
+    home = tmp_path / "home-skills"
+    home.mkdir()
+    monkeypatch.setattr(sr, "AGENT_SKILLS", agent)
+    monkeypatch.setattr(sr, "AGENT_OPTIONAL", tmp_path / "agent-optional")
+
+    # home 副本：SKILL.md 相同，scripts/run.py 被修改
+    home_copy = _make_skill_dir(home, "fp-skill", script_content="modified")
+    src, conf = sr.classify_source(home_copy, {})
+    assert src == "custom-derived" and conf == "inferred"
+
+
+def test_provenance_identical_whole_skill(tmp_path, monkeypatch) -> None:
+    """整个目录完全相同（含 scripts）→ bundled-copy / confirmed。"""
+    agent = tmp_path / "agent-skills"
+    _make_skill_dir(agent, "fp-skill2", script_content="official")
+    home = tmp_path / "home-skills"
+    home.mkdir()
+    monkeypatch.setattr(sr, "AGENT_SKILLS", agent)
+    monkeypatch.setattr(sr, "AGENT_OPTIONAL", tmp_path / "agent-optional")
+
+    home_copy = _make_skill_dir(home, "fp-skill2", script_content="official")
+    src, conf = sr.classify_source(home_copy, {})
+    assert src == "bundled-copy" and conf == "confirmed"
+
+
+def test_fingerprint_excludes_noise_and_is_deterministic(tmp_path) -> None:
+    """fingerprint 排除 __pycache__/.DS_Store/.pyc/临时文件，且结果稳定。"""
+    d = tmp_path / "skill"
+    (d / "scripts").mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+    (d / "scripts" / "run.py").write_text("print(1)\n", encoding="utf-8")
+    (d / "scripts" / "__pycache__").mkdir()
+    (d / "scripts" / "__pycache__" / "run.cpython-311.pyc").write_bytes(b"\x00\x01")
+    (d / ".DS_Store").write_bytes(b"\x00")
+    (d / ".tmp-notes").write_text("junk", encoding="utf-8")
+
+    fp1 = sr.fingerprint_skill(d)
+    fp2 = sr.fingerprint_skill(d)
+    assert fp1 == fp2  # 稳定
+    # 噪音文件不影响 fingerprint
+    (d / "scripts" / "__pycache__" / "extra.pyc").write_bytes(b"\xff")
+    (d / ".tmp-notes").write_text("changed", encoding="utf-8")
+    assert sr.fingerprint_skill(d) == fp1
+
+
 # ---------- 零修改证明 + 可重复生成 ----------
 
 def test_scan_does_not_modify_skills(fake_root, monkeypatch) -> None:
