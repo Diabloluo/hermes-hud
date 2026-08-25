@@ -277,3 +277,35 @@ def test_api_fallback_fail_closed_when_no_hermes_module(tmp_path, monkeypatch) -
     assert exc.value.code == 1
     # config.yaml 未被创建/修改
     assert not (tmp_path / "home" / "config.yaml").exists()
+
+
+def test_api_fallback_write_uses_save_config(tmp_path, monkeypatch) -> None:
+    """0.19.x：读走 API 后写回也用 save_config（CLI set 会存字符串——实证）。"""
+    fake_cli = tmp_path / "hermes"
+    fake_cli.write_text("#!/bin/sh\necho \"usage: ... invalid choice: 'get'\" >&2\nexit 2\n")
+    fake_cli.chmod(0o755)
+    monkeypatch.setenv("HUD_HERMES_CLI", str(fake_cli))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+
+    import types
+    saved: dict = {"plugins": {"enabled": []}}
+    fake_cfg = types.ModuleType("hermes_cli.config")
+    fake_cfg.load_config = lambda: saved
+    fake_cfg.save_config = lambda cfg: saved.update(cfg)
+    fake_pkg = types.ModuleType("hermes_cli")
+    fake_pkg.config = fake_cfg
+    monkeypatch.setitem(sys.modules, "hermes_cli", fake_pkg)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", fake_cfg)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import enable_dashboard_plugin as edp
+    monkeypatch.setattr(edp, "_cli", lambda: str(fake_cli))
+    edp._USE_API = False
+    try:
+        items = edp._get_enabled()       # 触发 API fallback（_USE_API=True）
+        assert items == []
+        edp._set_enabled(["hermes-hud"])  # 写回走 save_config
+        assert saved["plugins"]["enabled"] == ["hermes-hud"]
+    finally:
+        edp._USE_API = False
+        sys.modules.pop("hermes_cli", None)
+        sys.modules.pop("hermes_cli.config", None)

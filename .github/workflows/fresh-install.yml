@@ -36,7 +36,6 @@ jobs:
     env:
       HERMES_HOME: /tmp/hermes-fresh-home
       HUD_SRC: /tmp/hermes-fresh-home/plugins/hermes-hud
-      HERMES_SOURCE: 'https://github.com/NousResearch/hermes-agent@v2026.8.19'
     steps:
       - name: Checkout hermes-hud
         uses: actions/checkout@v4
@@ -53,14 +52,14 @@ jobs:
           python -c 'import sys; assert sys.version_info < (3, 14), "Python must be <3.14"'
           echo "PASS: Python 3.13 ready"
 
-      - name: Install Hermes (pinned GitHub v2026.8.19 — 0.20 series)
+      - name: Install Hermes (pinned PyPI 0.19.0 — empirically verified)
         run: |
-          pip install --quiet "git+$HERMES_SOURCE"
+          pip install --quiet "hermes-agent==0.19.0"
           python - <<'PY'
           import importlib.metadata
           ver = importlib.metadata.version("hermes-agent")
           print("installed hermes-agent:", ver)
-          assert ver.startswith("0.20"), f"expected 0.20.x, got {ver}"
+          assert ver == "0.19.0", f"expected 0.19.0, got {ver}"
           PY
           hermes --version
         env:
@@ -84,22 +83,25 @@ jobs:
 
       - name: Capture plugins.enabled baseline
         run: |
-          hermes config get --json plugins.enabled \
-            > /tmp/baseline-enabled.json 2>/tmp/baseline-err.txt || true
-          echo "baseline: $(cat /tmp/baseline-enabled.json 2>/dev/null || cat /tmp/baseline-err.txt)"
+          python - <<'PY'
+          import hermes_cli.config as c
+          cfg = c.load_config()
+          print("baseline:", (cfg.get("plugins") or {}).get("enabled") or [])
+          PY
 
       - name: Enable dashboard plugin (safe read-merge-write, diagnosable)
         run: |
           set -o pipefail
           python scripts/enable_dashboard_plugin.py enable 2>&1 | tee /tmp/enable.log
           echo "--- enabled after: ---"
-          hermes config get --json plugins.enabled
+          python -c "import hermes_cli.config as c; cfg=c.load_config(); print((cfg.get('plugins') or {}).get('enabled'))"
 
       - name: Config safety — preserved + added once + idempotent
         run: |
-          BEFORE=$(hermes config get --json plugins.enabled)
+          read_enabled() { python -c "import hermes_cli.config as c; cfg=c.load_config(); print(__import__('json').dumps((cfg.get('plugins') or {}).get('enabled') or []))"; }
+          BEFORE=$(read_enabled)
           python scripts/enable_dashboard_plugin.py enable
-          AFTER=$(hermes config get --json plugins.enabled)
+          AFTER=$(read_enabled)
           python - "$BEFORE" "$AFTER" <<'PY'
           import json, sys
           before = json.loads(sys.argv[1] or "[]")
@@ -114,10 +116,9 @@ jobs:
         run: |
           python scripts/enable_dashboard_plugin.py disable
           python - <<'PY'
-          import json, subprocess
-          out = subprocess.run(["hermes", "config", "get", "--json",
-                                "plugins.enabled"], capture_output=True, text=True)
-          after = json.loads(out.stdout or "[]")
+          import hermes_cli.config as c
+          cfg = c.load_config()
+          after = (cfg.get("plugins") or {}).get("enabled") or []
           assert "hermes-hud" not in after, f"disable 未移除: {after}"
           print(f"PASS: disable removed only hermes-hud (remaining: {after})")
           PY

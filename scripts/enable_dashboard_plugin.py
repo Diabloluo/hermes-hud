@@ -36,6 +36,7 @@ from typing import NoReturn
 
 PLUGIN = "hermes-hud"
 _NOT_SET = "Config key not set"
+_USE_API = False  # 读走了 Hermes config loader API（0.19.x）时置 True，写回也走 API
 
 
 def _cli() -> str:
@@ -86,10 +87,11 @@ def _get_enabled() -> list[str]:
     if _NOT_SET in stderr:
         return []  # 未设置 = 可靠的空列表（全新用户）
     # CLI get 不存在（Hermes 0.19.x 无 config get）→ 回退官方 loader API
-    # （已实证 0.19.0：load_config() 返回真实 dict 结构）
+    # （已实证 0.19.0：load_config()/save_config() 数组读写正确）
     if "invalid choice" in stderr:
-        print("WARNING: Hermes <0.20 检测（无 `config get`）——config set 会存字符串，"
-              "HUD 官方支持 >=0.20；读取走官方 loader API 尽力兼容。", file=sys.stderr)
+        global _USE_API
+        _USE_API = True
+        print("INFO: Hermes <0.20 检测（无 `config get`）——读写走官方 config loader API。", file=sys.stderr)
         try:
             from hermes_cli.config import load_config  # type: ignore
             cfg = load_config()
@@ -110,6 +112,20 @@ def _get_enabled() -> list[str]:
 
 def _set_enabled(items: list[str]) -> None:
     payload = json.dumps(items, ensure_ascii=False)
+    # 写回优先走官方 config API（save_config：数组语义在 0.19/0.20 一致；
+    # 0.19.0 的 `config set` 实证会存字符串，不可用）
+    try:
+        from hermes_cli.config import load_config, save_config  # type: ignore
+        cfg = load_config()
+        cfg.setdefault("plugins", {})["enabled"] = items
+        save_config(cfg)
+    except ImportError:
+        pass  # 无 hermes_cli（系统 python 场景）→ CLI set（0.20+ 语义正确）
+    except Exception as exc:  # noqa: BLE001
+        _fail(f"Hermes config loader 写入失败: {exc}")
+    else:
+        print(f"OK: 已通过官方 config API 写入 plugins.enabled（{len(items)} 个插件）")
+        return
     try:
         r = subprocess.run(
             [_cli(), "config", "set", "plugins.enabled", payload],
