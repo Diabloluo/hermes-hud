@@ -6,9 +6,9 @@
 
 | 项 | 要求 |
 |---|---|
-| Hermes | v0.20+（`hermes --version` 确认） |
+| Hermes | **v0.19.0+**（CI 以 PyPI 0.19.0 全链路实测：install/enable/config-safety/dashboard/HTTP smoke 全绿；v0.19 的 `config set` 会存字符串，本仓库 enable 脚本已统一走官方 config loader API 读写，两版本数组语义一致） |
 | 平台 | macOS（已验证）；Linux 预计可用；Windows experimental |
-| Python | 运行 `enable_dashboard_plugin.py` 需 Python 3.8+（macOS 自带 `python3` 即可） |
+| Python | 运行 `enable_dashboard_plugin.py` 需 Python 3.8+（macOS 自带 `python3` 即可；建议用 Hermes 的 python 环境以启用官方 config API 路径） |
 | 权限 | 无需 sudo；全部写入用户目录 |
 
 > ⚠️ **Hermes 插件机制提醒**：Hermes 有两种插件——
