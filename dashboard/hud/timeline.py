@@ -121,42 +121,53 @@ def _state_conn(home: Path):
 
 
 def collect_session_events(home: Path, after_ts: int = 0) -> list[dict]:
-    """session.started / session.completed ← state.db sessions（只读）。"""
+    """session.started / session.completed ← state.db sessions（只读）。
+
+    增量正确性：查询按 started_at >= watermark **或** ended_at >= watermark——
+    started 早于 watermark、ended 晚于 watermark 的 session 的 completed 事件
+    必须能在后续扫描被发现（不能只按 started_at 过滤）。
+    token/cost 真实性：started 事件恒为 null；completed 只带可靠聚合
+    （无 usage row → SUM 为 NULL → null，禁止 COALESCE 0 冒充零成本）。
+    duration_ms = (ended_at - started_at) × 1000（epoch 秒差换算毫秒）。
+    """
     out = []
     try:
         con = _state_conn(home)
         rows = con.execute(
             "SELECT id, source, model, started_at, ended_at, title,"
-            " COALESCE((SELECT SUM(input_tokens+output_tokens) FROM session_model_usage"
-            " WHERE session_id=sessions.id),0),"
-            " COALESCE((SELECT SUM(estimated_cost_usd) FROM session_model_usage"
-            " WHERE session_id=sessions.id),0)"
-            " FROM sessions WHERE started_at >= ? ORDER BY started_at",
-            (after_ts,)).fetchall()
+            " (SELECT SUM(input_tokens+output_tokens) FROM session_model_usage"
+            " WHERE session_id=sessions.id),"
+            " (SELECT SUM(estimated_cost_usd) FROM session_model_usage"
+            " WHERE session_id=sessions.id)"
+            " FROM sessions WHERE started_at >= ? OR ended_at >= ?"
+            " ORDER BY started_at",
+            (after_ts, after_ts)).fetchall()
         con.close()
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: sessions unavailable: %s", exc)
         return out
     for sid, source, model, started_at, ended_at, title, tokens, cost in rows:
         started_at = int(started_at or 0)
-        duration = int((ended_at or started_at) - started_at) if ended_at else None
         if started_at:
             out.append(normalize_event({
                 "timestamp": started_at, "event_type": "session.started",
                 "status": "started", "session_id": sid, "skill": None,
                 "summary": f"Session started ({model or 'unknown'})",
                 "source": "hermes", "source_record_id": f"session:{sid}:started",
-                "correlation_id": f"session:{sid}", "tokens": int(tokens or 0),
-                "cost_usd": float(cost or 0),
+                "correlation_id": f"session:{sid}",
+                "tokens": None, "cost_usd": None,  # started 无时间点上的聚合
             }))
         if ended_at:
+            ended_at = int(ended_at)
             out.append(normalize_event({
-                "timestamp": int(ended_at), "event_type": "session.completed",
+                "timestamp": ended_at, "event_type": "session.completed",
                 "status": "completed", "session_id": sid,
                 "summary": f"Session completed ({model or 'unknown'}, {title or ''})",
                 "source": "hermes", "source_record_id": f"session:{sid}:completed",
-                "correlation_id": f"session:{sid}", "duration_ms": duration,
-                "tokens": int(tokens or 0), "cost_usd": float(cost or 0),
+                "correlation_id": f"session:{sid}",
+                "duration_ms": int((ended_at - started_at) * 1000),
+                "tokens": int(tokens) if tokens is not None else None,
+                "cost_usd": float(cost) if cost is not None else None,
             }))
     return out
 
@@ -286,16 +297,19 @@ def collect_skill_events(home: Path, after_ts: int = 0) -> list[dict]:
             skill = rec.get("skill")
             if not skill:
                 continue  # 无明确 skill identity → 不生成
-            ts = _parse_ts(rec.get("ts") or rec.get("timestamp") or rec.get("started_at"))
-            if ts is None or ts < after_ts:
-                continue
-            task = rec.get("task", "")
-            job_id = rec.get("job_id") or rec.get("id") or f"job:{ts}"
             event = rec.get("event", "finished")
             router = str(rec.get("router", "pass"))
             guard = str(rec.get("guard", "pass"))
             failed = event == "failed" or "fail" in router or "fail" in guard
             status = "failed" if failed else "completed"
+            # 完成/失败事件时间：finished_at 优先（唯一合法时间）；无对应时间 → 不生成
+            ts = _parse_ts(rec.get("finished_at"))
+            if ts is None:
+                continue
+            if ts < after_ts:
+                continue
+            task = rec.get("task", "")
+            job_id = rec.get("job_id") or rec.get("id") or f"job:{ts}"
             out.append(normalize_event({
                 "timestamp": ts, "event_type": f"skill.{status}", "status": status,
                 "skill": str(skill), "summary": f"Skill {skill} {status}: {task}"[:160],
@@ -313,7 +327,11 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
     """增量采集全部事件源；返回 {written, skipped, sources}。
 
     last_scan 存于 telemetry meta（force=True 全量重采但 event_id 幂等去重）。
+    Watermark race 防护：查询起点 = 上次 watermark - SAFETY_WINDOW_S 安全窗口
+    （source write 与 scan 边界竞争时重叠段重复采集，由幂等 event_id 去重，
+    保证 missing=0 / duplicates=0）。
     """
+    SAFETY_WINDOW_S = 5
     last_scan = 0
     if not force:
         try:
@@ -322,11 +340,12 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
             last_scan = int(row[0]) if row and row[0] else 0
         except Exception:  # noqa: BLE001
             last_scan = 0
+    scan_start = max(0, last_scan - SAFETY_WINDOW_S)
     events: list[dict] = []
-    events += collect_session_events(home, last_scan)
-    events += collect_tool_events(home, last_scan)
-    events += collect_incident_events(storage, last_scan)
-    events += collect_skill_events(home, last_scan)
+    events += collect_session_events(home, scan_start)
+    events += collect_tool_events(home, scan_start)
+    events += collect_incident_events(storage, scan_start)
+    events += collect_skill_events(home, scan_start)
     written = skipped = 0
     for ev in events:
         if not ev.get("event_id") or not ev.get("timestamp"):

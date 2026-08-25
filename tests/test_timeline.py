@@ -265,9 +265,9 @@ def test_collectors_from_state_db(tmp_path, fake_state) -> None:
     assert any(e["event_type"] == "session.completed" for e in ses)
     assert any(e["event_type"] == "tool.called" and e["tool"] == "git status" for e in tools)
     assert any(e["event_type"] == "tool.failed" and e["tool"] == "git push" for e in tools)
-    # session.completed 带 duration/tokens/cost（可靠数据）
+    # session.completed 带 duration/tokens/cost（可靠数据；duration_ms = 秒差×1000）
     comp = next(e for e in ses if e["event_type"] == "session.completed")
-    assert comp["duration_ms"] == 100
+    assert comp["duration_ms"] == 100_000  # (1756000100-1756000000) × 1000
     assert comp["tokens"] == 1500
     assert comp["cost_usd"] == 0.01
     # A-truth：session 级 token/cost 不复制到 tool 事件
@@ -381,10 +381,147 @@ def test_skill_events_require_explicit_skill_field(tmp_path) -> None:
     # 带 skill 字段 → 生成（来源标记 job-ledger，不伪装 Hermes core）
     (ledger / "jobs.jsonl").write_text(
         "{\"job_id\": \"j2\", \"skill\": \"project-guard\", \"task\": \"G\","
-        " \"started_at\": \"2026-08-25T10:00:00+08:00\", \"event\": \"finished\"}\n",
+        " \"started_at\": \"2026-08-25T10:00:00+08:00\","
+        " \"finished_at\": \"2026-08-25T10:01:00+08:00\", \"event\": \"finished\"}\n",
         encoding="utf-8")
     evs2 = timeline.collect_skill_events(home, 0)
     assert len(evs2) == 1
     assert evs2[0]["skill"] == "project-guard"
     assert evs2[0]["source"] == "job-ledger"
     assert evs2[0]["tokens"] is None and evs2[0]["cost_usd"] is None
+
+
+# ---------- Correctness hotfix tests ----------
+
+def test_duration_ms_epoch_diff_times_1000(tmp_path, fake_state) -> None:
+    """duration_ms = (ended - started) epoch 秒差 × 1000。"""
+    # fake_state: s1 started=1756000000 ended=1756000100 → 秒差 100 → 100_000ms
+    evs = timeline.collect_session_events(tmp_path, 0)
+    comp = next(e for e in evs if e["event_type"] == "session.completed"
+                and e["session_id"] == "s1")
+    assert comp["duration_ms"] == 100_000  # 100s × 1000
+    assert comp["tokens"] == 1500  # usage row 存在 → 可靠聚合
+    assert comp["cost_usd"] == 0.01
+    # UI 显示 100.0s（前端 (duration_ms/1000).toFixed(1)）
+    assert f"{(comp['duration_ms'] / 1000):.1f}s" == "100.0s"
+
+
+def test_session_incremental_completion(tmp_path) -> None:
+    """scan#1 → started；session 后来收到 ended_at；scan#2 → completed；total=2 无重复。"""
+    now = int(time.time())
+    started = now - 3600  # 1 小时前
+    db = tmp_path / "state.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, started_at REAL,"
+                " ended_at REAL, title TEXT)")
+    con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT,"
+                " input_tokens INT, output_tokens INT, estimated_cost_usd REAL)")
+    con.execute("INSERT INTO sessions VALUES ('inc1','chat','gpt-4o',?,NULL,'T')", (started,))
+    con.commit()
+    con.close()
+
+    store = storage.TelemetryStore(db_path=tmp_path / "telemetry.db")
+    # scan #1：started 仅（watermark = 采集完成时刻）
+    timeline.collect_timeline(tmp_path, store)
+    stats1 = store.timeline_stats()
+    assert stats1["total"] == 1
+    assert stats1["by_type"].get("session.started") == 1
+
+    # session 稍后收到 ended_at（scan1 之后结束 → ended ≥ scan1 watermark）
+    ended = int(time.time())  # scan1 之后取值，必 ≥ scan1 的 watermark
+    con = sqlite3.connect(db)
+    con.execute("UPDATE sessions SET ended_at = ? WHERE id = 'inc1'", (ended,))
+    con.commit()
+    con.close()
+
+    # scan #2：必须发现 completed（ended_at >= watermark 的过滤条件）
+    timeline.collect_timeline(tmp_path, store)
+    stats2 = store.timeline_stats()
+    assert stats2["total"] == 2  # exactly 2
+    assert stats2["by_type"].get("session.started") == 1
+    assert stats2["by_type"].get("session.completed") == 1
+    # 无重复（幂等 event_id）
+    timeline.collect_timeline(tmp_path, store)
+    assert store.timeline_stats()["total"] == 2
+
+
+def test_no_usage_row_tokens_cost_null(tmp_path) -> None:
+    """无 usage row → completed 的 tokens/cost = null（禁止 COALESCE 0 冒充零成本）。"""
+    db = tmp_path / "state.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, started_at REAL,"
+                " ended_at REAL, title TEXT)")
+    con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT,"
+                " input_tokens INT, output_tokens INT, estimated_cost_usd REAL)")
+    con.execute("INSERT INTO sessions VALUES ('nou','chat','gpt-4o',1000,2000,'T')")
+    con.commit()
+    con.close()
+    evs = timeline.collect_session_events(tmp_path, 0)
+    comp = next(e for e in evs if e["event_type"] == "session.completed")
+    assert comp["tokens"] is None   # 无 usage row → null
+    assert comp["cost_usd"] is None  # 不是 0
+    started = next(e for e in evs if e["event_type"] == "session.started")
+    assert started["tokens"] is None and started["cost_usd"] is None
+
+
+def test_skill_finished_at_timestamp(tmp_path) -> None:
+    """completed/failed 用 finished_at；无 finished_at → 不生成。"""
+    home = tmp_path
+    ledger = home / "job-ledger"
+    ledger.mkdir(parents=True)
+    # 无 finished_at（只有 started_at）→ 不生成（不能拿 started_at 冒充完成时间）
+    (ledger / "jobs.jsonl").write_text(
+        "{\"job_id\": \"j3\", \"skill\": \"s\", \"task\": \"T\","
+        " \"started_at\": \"2026-08-25T10:00:00+08:00\", \"event\": \"finished\"}\n",
+        encoding="utf-8")
+    assert timeline.collect_skill_events(home, 0) == []
+    # 有 finished_at → 用 finished_at
+    (ledger / "jobs.jsonl").write_text(
+        "{\"job_id\": \"j4\", \"skill\": \"s2\", \"task\": \"T\","
+        " \"started_at\": \"2026-08-25T10:00:00+08:00\","
+        " \"finished_at\": \"2026-08-25T10:02:30+08:00\", \"event\": \"finished\"}\n",
+        encoding="utf-8")
+    evs = timeline.collect_skill_events(home, 0)
+    assert len(evs) == 1
+    import datetime as _dt
+    expect = int(_dt.datetime.fromisoformat("2026-08-25T10:02:30+08:00").timestamp())
+    assert evs[0]["timestamp"] == expect
+
+
+def test_watermark_race_missing_dup_zero(tmp_path) -> None:
+    """source write 与 scan 边界竞争：重叠段重复采集 → 幂等去重，missing=0 duplicates=0。"""
+    now = int(time.time())
+    db = tmp_path / "state.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, started_at REAL,"
+                " ended_at REAL, title TEXT)")
+    con.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT,"
+                " input_tokens INT, output_tokens INT, estimated_cost_usd REAL)")
+    con.execute("INSERT INTO sessions VALUES ('race1','chat','gpt-4o',?,?,'T')",
+                (now - 3600, now - 1800))
+    con.commit()
+    con.close()
+    store = storage.TelemetryStore(db_path=tmp_path / "telemetry.db")
+
+    # 手动把 watermark 设为"刚覆盖完最后一条记录"（竞争边界：记录 ts 恰在 watermark 前）
+    with store._connect() as conn:
+        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('timeline_last_scan','999')")
+
+    # scan A：watermark=999 → scan_start=994 → 覆盖 race1（ts ≥ 994）
+    timeline.collect_timeline(tmp_path, store)
+    # scan B：立刻重扫（watermark 已推进到 now → scan_start=now-5 → 不覆盖旧记录）
+    timeline.collect_timeline(tmp_path, store)
+    stats = store.timeline_stats()
+    assert stats["total"] == 2  # started + completed，无重复
+    # 边界竞争：source 在 scan A 后写入一条 ts 恰在 scan A watermark 附近的记录
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO sessions VALUES ('race2','chat','gpt-4o',?,NULL,'T')", (now - 2,))
+    con.commit()
+    con.close()
+    timeline.collect_timeline(tmp_path, store)
+    timeline.collect_timeline(tmp_path, store)  # 重叠重扫（安全窗口内）
+    stats3 = store.timeline_stats()
+    assert stats3["total"] == 3  # race2 started 只出现一次
+    assert stats3["by_type"].get("session.started") == 2
+    assert stats3["by_type"].get("session.completed") == 1
+    # missing=0 duplicates=0（事件数精确）
