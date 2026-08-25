@@ -58,8 +58,10 @@ def _fail(msg: str) -> NoReturn:
 def _get_enabled() -> list[str]:
     """读取 plugins.enabled（JSON）。
 
-    - 键不存在（CLI 报 Config key not set）→ 可靠的空列表
-    - CLI 失败 / 输出不可解析 / 非数组 → FAIL CLOSED（退出非 0）
+    读取路径（按可用性降级，均为 Hermes 官方通道，不自解析 YAML）：
+      1. `hermes config get --json plugins.enabled`（Hermes 0.20.5+）
+      2. Hermes 官方 config loader API（hermes_cli.config.get_config_value，0.19.x）
+      3. 都不可用 → FAIL CLOSED（退出非 0，绝不假装成功/覆盖为空列表）
     """
     try:
         r = subprocess.run(
@@ -68,22 +70,42 @@ def _get_enabled() -> list[str]:
     except Exception as exc:
         _fail(f"无法执行 hermes config get: {exc}")
 
-    if r.returncode != 0:
-        stderr = r.stderr.strip()
-        if _NOT_SET in stderr:
-            return []  # 未设置 = 可靠的空列表（全新用户）
-        _fail(f"hermes config get plugins.enabled 失败 (exit {r.returncode}): {stderr or r.stdout.strip()}")
+    if r.returncode == 0:
+        raw = r.stdout.strip()
+        if not raw:
+            _fail("hermes config get plugins.enabled 返回空输出，无法可靠读取")
+        try:
+            items = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            _fail(f"hermes config get 输出不是有效 JSON（{exc}）: {raw[:120]}")
+        if not isinstance(items, list):
+            _fail(f"hermes config get plugins.enabled 不是数组: {type(items).__name__}")
+        return [str(x) for x in items]
 
-    raw = r.stdout.strip()
-    if not raw:
-        _fail("hermes config get plugins.enabled 返回空输出，无法可靠读取")
-    try:
-        items = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        _fail(f"hermes config get 输出不是有效 JSON（{exc}）: {raw[:120]}")
-    if not isinstance(items, list):
-        _fail(f"hermes config get plugins.enabled 不是数组: {type(items).__name__}")
-    return [str(x) for x in items]
+    stderr = r.stderr.strip()
+    if _NOT_SET in stderr:
+        return []  # 未设置 = 可靠的空列表（全新用户）
+    # CLI get 不存在（Hermes 0.19.x 无 config get）→ 回退官方 loader API
+    if "invalid choice" in stderr:
+        try:
+            from hermes_cli.config import get_config_value  # type: ignore
+            raw = get_config_value("plugins.enabled", as_json=True)
+        except ImportError:
+            _fail("当前 Hermes 版本无 `config get`，且无法导入 hermes_cli.config"
+                  "（请用 Hermes 的 python 环境运行本脚本）")
+        except Exception as exc:  # noqa: BLE001
+            _fail(f"Hermes config loader 读取失败: {exc}")
+        if not raw:
+            return []
+        try:
+            items = json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as exc:
+            _fail(f"Hermes config loader 返回不是有效 JSON（{exc}）: {str(raw)[:120]}")
+        if not isinstance(items, list):
+            _fail(f"Hermes config loader plugins.enabled 不是数组: {type(items).__name__}")
+        return [str(x) for x in items]
+
+    _fail(f"hermes config get plugins.enabled 失败 (exit {r.returncode}): {stderr or r.stdout.strip()}")
 
 
 def _set_enabled(items: list[str]) -> None:

@@ -231,3 +231,48 @@ def test_no_config_file_key_not_set_is_empty(tmp_path) -> None:
     r = _run(home, "enable")
     assert r.returncode == 0, r.stderr
     assert "hermes-hud" in _enabled_via_cli(home)
+
+
+def test_cli_get_missing_falls_back_to_hermes_api(tmp_path, monkeypatch) -> None:
+    """Hermes 0.19.x（无 config get）→ 回退官方 loader API 读取。"""
+    fake_cli = tmp_path / "hermes"
+    fake_cli.write_text("#!/bin/sh\necho \"usage: ... invalid choice: 'get'\" >&2\nexit 2\n")
+    fake_cli.chmod(0o755)
+
+    import types
+    fake_cfg = types.ModuleType("hermes_cli.config")
+    fake_cfg.get_config_value = lambda key, as_json=False: '["alpha", "beta"]'
+    fake_pkg = types.ModuleType("hermes_cli")
+    fake_pkg.config = fake_cfg
+    sys.modules["hermes_cli"] = fake_pkg
+    sys.modules["hermes_cli.config"] = fake_cfg
+    monkeypatch.setenv("HUD_HERMES_CLI", str(fake_cli))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+        import enable_dashboard_plugin as edp
+        monkeypatch.setattr(edp, "_cli", lambda: str(fake_cli))
+        out = edp._get_enabled()
+        assert out == ["alpha", "beta"]  # API 回退读取成功
+    finally:
+        sys.modules.pop("hermes_cli", None)
+        sys.modules.pop("hermes_cli.config", None)
+
+
+def test_api_fallback_fail_closed_when_no_hermes_module(tmp_path, monkeypatch) -> None:
+    """无 config get 且无法导入 hermes_cli → FAIL CLOSED（exit 非 0，不改 config）。"""
+    fake_cli = tmp_path / "hermes"
+    fake_cli.write_text("#!/bin/sh\necho \"usage: ... invalid choice: 'get'\" >&2\nexit 2\n")
+    fake_cli.chmod(0o755)
+    monkeypatch.setenv("HUD_HERMES_CLI", str(fake_cli))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    sys.modules.pop("hermes_cli", None)
+    sys.modules.pop("hermes_cli.config", None)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import enable_dashboard_plugin as edp
+    monkeypatch.setattr(edp, "_cli", lambda: str(fake_cli))
+    with pytest.raises(SystemExit) as exc:
+        edp._get_enabled()
+    assert exc.value.code == 1
+    # config.yaml 未被创建/修改
+    assert not (tmp_path / "home" / "config.yaml").exists()

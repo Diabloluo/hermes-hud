@@ -58,23 +58,24 @@ jobs:
       - name: Capture plugins.enabled baseline
         run: |
           export PATH="/tmp/fresh-venv/bin:$PATH"
-          hermes config get --json plugins.enabled \
-            > /tmp/baseline-enabled.json 2>/tmp/baseline-err.txt || true
-          echo "baseline: $(cat /tmp/baseline-enabled.json 2>/dev/null || cat /tmp/baseline-err.txt)"
+          hermes config show > /tmp/config-before.yaml 2>&1 || true
+          echo "baseline: $(cat /tmp/config-before.yaml | head -20)"
 
       - name: Enable dashboard plugin (safe read-merge-write)
         run: |
           export PATH="/tmp/fresh-venv/bin:$PATH"
-          python3 scripts/enable_dashboard_plugin.py enable
+          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py enable
           echo "--- enabled after: ---"
-          hermes config get --json plugins.enabled
+          hermes config show
 
       - name: Config safety — hermes-hud present, no duplicates (idempotent re-enable)
         run: |
           export PATH="/tmp/fresh-venv/bin:$PATH"
-          BEFORE=$(hermes config get --json plugins.enabled)
-          python3 scripts/enable_dashboard_plugin.py enable
-          AFTER=$(hermes config get --json plugins.enabled)
+          read_enabled() { hermes config show | /tmp/fresh-venv/bin/python3 -c \
+            "import json,sys,yaml; d=yaml.safe_load(sys.stdin) or {}; print(json.dumps(d.get('plugins',{}).get('enabled') or []))"; }
+          BEFORE=$(read_enabled)
+          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py enable
+          AFTER=$(read_enabled)
           python3 - "$BEFORE" "$AFTER" <<'PY'
           import json, sys
           before = json.loads(sys.argv[1] or "[]")
@@ -88,22 +89,21 @@ jobs:
       - name: Disable only removes hermes-hud (then re-enable)
         run: |
           export PATH="/tmp/fresh-venv/bin:$PATH"
-          python3 scripts/enable_dashboard_plugin.py disable
-          python3 - <<'PY'
-          import json, subprocess
-          out = subprocess.run(["hermes", "config", "get", "--json",
-                                "plugins.enabled"], capture_output=True, text=True)
-          after = json.loads(out.stdout or "[]")
+          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py disable
+          hermes config show | /tmp/fresh-venv/bin/python3 - <<'PY'
+          import json, sys, yaml
+          d = yaml.safe_load(sys.stdin) or {}
+          after = d.get('plugins', {}).get('enabled') or []
           assert "hermes-hud" not in after, f"disable 未移除: {after}"
           print(f"PASS: disable removed only hermes-hud (remaining: {after})")
           PY
-          python3 scripts/enable_dashboard_plugin.py enable
+          /tmp/fresh-venv/bin/python3 scripts/enable_dashboard_plugin.py enable
 
       - name: Start dashboard and wait for readiness (polling, no bare sleep)
         run: |
           export PATH="/tmp/fresh-venv/bin:$PATH"
           hermes dashboard --host 127.0.0.1 --port 9121 \
-            --no-open --skip-build > /tmp/dashboard.log 2>&1 &
+            --no-open > /tmp/dashboard.log 2>&1 &
           echo $! > /tmp/dashboard.pid
           echo "dashboard PID: $(cat /tmp/dashboard.pid)"
           python3 scripts/fresh_install_check.py wait-http http://127.0.0.1:9121/ 60 1
