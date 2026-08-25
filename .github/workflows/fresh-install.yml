@@ -1,0 +1,148 @@
+name: Fresh Install CI
+
+# 陌生环境首次安装自动验证：clean runner → 安装 Hermes → 安装 HUD →
+# 启用 Dashboard 插件 → 启动 → HTTP smoke → 回归守卫 → 精确清理。
+# 不依赖开发机已有 ~/.hermes 状态；不恢复旧的 hermes plugins enable 路径。
+
+on:
+  pull_request:
+    paths:
+      - 'dashboard/**'
+      - 'scripts/**'
+      - 'requirements*'
+      - 'pyproject*'
+      - 'INSTALL.md'
+      - 'README.md'
+      - 'README.en.md'
+      - '.github/workflows/fresh-install.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - 'scripts/**'
+      - 'requirements*'
+      - 'pyproject*'
+      - 'INSTALL.md'
+      - 'README.md'
+      - 'README.en.md'
+      - '.github/workflows/fresh-install.yml'
+  workflow_dispatch:
+
+jobs:
+  fresh-install:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      HERMES_HOME: /tmp/hermes-fresh-home
+      HUD_SRC: /tmp/hermes-fresh-home/plugins/hermes-hud
+      CI_PIDS: ''
+      PATH: /tmp/fresh-venv/bin:$PATH
+    steps:
+      - name: Checkout hermes-hud
+        uses: actions/checkout@v4
+
+      - name: Install Hermes (public release via PyPI)
+        run: |
+          python3 -m venv /tmp/fresh-venv
+          /tmp/fresh-venv/bin/pip install --quiet --upgrade pip
+          /tmp/fresh-venv/bin/pip install --quiet hermes-agent
+          /tmp/fresh-venv/bin/hermes --version
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+      - name: Install hermes-hud plugin (public path from INSTALL.md)
+        run: |
+          mkdir -p "$HERMES_HOME/plugins"
+          git clone --depth 1 https://github.com/Diabloluo/hermes-hud "$HUD_SRC"
+          ls "$HUD_SRC/dashboard/manifest.json"
+
+      - name: Capture plugins.enabled baseline
+        run: |
+          /tmp/fresh-venv/bin/hermes config get --json plugins.enabled \
+            > /tmp/baseline-enabled.json 2>/tmp/baseline-err.txt || true
+          echo "baseline: $(cat /tmp/baseline-enabled.json 2>/dev/null || cat /tmp/baseline-err.txt)"
+
+      - name: Enable dashboard plugin (safe read-merge-write)
+        run: |
+          python3 scripts/enable_dashboard_plugin.py enable
+          echo "--- enabled after: ---"
+          /tmp/fresh-venv/bin/hermes config get --json plugins.enabled
+
+      - name: Config safety — hermes-hud present, no duplicates (idempotent re-enable)
+        run: |
+          BEFORE=$(/tmp/fresh-venv/bin/hermes config get --json plugins.enabled)
+          python3 scripts/enable_dashboard_plugin.py enable
+          AFTER=$(/tmp/fresh-venv/bin/hermes config get --json plugins.enabled)
+          python3 - "$BEFORE" "$AFTER" <<'PY'
+          import json, sys
+          before = json.loads(sys.argv[1] or "[]")
+          after = json.loads(sys.argv[2] or "[]")
+          assert before.count("hermes-hud") == 1, f"enable 后 hermes-hud 不在: {before}"
+          assert after.count("hermes-hud") == 1, f"幂等失败（重复）: {after}"
+          assert after == before, f"二次 enable 改变了列表: {after}"
+          print("PASS: enabled once, idempotent, no duplicates")
+          PY
+
+      - name: Disable only removes hermes-hud (then re-enable)
+        run: |
+          python3 scripts/enable_dashboard_plugin.py disable
+          python3 - <<'PY'
+          import json, subprocess
+          out = subprocess.run(["/tmp/fresh-venv/bin/hermes", "config", "get", "--json",
+                                "plugins.enabled"], capture_output=True, text=True)
+          after = json.loads(out.stdout or "[]")
+          assert "hermes-hud" not in after, f"disable 未移除: {after}"
+          print(f"PASS: disable removed only hermes-hud (remaining: {after})")
+          PY
+          python3 scripts/enable_dashboard_plugin.py enable
+
+      - name: Start dashboard and wait for readiness (polling, no bare sleep)
+        run: |
+          /tmp/fresh-venv/bin/hermes dashboard --host 127.0.0.1 --port 9121 \
+            --no-open --skip-build > /tmp/dashboard.log 2>&1 &
+          echo $! > /tmp/dashboard.pid
+          echo "dashboard PID: $(cat /tmp/dashboard.pid)"
+          python3 scripts/fresh_install_check.py wait-http http://127.0.0.1:9121/ 60 1
+
+      - name: HTTP smoke — GET / and snapshot endpoint
+        run: |
+          curl -sf -o /tmp/root.html http://127.0.0.1:9121/ && echo "GET / -> 200 OK"
+          TOKEN=$(grep -o 'window.__HERMES_SESSION_TOKEN__="[^"]*"' /tmp/root.html \
+            | sed 's/.*="//;s/"//')
+          curl -sf -H "X-Hermes-Session-Token: $TOKEN" \
+            -o /tmp/snapshot.json http://127.0.0.1:9121/api/plugins/hermes-hud/snapshot
+          python3 scripts/fresh_install_check.py check-json /tmp/snapshot.json \
+            generated_at_iso tz db gateway system
+          echo "--- snapshot size: $(wc -c < /tmp/snapshot.json) bytes"
+
+      - name: Regression guards — no CST is not defined
+        run: |
+          cat /tmp/dashboard.log /tmp/snapshot.json > /tmp/cst-check.txt
+          python3 scripts/fresh_install_check.py check-no-cst /tmp/cst-check.txt
+
+      - name: Clean shutdown (owned PID only)
+        if: always()
+        run: |
+          PID=$(cat /tmp/dashboard.pid 2>/dev/null || echo 0)
+          python3 scripts/fresh_install_check.py cleanup-owned "$PID"
+          sleep 2
+          ps -p "$PID" > /dev/null 2>&1 && { echo "FAIL: orphan dashboard $PID"; exit 1; } \
+            || echo "PASS: no orphan dashboard process"
+
+      - name: Upload failure artifacts (redacted)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-install-failure
+          path: |
+            /tmp/dashboard.log
+            /tmp/root.html
+            /tmp/snapshot.json
+            /tmp/install-notes.txt
+          if-no-files-found: ignore
+
+      - name: Redact config snapshot (never upload secrets)
+        if: failure()
+        run: |
+          python3 scripts/fresh_install_check.py redact-config \
+            "$HERMES_HOME/config.yaml" /tmp/config-redacted.yaml || true
