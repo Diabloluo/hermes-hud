@@ -389,6 +389,61 @@ async def get_skill_analytics_detail(skill: str, range: str = "7d",
         return {"error": str(exc)}
 
 
+@router.get("/cost/summary")
+async def get_cost_summary(range: str = "7d") -> dict:
+    """Cost Intelligence v1：汇总（canonical = session_model_usage 单源）。
+
+    任一源异常 → partial/unavailable（不 500）；聚合走 to_thread 不阻塞 loop。
+    """
+    from hud import cost
+    if range not in cost.TIME_RANGES:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid range: {range} (today|24h|7d|30d|all)")
+    home = Path(collectors.HERMES_HOME)
+    return await asyncio.to_thread(cost.compute_summary, home, range)
+
+
+@router.get("/cost/timeseries")
+async def get_cost_timeseries(range: str = "7d") -> dict:
+    """Daily estimated cost 趋势（HUD 时区日界）。"""
+    from hud import cost
+    if range not in cost.TIME_RANGES:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid range: {range} (today|24h|7d|30d|all)")
+    home = Path(collectors.HERMES_HOME)
+    return await asyncio.to_thread(cost.compute_timeseries, home, range)
+
+
+@router.get("/cost/models")
+async def get_cost_models(range: str = "7d") -> dict:
+    """By-model 聚合。"""
+    from hud import cost
+    if range not in cost.TIME_RANGES:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid range: {range} (today|24h|7d|30d|all)")
+    home = Path(collectors.HERMES_HOME)
+    return await asyncio.to_thread(cost.compute_models, home, range)
+
+
+@router.get("/cost/sessions")
+async def get_cost_sessions(range: str = "7d", limit: int = 20) -> dict:
+    """Top sessions by estimated cost（title 脱敏）。"""
+    from hud import cost
+    if range not in cost.TIME_RANGES:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid range: {range} (today|24h|7d|30d|all)")
+    home = Path(collectors.HERMES_HOME)
+    return await asyncio.to_thread(cost.compute_top_sessions, home, range, limit)
+
+
+@router.get("/cost/budget")
+async def get_cost_budget() -> dict:
+    """Budget view（只读复用 daily_budget_usd；不告警不修改）。"""
+    from hud import cost
+    home = Path(collectors.HERMES_HOME)
+    return await asyncio.to_thread(cost.compute_budget, home, rules.DAILY_BUDGET_USD)
+
+
 @router.get("/settings")
 async def get_settings() -> dict:
     """HUD 自身配置/阈值（只读展示）。"""

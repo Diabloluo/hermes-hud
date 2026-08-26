@@ -354,12 +354,43 @@
 
   function Usage() {
     const [days, setDays] = useState(30);
+    const [ciRange, setCiRange] = useState("7d");
     const { data, error } = usePoll(API + "/usage?days=" + days, 30000);
     const snap = usePoll(API + "/snapshot", 30000).data;
     const totals = (data && data.totals) || {};
     const byDay = (data && data.by_day) || [];
     const byModel = (data && data.by_model) || [];
     const byTask = (data && data.by_task) || [];
+
+    // —— Cost Intelligence v1（canonical = session_model_usage，估算语义）——
+    const ci = usePoll(API + "/cost/summary?range=" + ciRange, 15000).data;
+    const ciModels = usePoll(API + "/cost/models?range=" + ciRange, 15000).data;
+    const ciSessions = usePoll(API + "/cost/sessions?range=" + ciRange + "&limit=10", 15000).data;
+    const ciBudget = usePoll(API + "/cost/budget", 15000).data;
+
+    const ciRanges = [
+      { id: "today", label: "今日" }, { id: "24h", label: "24h" },
+      { id: "7d", label: "7d" }, { id: "30d", label: "30d" }, { id: "all", label: "All" },
+    ];
+    const ciFmt = function (v) {
+      return (v === null || v === undefined) ? "—" : "$" + v.toFixed(2);
+    };
+    const ciFmtTok = function (v) {
+      return (v === null || v === undefined) ? "—" : v.toLocaleString();
+    };
+    const ciPart = ci && (ci.partial || ci.coverage && !ci.coverage.cost_complete);
+
+    const ciCards = [
+      { k: "估算费用", v: ciFmt(ci && ci.estimated_cost_usd) },
+      { k: "总 Token", v: ciFmtTok(ci && ci.total_tokens) },
+      { k: "输入 Token", v: ciFmtTok(ci && ci.input_tokens) },
+      { k: "输出 Token", v: ciFmtTok(ci && ci.output_tokens) },
+      { k: "Sessions", v: (ci && ci.sessions === null || ci && ci.sessions === undefined) ? "—" : (ci ? ci.sessions : "—") },
+      { k: "平均每 Session", v: ciFmt(ci && ci.avg_cost_per_session_usd) },
+    ];
+    if (ciBudget && ciBudget.budget_configured && ciBudget.usage_ratio !== null && ciBudget.usage_ratio !== undefined) {
+      ciCards.push({ k: "今日预算使用率", v: (ciBudget.usage_ratio * 100).toFixed(1) + "%" });
+    }
 
     const dayLabels = byDay.map(function (d) { return d.day.slice(5); });
     const costVals = byDay.map(function (d) { return d.est_cost; });
@@ -369,6 +400,47 @@
     const dbUsage = db.usage || {};
 
     return h(React.Fragment, null,
+      // —— Cost Intelligence 区块（Phase 10-11）——
+      h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 } },
+        h("span", { className: "k", style: { fontSize: 12, opacity: 0.6 } }, "Cost Intelligence · 范围"),
+        ciRanges.map(function (r) {
+          return h(Button, {
+            key: r.id, size: "sm", variant: ciRange === r.id ? "default" : "outline",
+            onClick: function () { setCiRange(r.id); },
+            style: { padding: "2px 10px", fontSize: 12 },
+          }, r.label);
+        }),
+        h(Badge, { variant: "secondary", style: { marginLeft: 8 } }, "估算费用 / Estimated cost（非账单）")),
+      ciPart ? h("div", { style: { fontSize: 12, padding: "6px 10px", background: "rgba(255,193,7,.12)", border: "1px solid rgba(255,193,7,.4)", borderRadius: 6, margin: "6px 0" } },
+        "部分成本数据：仅部分 usage 记录含费用，汇总是已知部分。" +
+        "（Partial cost data — coverage " +
+        (ci && ci.coverage ? Math.round((ci.coverage.cost_coverage_ratio || 0) * 100) + "%" : "—") + "）") : null,
+      h("div", { className: "hud-grid hud-grid-4", style: { marginTop: 8 } },
+        ciCards.map(function (c) {
+          return card(c.k, h("div", { style: { fontSize: 20, fontWeight: 700 } }, c.v));
+        })),
+      h("div", { className: "hud-grid hud-grid-2", style: { marginTop: 8 } },
+        card("Top Sessions（估算费用 · 脱敏标题）",
+          (ciSessions && ciSessions.sessions && ciSessions.sessions.length)
+            ? h("div", null, ciSessions.sessions.slice(0, 8).map(function (s) {
+                return h("div", { key: s.session_id, style: { display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12, borderBottom: "1px solid var(--border)" } },
+                  h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                    (s.title || s.session_id.slice(0, 20))),
+                  h("span", { style: { opacity: 0.6, fontSize: 11 } }, s.models.join("/")),
+                  h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, "$" + s.estimated_cost_usd.toFixed(3)));
+              }))
+            : empty("暂无费用数据（源健康 + 0 花费 或 源不可用）")),
+        card("模型分布（估算费用）",
+          (ciModels && ciModels.models && ciModels.models.length)
+            ? h("div", null, ciModels.models.slice(0, 8).map(function (m) {
+                return h("div", { key: m.model, style: { display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12, borderBottom: "1px solid var(--border)" } },
+                  h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, m.model),
+                  h("span", { style: { opacity: 0.6, fontSize: 11 } }, m.sessions + " 会话"),
+                  h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, "$" + m.estimated_cost_usd.toFixed(3)));
+              }))
+            : empty("暂无模型数据")),
+        h(Badge, { variant: "secondary" }, "费用为本地估算，非账单")),
+
       h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 4 } },
         h("span", { className: "k", style: { fontSize: 12, opacity: 0.6 } }, "统计窗口"),
         [7, 30, 90].map(function (d) {
@@ -377,8 +449,7 @@
             onClick: function () { setDays(d); },
             style: { padding: "2px 10px", fontSize: 12 },
           }, d + " 天");
-        }),
-        h(Badge, { variant: "secondary", style: { marginLeft: 8 } }, "费用为本地估算，非账单")),
+        })),
 
       h("div", { className: "hud-grid hud-grid-4", style: { marginTop: 8 } },
         card("输入 Token", h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.input))),

@@ -297,3 +297,38 @@ def test_sa_detail_expansion(hud_env) -> None:
     time.sleep(2)
     txt = cdp.eval("document.body.textContent") or ""
     assert "最近 Timeline 事件" in txt or "未观测到执行" in txt
+
+
+# ---------- Cost Intelligence frontend smoke ----------
+
+def _click_usage(cdp: CDP) -> None:
+    r = cdp.eval("(() => { const t = [...document.querySelectorAll('.hud-tab')]"
+                 ".find(b => b.textContent && b.textContent.includes('Token·费用'));"
+                 " if (t) { t.click(); return true; } return false; })()")
+    assert r is True
+    time.sleep(4)
+
+
+def test_ci_summary_cards_and_estimated_semantics(hud_env) -> None:
+    """Cost Intelligence 区块渲染：估算费用卡片 + Estimated 语义 + 范围选择器。"""
+    cdp = hud_env["cdp"]
+    _click_usage(cdp)
+    txt = cdp.eval("document.body.textContent") or ""
+    assert "Cost Intelligence" in txt
+    assert "估算费用" in txt
+    assert "Estimated cost" in txt  # 语义：估算，非账单
+    assert "估算费用 / Estimated cost" in txt
+
+
+def test_ci_range_and_tables(hud_env) -> None:
+    """范围切换 + Top Sessions + 模型分布渲染。"""
+    cdp = hud_env["cdp"]
+    _click_usage(cdp)
+    r = cdp.eval("(() => { const b = [...document.querySelectorAll('button')]"
+                 ".find(x => x.textContent === '30d'); if (b) { b.click(); return true; }"
+                 " return false; })()")
+    assert r is True
+    time.sleep(3)
+    txt = cdp.eval("document.body.textContent") or ""
+    assert "Top Sessions" in txt
+    assert "模型分布" in txt
