@@ -338,9 +338,17 @@ async def get_skill_analytics(range: str = "7d", status: str | None = None,
                               limit: int = 50, offset: int = 0) -> dict:
     """Skill Analytics v1：inventory × runtime join（observed truth only）。
 
-    任一源失败 → partial result（不 500）。limit ≤ 200。
+    任一源失败 → partial result（不 500）。limit ≤ 200、offset ≥ 0；
+    非法 range → 400（不静默退化为 all）。
     """
     from hud import skill_analytics
+    if range not in skill_analytics.TIME_RANGES:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid range: {range} (24h|7d|30d|all)")
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=400, detail="limit must be 1..200")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be >= 0")
     try:
         return skill_analytics.query_skills(
             store, time_range=range, status=status, provenance=provenance,
@@ -351,8 +359,11 @@ async def get_skill_analytics(range: str = "7d", status: str | None = None,
 
 @router.get("/skills/analytics/summary")
 async def get_skill_analytics_summary(range: str = "7d") -> dict:
-    """Summary cards 数据。"""
+    """Summary cards 数据（非法 range → 400）。"""
     from hud import skill_analytics
+    if range not in skill_analytics.TIME_RANGES:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid range: {range} (24h|7d|30d|all)")
     try:
         return skill_analytics.compute_summary(store, time_range=range)
     except Exception as exc:  # noqa: BLE001
@@ -364,6 +375,10 @@ async def get_skill_analytics_detail(skill: str, range: str = "7d",
                                      timeline_limit: int = 20) -> dict:
     """单 skill 详情（含最近 timeline 事件，直接引用不复制）。"""
     from hud import skill_analytics
+    if range not in skill_analytics.TIME_RANGES:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid range: {range} (24h|7d|30d|all)")
+    timeline_limit = max(1, min(int(timeline_limit), 100))
     try:
         return skill_analytics.single_skill(store, skill, time_range=range,
                                             timeline_limit=timeline_limit)

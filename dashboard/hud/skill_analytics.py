@@ -52,27 +52,32 @@ def _range_cutoff(time_range: str, now: Optional[int] = None) -> Optional[int]:
     return int(now if now is not None else _t.time()) - secs
 
 
-def _skill_events(store, cutoff: Optional[int]) -> list[dict]:
-    """timeline_events 的 skill.* 事件（唯一可靠 skill runtime 来源）。"""
+def _skill_events(store, cutoff: Optional[int]) -> tuple[list[dict], bool]:
+    """timeline_events 的 skill.* 事件（唯一可靠 skill runtime 来源）。
+
+    返回 (events, source_ok)：稳定游标分页（before ts + before_id，与
+    Timeline v1 完全一致）；cutoff 下推 SQLite（after=cutoff，不先全量
+    再 Python filter）。查询异常 → ([], False)（source unavailable）。
+    """
     try:
         events = []
-        # 分页取全量（indexed ts 查询）
         before = None
+        before_id = None
         while True:
             rows = store.query_timeline(
-                limit=500, event_type="skill.", before=before)
+                limit=500, event_type="skill.", after=cutoff,
+                before=before, before_id=before_id)
             if not rows:
                 break
             events.extend(rows)
             if len(rows) < 500:
                 break
-            before = rows[-1]["timestamp"]
-        if cutoff is not None:
-            events = [e for e in events if (e.get("timestamp") or 0) >= cutoff]
-        return events
+            last = rows[-1]
+            before, before_id = last["timestamp"], last["event_id"]
+        return events, True
     except Exception as exc:  # noqa: BLE001
         log.debug("skill_analytics: timeline unavailable: %s", exc)
-        return []
+        return [], False
 
 
 def compute_analytics(store, time_range: str = "7d") -> dict:
@@ -102,7 +107,11 @@ def compute_analytics(store, time_range: str = "7d") -> dict:
             }
 
     cutoff = _range_cutoff(time_range)
-    events = _skill_events(store, cutoff)
+    try:
+        events, timeline_ok = _skill_events(store, cutoff)
+    except Exception:  # noqa: BLE001 源异常 → 视为 unavailable（防御）
+        events, timeline_ok = [], False
+    timeline_unavailable = not timeline_ok
 
     # runtime join（仅可靠 skill.* 事件）
     runs: dict[str, dict[str, Any]] = {}
@@ -138,17 +147,18 @@ def compute_analytics(store, time_range: str = "7d") -> dict:
         success_rate = (completed / observed_runs) if observed_runs else None
         avg_dur = (rt["duration_total"] / rt["duration_n"]
                    if rt and rt["duration_n"] else None)
-        if reg:
+        if timeline_unavailable:
+            # source unavailable：无法判断是否执行过 → unavailable（不是未观测到）
+            coverage = "unavailable"
+        elif reg:
             coverage = "observed" if observed else "inventory_only"
-            review_decision = reg["review_decision"]  # None → unavailable
         else:
             coverage = "observed" if observed else "unavailable"
-            review_decision = None
         skills_out.append({
             "skill": key,
             "registered": reg is not None,
             "provenance": reg["provenance"] if reg else None,
-            "review_decision": review_decision,
+            "review_decision": reg["review_decision"] if reg else None,
             "risk": reg["risk"] if reg else None,
             "version": reg["version"] if reg else None,
             "health": reg["health"] if reg else None,
@@ -161,7 +171,7 @@ def compute_analytics(store, time_range: str = "7d") -> dict:
             "runtime_coverage": coverage,
         })
 
-    # coverage object（Phase 11）
+    # coverage object（Phase 11 + Truth Gate：明确 source status）
     observed_skills = [s for s in skills_out if s["observed_runs"] > 0]
     coverage = {
         "registered_skills": len(reg_skills),
@@ -169,7 +179,13 @@ def compute_analytics(store, time_range: str = "7d") -> dict:
         "skill_events": len(events),
         "runtime_identity_source": ["timeline_events skill.*"],
         "coverage_complete": False,  # 无权威证据 → 恒 false（Phase 11）
-        "review_metadata_present": bool(registry),
+        "registry_metadata_present": bool(registry),
+        "review_metadata_present": False,  # Review Gate 未接入 → 绝不 true
+        "partial": timeline_unavailable,
+        "source_status": {
+            "timeline": "unavailable" if timeline_unavailable else "healthy",
+            "registry": "unavailable" if registry is None else "healthy",
+        },
     }
     return {"skills": skills_out, "coverage": coverage}
 
@@ -199,7 +215,12 @@ def query_skills(store, time_range: str = "7d", status: str | None = None,
                  provenance: str | None = None, observed: str | None = None,
                  search: str | None = None, sort: str = "name",
                  limit: int = 50, offset: int = 0) -> dict:
-    """过滤 + 排序 + 分页（limit ≤ 200）。"""
+    """过滤 + 排序 + 分页（limit ≤ 200）。
+
+    非法 time_range → ValueError（API 层转 400，不静默退化为 all）。
+    """
+    if time_range not in TIME_RANGES:
+        raise ValueError(f"invalid time range: {time_range} (24h|7d|30d|all)")
     data = compute_analytics(store, time_range)
     skills = data["skills"]
     if status == "failed":
@@ -219,7 +240,8 @@ def query_skills(store, time_range: str = "7d", status: str | None = None,
         "name": lambda s: s["skill"].lower(),
         "runs": lambda s: s["observed_runs"],
         "failures": lambda s: s["failed"],
-        "rate": lambda s: (s["success_rate"] if s["success_rate"] is not None else -1),
+        # 成功率最低：0%（有观测失败）排在 null/unobserved 之前 → null 用 2 垫底
+        "rate": lambda s: (s["success_rate"] if s["success_rate"] is not None else 2),
         "recent": lambda s: (s["last_observed_at"] or 0),
     }.get(sort, lambda s: s["skill"].lower())
     skills.sort(key=sort_key, reverse=(sort in ("runs", "failures", "recent")))
@@ -238,7 +260,7 @@ def single_skill(store, skill: str, time_range: str = "7d",
     if skill_data is None:
         return {"error": f"skill not found: {skill}"}
     cutoff = _range_cutoff(time_range)
-    events = _skill_events(store, cutoff)
+    events, _ = _skill_events(store, cutoff)
     related = [e for e in events if e.get("skill") == skill]
     related = related[:timeline_limit]
     return {"skill": skill_data, "recent_timeline_events": related}

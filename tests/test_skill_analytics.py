@@ -230,3 +230,113 @@ def test_api_schema(env) -> None:
                   "observed_runs", "completed", "failed", "success_rate",
                   "avg_duration_ms", "last_observed_at", "runtime_coverage"):
         assert field in row
+
+
+# ---------- Truth & Scale Final Gate tests ----------
+
+def test_source_unavailable_partial_and_unavailable_coverage(env, monkeypatch) -> None:
+    """timeline 源不可用 → partial=true + runtime_coverage=unavailable
+    （禁止显示为"未观测到执行"）。"""
+    _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
+
+    def boom(store, cutoff):
+        raise RuntimeError("timeline db locked")
+
+    monkeypatch.setattr(sa, "_skill_events", boom)
+    data = sa.compute_analytics(env["store"], "all")
+    assert data["coverage"]["partial"] is True
+    assert data["coverage"]["source_status"]["timeline"] == "unavailable"
+    pg = next(s for s in data["skills"] if s["skill"] == "pg")
+    assert pg["runtime_coverage"] == "unavailable"  # 不是 inventory_only / observed
+
+
+def test_source_healthy_zero_events(env) -> None:
+    """source healthy + zero events → inventory_only + partial=false（区别于 unavailable）。"""
+    _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
+    data = sa.compute_analytics(env["store"], "all")
+    assert data["coverage"]["partial"] is False
+    assert data["coverage"]["source_status"]["timeline"] == "healthy"
+    pg = next(s for s in data["skills"] if s["skill"] == "pg")
+    assert pg["runtime_coverage"] == "inventory_only"  # 未观测到（源健康）
+
+
+def test_same_timestamp_1000_pagination(env) -> None:
+    """1000 条同 timestamp skill 事件，page=500 稳定游标：observed=1000，
+    missing=0, duplicates=0。"""
+    st = env["store"]
+    ts = 1756000000
+    for i in range(1000):
+        st.record_timeline_event(_skill_event("pg", "completed", ts, rid=f"t{i}"))
+    data = sa.compute_analytics(st, "all")
+    assert data["coverage"]["skill_events"] == 1000
+    pg = next(s for s in data["skills"] if s["skill"] == "pg")
+    assert pg["observed_runs"] == 1000
+    assert pg["completed"] == 1000
+    assert pg["failed"] == 0
+    assert data["coverage"]["skills_with_observed_runtime"] == 1
+
+
+def test_review_metadata_truth(env) -> None:
+    """registry 有 → registry_metadata_present=true；Review Gate 未接入 →
+    review_metadata_present 绝不能 true。"""
+    _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
+    data = sa.compute_analytics(env["store"], "all")
+    cov = data["coverage"]
+    assert cov["registry_metadata_present"] is True
+    assert cov["review_metadata_present"] is False  # 未接入 → 绝不 true
+
+
+def test_null_rate_sort_failed_before_null(env) -> None:
+    """"成功率最低"排序：0%（有观测失败）排在 null/unobserved 前。"""
+    _mk_registry(env["tmp"], [
+        {"key": "aa", "source": "custom"},  # 无运行 → null
+        {"key": "bb", "source": "custom"},  # 0% 成功（全失败）
+        {"key": "cc", "source": "custom"},  # 50%
+    ])
+    st = env["store"]
+    now = int(time.time())
+    st.record_timeline_event(_skill_event("bb", "failed", now - 3000))
+    st.record_timeline_event(_skill_event("bb", "failed", now - 2000))
+    st.record_timeline_event(_skill_event("cc", "completed", now - 1000))
+    st.record_timeline_event(_skill_event("cc", "failed", now))
+    q = sa.query_skills(st, sort="rate")
+    order = [s["skill"] for s in q["skills"]]
+    assert order[0] == "bb"   # 0% 最前
+    assert order[1] == "cc"   # 50%
+    assert order[-1] == "aa"  # null 垫底
+
+
+def test_api_bounds_invalid_range(env) -> None:
+    """非法 range 不得静默退化为 all。"""
+    _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
+    st = env["store"]
+    st.record_timeline_event(_skill_event("pg", "completed", int(time.time()) - 100))
+    # 非法 range：query_skills 校验（API 层转 400）；不静默退化为 all
+    with pytest.raises(ValueError):
+        sa.query_skills(st, time_range="1y")
+    # 合法 range 正常
+    q = sa.query_skills(st, time_range="24h")
+    assert q["total"] == 1
+
+
+def test_100k_truth_benchmark(env) -> None:
+    """150 skills × 100k events：analytics/summary/single-skill 延迟 + RSS。"""
+    import resource
+    _mk_registry(env["tmp"], [{"key": f"s{i}", "source": "custom"} for i in range(150)])
+    st = env["store"]
+    t0 = time.time()
+    for i in range(100_000):
+        st.record_timeline_event(_skill_event(f"s{i % 150}", "completed", 1700000000 + (i % 5000),
+                                              dur=200 + (i % 100), rid=f"k{i}"))
+    ingest = time.time() - t0
+    t0 = time.time(); data = sa.compute_analytics(st, "all"); t_analytics = time.time() - t0
+    t0 = time.time(); summ = sa.compute_summary(st, "all"); t_summary = time.time() - t0
+    t0 = time.time(); d = sa.single_skill(st, "s7", "all"); t_detail = time.time() - t0
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # macOS: bytes
+    assert data["coverage"]["skill_events"] == 100_000
+    assert len(data["skills"]) == 150
+    assert summ["observed_runs"] == 100_000
+    assert d["skill"]["skill"] == "s7"
+    print(f"100k: ingest={ingest:.1f}s analytics={t_analytics*1000:.0f}ms "
+          f"summary={t_summary*1000:.0f}ms detail={t_detail*1000:.0f}ms "
+          f"RSS={rss/1024/1024:.1f}MB")

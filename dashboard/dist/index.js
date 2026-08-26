@@ -1234,9 +1234,15 @@
     return ms + "ms";
   }
 
+  function saNum(v) {
+    // 0 是合法值（显示 0）；null/undefined 才是 unavailable（显示 —）
+    return (v === null || v === undefined) ? "—" : String(v);
+  }
+
   function saCoverageZh(c) {
     if (c === "observed") return "已观测";
     if (c === "inventory_only") return "仅清单";
+    if (c === "unavailable") return "不可用";
     return "—";
   }
 
@@ -1333,9 +1339,9 @@
         h("span", { style: { fontSize: 11, opacity: 0.75 } }, s.provenance || "—"),
         h("span", { style: { fontSize: 11 } }, s.review_decision || "—"),
         h("span", { style: { fontSize: 11 } }, s.risk || "—"),
-        h("span", { style: { textAlign: "right" } }, s.observed_runs || "—"),
-        h("span", { style: { textAlign: "right", color: "#3fb950" } }, s.completed || "—"),
-        h("span", { style: { textAlign: "right", color: s.failed ? "#e5534b" : "inherit" } }, s.failed || "—"),
+        h("span", { style: { textAlign: "right" } }, saNum(s.observed_runs)),
+        h("span", { style: { textAlign: "right", color: "#3fb950" } }, saNum(s.completed)),
+        h("span", { style: { textAlign: "right", color: s.failed ? "#e5534b" : "inherit" } }, saNum(s.failed)),
         h("span", { style: { textAlign: "right" } }, saRate(s.success_rate)),
         h("span", { style: { textAlign: "right" } }, saDur(s.avg_duration_ms)),
         h("span", { style: { textAlign: "right", fontSize: 11, opacity: 0.75 } }, saTime(s.last_observed_at)),
@@ -1348,7 +1354,7 @@
             kv("风险", s.risk || "—"),
             kv("版本", s.version || "—"),
             kv("健康", s.health || "—"),
-            kv("观测运行", s.observed_runs || "—"),
+            kv("观测运行", saNum(s.observed_runs)),
             kv("成功率", saRate(s.success_rate)),
             kv("平均耗时", saDur(s.avg_duration_ms)),
             kv("最近观测", saTime(s.last_observed_at)),
