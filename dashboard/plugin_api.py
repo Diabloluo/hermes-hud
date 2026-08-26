@@ -239,11 +239,16 @@ async def get_timeline_stats() -> dict:
 
 @router.get("/health")
 async def get_health() -> dict:
-    """只跑健康评估（轻量，不重算快照）。"""
+    """只跑健康评估（轻量，不重算快照）+ API 版本契约（Desktop 协商用）。"""
+    from hud import version
     if _last_health is not None:
-        return _last_health
+        out = dict(_last_health)
+        out.update(version.api_version_payload())
+        return out
     snap = await _get_snapshot()
-    return snap["_health"]
+    out = dict(snap["_health"])
+    out.update(version.api_version_payload())
+    return out
 
 
 @router.get("/data-quality")
@@ -446,8 +451,11 @@ async def get_cost_budget() -> dict:
 
 @router.get("/settings")
 async def get_settings() -> dict:
-    """HUD 自身配置/阈值（只读展示）。"""
-    return {
+    """HUD 自身配置/阈值（只读展示）+ API 版本契约。"""
+    from hud import version
+    out = {
+        "api_schema_version": version.HUD_API_SCHEMA_VERSION,
+        "plugin_version": version.get_plugin_version(),
         "thresholds": {
             "disk_free_critical": rules.DISK_FREE_CRITICAL,
             "disk_free_warn": rules.DISK_FREE_WARN,
@@ -468,6 +476,7 @@ async def get_settings() -> dict:
         "snapshot_cache_ttl_s": _SNAPSHOT_TTL,
         "telemetry_interval_s": _TELEMETRY_INTERVAL,
     }
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +501,9 @@ async def stream_events(ws: WebSocket):
             health = snap["_health"]
             events = snap.get("_events", [])
             try:
+                from hud import version as _hud_version
                 await ws.send_json({
+                    "schema_version": _hud_version.HUD_API_SCHEMA_VERSION,
                     "ts": time.time(),
                     "health": {"overall": health["overall"], "counts": health["counts"]},
                     "events": events[-20:],

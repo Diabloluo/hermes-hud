@@ -38,8 +38,8 @@ HUD Core / Backend API  (plugin_api.py — FastAPI, 21 REST + 1 WS)
 | Criterion | Tauri 2 | Electron | Verdict for HUD |
 |---|---|---|---|
 | Bundle size | 3–15 MB (bare <600 KB) | 50–150 MB+ | Tauri wins decisively |
-| Idle RAM | ~30–50 MB (42 MB measured) | ~120–400 MB (168 MB measured) | Tauri |
-| Cold start | ~380 ms | ~1,420 ms | Tauri |
+| Idle RAM | ~30–50 MB (**reference benchmark**, see [L] below) | ~120–400 MB | Tauri |
+| Cold start | ~380 ms (**reference benchmark**) | ~1,420 ms | Tauri |
 | Rendering | OS WebView (WKWebView on macOS) | Bundled Chromium | Electron identical; Tauri fine for our UI |
 | Backend | Rust core | Node.js | **Irrelevant** — HUD backend stays Python |
 | Security default | capability allowlist (closed by default) | opt-in hardening | Tauri |
@@ -50,6 +50,12 @@ HUD Core / Backend API  (plugin_api.py — FastAPI, 21 REST + 1 WS)
 | Notifications | notification plugin | mature | both OK |
 | Auto-update | Tauri updater (full-binary, younger) | electron-updater/Sparkle (battle-tested) | noted; not built this phase |
 | Signing/notarization | `tauri signer` + notarytool | Forge/osx-sign | both require Apple Developer account |
+
+> **Benchmark truth note**: idle-RAM ~42 MB and cold-start ~380 ms above are
+> **reference benchmarks** from public Tauri-vs-Electron 2026 comparisons
+> (woyable / forasoft / pkgpulse), NOT measured on this machine for Hermes HUD.
+> They will be replaced with our own measured numbers in Desktop Foundation
+> v0.1 (Actual Desktop Benchmark, section L).
 
 **Decision: Tauri 2.** Size/RAM/security defaults win; the Node-vs-Rust concern
 is moot because our business logic lives in the existing Python backend and the
@@ -93,14 +99,37 @@ Two ways to load it in Tauri:
 
 - Discovery: probe `127.0.0.1:9119` (default) then well-known ports; `/health`
   reachable = Dashboard up.
-- Auth: GET `/` once → extract `window.__HERMES_SESSION_TOKEN__` → send as
-  `X-Hermes-Session-Token` on REST and on the WS handshake (same as curl/Web
-  client). Token is loopback-injected per dashboard session.
-- Reconnect: exponential backoff on WS; REST poll fallback (already the Web
-  client's behaviour).
-- Version negotiation: **gap** — `/health` and `/settings` carry no
-  `api_version`. Needed: HUD API schema version (e.g. `"api_version": 1`) in
-  `/health` so the Desktop app can refuse incompatible backends.
+- Auth: **the `/hud` page itself handles Dashboard session-token auth (loopback
+  page-token injection) — the native Rust shell does NOT parse HTML, does NOT
+  scrape session tokens, and does NOT perform authenticated REST** (see
+  Security Model Correction below).
+- Reconnect: WS exponential backoff inside the page (already the Web client's
+  behaviour); REST poll fallback likewise.
+- Version negotiation: `api_schema_version` (HUD_API_SCHEMA_VERSION = 1) in
+  `/health` + `/settings` (Desktop Foundation v0.1, contract D).
+
+### Security Model Correction — two security planes
+
+1. **Remote HUD WebView** (loads `http://127.0.0.1:<port>/hud`):
+   - Tauri IPC capability = **NONE** · shell = NONE · fs = NONE · dialog = NONE
+     · updater = NONE · native commands = NONE
+   - The `/hud` page talks to the Dashboard the same way a normal browser does:
+     `fetch` / `WebSocket` / `localStorage` — plain HTTP to `127.0.0.1:<port>`.
+   - **No Tauri HTTP plugin capability is granted to the remote URL.**
+2. **Native Rust shell**:
+   - Exposes **no command bridge** to the `/hud` page (no `invoke` handlers
+     reachable from remote content).
+   - Native capabilities (tray, window) are shell-only, driven by native code.
+
+### Auth Boundary (v0.1)
+
+- WebView page itself handles existing Dashboard session-token auth.
+- Native Rust does **not** parse HTML / scrape session tokens / hold tokens.
+- Page-token scraping is **rejected for the native layer** — brittle HTML
+  coupling, unnecessary secret handling. Prototype does not need it.
+- Native incident polling / native authenticated REST / app-token / token
+  persistence / native notifications: **deferred** until a stable desktop
+  handshake exists.
 
 ### E. Desktop API Contract (v1.1.0 coverage)
 
