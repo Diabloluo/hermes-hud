@@ -6,8 +6,8 @@
 
 - **Local & read-only**: everything runs on your machine; Hermes core data (state.db) is never modified.
 - **Advisory only**: HUD informs; it never trades, sends, or acts on your behalf.
-- **Versions**: current stable release **v1.0.2** · Hermes ≥ 0.19.0 · macOS tested (Linux in progress).
-  _Newer features on `main` (e.g. Agent Timeline) are upcoming — not part of v1.0.2 yet._
+- **Versions**: latest release **v1.1.0** · Hermes ≥ 0.19.0 · macOS tested (Linux in progress).
+  _v1.1.0 includes Agent Timeline, Skill Analytics and Cost Intelligence._
 - **Docs**: [README](https://github.com/Diabloluo/hermes-hud#readme) · [INSTALL.md](https://github.com/Diabloluo/hermes-hud/blob/main/INSTALL.md) · [First 5 minutes](https://github.com/Diabloluo/hermes-hud/blob/main/FIRST_5_MINUTES.md)
 
 ## How to get help

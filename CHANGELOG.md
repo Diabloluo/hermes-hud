@@ -3,6 +3,24 @@
 本文件记录 Hermes HUD 的可见变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-08-26
+
+### Added
+- **Agent Timeline** — 统一事件模型（session / skill / tool / incident），observed truth only；稳定游标分页（同 timestamp 不重不漏）、watermark 提交点、幂等采集、30 天保留
+- **Skill Analytics** — inventory × runtime join；observed_runs / success_rate（denominator=0 → null）；运行覆盖声明（observed / inventory_only / unavailable）；"未观测到执行"语言真相
+- **Cost Intelligence** — canonical session_model_usage 单源聚合；estimated-cost 语义（非账单）；定价来源覆盖（known / unknown / legacy-missing）；归属式时间窗口（last_seen attribution，非 exact）；预算视图（attribution-uncertain）
+- **GitHub Discussions / Community** — 仓库 Discussions 启用、社区入口、首帖草稿（Welcome / Show us your setup / What should HUD observe next）
+
+### Improved
+- **Fresh Install CI** — clean-environment first-install 自动验证（Python 3.13 + Hermes 0.19.0 固定版本、source-under-test SHA 断言、HTTP smoke、精确清理）
+- **onboarding / installation docs** — INSTALL.md（Hermes ≥ 0.19.0 实测）、FIRST_5_MINUTES.md、DISCUSSIONS_GUIDE.md；README Quick Start 命令修正
+- **API contracts prepared for future desktop clients** — schema_version=1、/cost/* /timeline /skills/analytics 独立可消费 JSON
+
+### Correctness
+- Timeline：稳定 watermark 提交点（scan_started_at）、同 timestamp 稳定分页、duration_ms 换算、session 增量完成、token/cost 时间真实性
+- Skill Analytics：SQL 原生聚合（无 cache）、source availability 三态、registry/review 元数据真相、null-rate 排序
+- Cost：pricing provenance（estimated_cost_usd NOT NULL ≠ 定价可靠）、累计窗口归属真相、budget 不给假精确比例
+
 ## [1.0.2] - 2026-08-23
 
 ### Fixed

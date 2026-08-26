@@ -48,10 +48,12 @@ hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 |---|---|
 | ◉ 指挥中心 | 健康分（正常/警告/故障）、Gateway/渠道/Cron 状态、今日 Token/费用、30 项健康检查、事故时间线、系统迷你卡 |
 | ⚡ 实时活动 | 活跃会话、2 秒增量事件流（WebSocket + 轮询兜底）、最近工具调用 |
-| ¥ Token·费用 | 7/30/90 天趋势、按模型/辅助任务归集、费用明确标注"估算/实际/未计价" |
+| ¥ Token·费用 | Cost Intelligence：今日/24h/7d/30d/All 估算费用、每日趋势（/cost/timeseries）、模型分布、Top Sessions、预算视图（估算语义 + 定价来源覆盖 + 归属式时间窗口） |
 | ☰ 对话记录 | 搜索、分页、会话详情（消息预览 + model usage） |
+| 🕒 时间线 | Agent Timeline：session/skill/tool/incident 事件流、过滤、详情、新事件指示（observed truth only） |
 | 🧠 记忆 | MEMORY.md/USER.md 元数据、锁文件健康 |
 | ⚒ 技能 | 技能目录统计、分类筛选与本机技能列表 |
+| 📊 技能分析 | Skill Analytics：已注册/已观测/运行次数/成功率、时间范围、覆盖警告（inventory × runtime join，observed truth only） |
 | ⏱ 定时任务 | 任务启用状态、排程、失败次数与执行历史（claimed→running→completed/failed） |
 | ⇄ 渠道 | Telegram/飞书等"已连接但持续抖动"正确标黄（不再被 connected 掩盖） |
 | ⚠ 错误·事故 | 30 分钟错误数、异常指纹聚合、事故时间线（含已恢复保留）、脱敏日志尾部 |

@@ -10,10 +10,10 @@ A **user-level Hermes Dashboard plugin**: it does not modify the `~/.hermes/herm
 
 ## ✨ Highlights
 
-- 🖥 **11 tabs, one screen**: Overview, Live, Token & Cost, Sessions, Memory, Skills, Cron, Channels, Errors & Incidents, System & Storage, Settings
+- 🖥 **One screen, many tabs**: Overview, Live, Token & Cost (Cost Intelligence), Sessions, Timeline, Memory, Skills, Skill Analytics, Cron, Channels, Errors & Incidents, System & Storage, Settings
 - ⚡ **2-second realtime**: shared snapshot cache + WebSocket incremental event stream; REST and WS never duplicate collection
 - 🔒 **Strict read-only boundary**: Hermes core data is always read-only (`mode=ro`, never locks the Gateway); logs/paths redacted first, fingerprints generated after redaction — raw secrets never leave
-- 📊 **Trustworthy cost accounting**: no main/aux double counting, `api_call_count` summed, estimated/actual/unbilled buckets labeled separately
+- 📊 **Trustworthy cost accounting**: estimated-cost semantics with pricing-provenance coverage (known vs unknown pricing rows) and attribution-aware time windows — never presented as provider invoices
 - 🚨 **Proactive alerts**: optional `hud_alert.py` pushes new incidents / upgrades / recoveries to Telegram + Feishu (dedup + confirmed-recovery state machine)
 
 ## 🚀 Quick Start
