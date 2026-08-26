@@ -228,6 +228,7 @@ def test_source_recovery(env, monkeypatch) -> None:
 
 def test_100k_scale(env) -> None:
     """100k usage rows：summary/models/sessions 延迟 + RSS。"""
+    import os as _os
     import resource
     now = time.time()
     rows = [(_row(f"s{i % 5000}", f"m{i % 20}", inp=100 + i % 100, out=10 + i % 10,
