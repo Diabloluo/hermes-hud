@@ -350,9 +350,10 @@ async def get_skill_analytics(range: str = "7d", status: str | None = None,
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset must be >= 0")
     try:
-        return skill_analytics.query_skills(
-            store, time_range=range, status=status, provenance=provenance,
-            observed=observed, search=search, sort=sort, limit=limit, offset=offset)
+        return await asyncio.to_thread(
+            skill_analytics.query_skills, store, time_range=range, status=status,
+            provenance=provenance, observed=observed, search=search, sort=sort,
+            limit=limit, offset=offset)
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc), "skills": [], "total": 0}
 
@@ -365,7 +366,8 @@ async def get_skill_analytics_summary(range: str = "7d") -> dict:
         raise HTTPException(status_code=400,
                             detail=f"invalid range: {range} (24h|7d|30d|all)")
     try:
-        return skill_analytics.compute_summary(store, time_range=range)
+        return await asyncio.to_thread(
+            skill_analytics.compute_summary, store, time_range=range)
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}
 
@@ -380,8 +382,9 @@ async def get_skill_analytics_detail(skill: str, range: str = "7d",
                             detail=f"invalid range: {range} (24h|7d|30d|all)")
     timeline_limit = max(1, min(int(timeline_limit), 100))
     try:
-        return skill_analytics.single_skill(store, skill, time_range=range,
-                                            timeline_limit=timeline_limit)
+        return await asyncio.to_thread(
+            skill_analytics.single_skill, store, skill, time_range=range,
+            timeline_limit=timeline_limit)
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}
 

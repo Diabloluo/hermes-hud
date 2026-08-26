@@ -202,21 +202,145 @@ def test_single_skill_detail(env) -> None:
     assert "prompt" not in json.dumps(d)  # 无敏感内容
 
 
-def test_10k_events_perf(env) -> None:
-    """10k skill 事件：聚合延迟有界。"""
+def test_100k_truth_benchmark(env) -> None:
+    """150 skills × 100k events（bulk fixture）：aggregate/summary/detail 延迟 + RSS。
+
+    硬断言：aggregate < 1s、detail < 500ms（本地；CI 放宽到 5s/3s）。
+    """
+    import os as _os
+    import resource
+    _mk_registry(env["tmp"], [{"key": f"s{i}", "source": "custom"} for i in range(150)])
     st = env["store"]
+    events = [_skill_event(f"s{i % 150}", "completed", 1700000000 + (i % 5000),
+                           dur=200 + (i % 100), rid=f"k{i}")
+              for i in range(100_000)]
     t0 = time.time()
-    for i in range(10_000):
-        st.record_timeline_event(_skill_event(f"skill{i % 100}", "completed", 1000 + i,
-                                              dur=100))
+    st.bulk_record_timeline_events(events)
     ingest = time.time() - t0
-    t0 = time.time()
+    t0 = time.time(); data = sa.compute_analytics(st, "all"); t_agg = time.time() - t0
+    t0 = time.time(); summ = sa.compute_summary(st, "all"); t_summary = time.time() - t0
+    t0 = time.time(); d = sa.single_skill(st, "s7", "all"); t_detail = time.time() - t0
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # macOS: bytes
+    assert data["coverage"]["skill_events"] == 100_000
+    assert len(data["skills"]) == 150
+    assert summ["observed_runs"] == 100_000
+    assert d["skill"]["skill"] == "s7"
+    ci = bool(_os.environ.get("CI"))
+    agg_lim = 5.0 if ci else 1.0
+    det_lim = 3.0 if ci else 0.5
+    assert t_agg < agg_lim, f"aggregate {t_agg:.2f}s >= {agg_lim}s"
+    assert t_detail < det_lim, f"detail {t_detail:.2f}s >= {det_lim}s"
+    print(f"100k(bulk): ingest={ingest:.1f}s aggregate={t_agg*1000:.0f}ms "
+          f"summary={t_summary*1000:.0f}ms detail={t_detail*1000:.0f}ms "
+          f"RSS={rss/1024/1024:.1f}MB")
+
+
+# ---------- SQL Aggregation Final Architecture Gate tests ----------
+
+def test_sliding_window_aging_no_cache(env, monkeypatch) -> None:
+    """sliding window：事件 24h 内 → 无 DB 变更 → 时钟推进超 24h →
+    第二次调用 observed_runs 1→0（无缓存/无 TTL 依赖）。"""
+    now = int(time.time())
+    _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
+    st = env["store"]
+    st.record_timeline_event(_skill_event("pg", "completed", now - 3600))  # 24h 内
+    # 第一次：cutoff = now - 24h（事件在窗口内）
+    monkeypatch.setattr(sa, "_range_cutoff", lambda r, now_=None: now - 86400)
+    data1 = sa.compute_analytics(st, "24h")
+    pg1 = next(s for s in data1["skills"] if s["skill"] == "pg")
+    assert pg1["observed_runs"] == 1
+    # 时钟推进超 24h（DB 零变更）：now2 = now + 86400 → 24h 前 = now
+    monkeypatch.setattr(sa, "_range_cutoff", lambda r, now_=None: now)
+    data2 = sa.compute_analytics(st, "24h")
+    pg2 = next(s for s in data2["skills"] if s["skill"] == "pg")
+    assert pg2["observed_runs"] == 0  # 1 → 0（sliding，非 TTL）
+
+
+def test_registry_freshness(env) -> None:
+    """registry 文件变化（2→3 skills，timeline 不变）→ 下次调用 registered=3。"""
+    _mk_registry(env["tmp"], [{"key": "a", "source": "custom"},
+                              {"key": "b", "source": "custom"}])
+    data1 = sa.compute_analytics(env["store"], "all")
+    assert data1["coverage"]["registered_skills"] == 2
+    _mk_registry(env["tmp"], [{"key": "a", "source": "custom"},
+                              {"key": "b", "source": "custom"},
+                              {"key": "c", "source": "custom"}])
+    data2 = sa.compute_analytics(env["store"], "all")
+    assert data2["coverage"]["registered_skills"] == 3  # 立即反映，无 stale
+
+
+def test_source_outage_and_recovery(env, monkeypatch) -> None:
+    """healthy → 聚合失败 → unavailable/partial → 恢复（DB 未变）→ 立即 healthy。"""
+    _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
+    st = env["store"]
+    st.record_timeline_event(_skill_event("pg", "completed", int(time.time()) - 100))
+    # healthy
+    d1 = sa.compute_analytics(st, "all")
+    assert d1["coverage"]["source_status"]["timeline"] == "healthy"
+    # 故障
+    monkeypatch.setattr(st, "aggregate_skill_runtime",
+                        lambda cutoff: (_ for _ in ()).throw(RuntimeError("locked")))
+    d2 = sa.compute_analytics(st, "all")
+    assert d2["coverage"]["partial"] is True
+    assert d2["coverage"]["source_status"]["timeline"] == "unavailable"
+    assert all(s["runtime_coverage"] == "unavailable" for s in d2["skills"])
+    # 恢复（DB 零变更；monkeypatch 撤销）
+    monkeypatch.undo()
+    d3 = sa.compute_analytics(st, "all")
+    assert d3["coverage"]["source_status"]["timeline"] == "healthy"
+    assert d3["coverage"]["partial"] is False
+    pg = next(s for s in d3["skills"] if s["skill"] == "pg")
+    assert pg["runtime_coverage"] == "observed"  # 不 stale unavailable
+
+
+def test_summary_unavailable_vs_zero(env, monkeypatch) -> None:
+    """timeline unavailable → no_observed_execution=null（UI —）；
+    source healthy + zero → no_observed_execution=registered count。"""
+    _mk_registry(env["tmp"], [{"key": "a", "source": "custom"},
+                              {"key": "b", "source": "custom"}])
+    # healthy + zero
+    s1 = sa.compute_summary(env["store"], "all")
+    assert s1["no_observed_execution"] == 2  # registered count
+    assert s1["observed_runs"] == 0
+    # unavailable
+    monkeypatch.setattr(env["store"], "aggregate_skill_runtime",
+                        lambda cutoff: (_ for _ in ()).throw(RuntimeError("x")))
+    s2 = sa.compute_summary(env["store"], "all")
+    assert s2["no_observed_execution"] is None  # UI —
+    assert s2["observed_runs"] is None
+    assert s2["success_rate"] is None
+
+
+def test_unobserved_filter_excludes_unavailable(env, monkeypatch) -> None:
+    """observed/unobserved 过滤不得返回 unavailable rows。"""
+    _mk_registry(env["tmp"], [{"key": "a", "source": "custom"}])
+    st = env["store"]
+    st.record_timeline_event(_skill_event("a", "completed", int(time.time()) - 100))
+    # healthy：unobserved = 无运行 skill（a 有运行 → 空）
+    q1 = sa.query_skills(st, observed="unobserved", time_range="all")
+    assert all(s["runtime_coverage"] != "unavailable" for s in q1["skills"])
+    # unavailable：unobserved 过滤 → 空（unavailable rows 不冒充未观测）
+    monkeypatch.setattr(st, "aggregate_skill_runtime",
+                        lambda cutoff: (_ for _ in ()).throw(RuntimeError("x")))
+    q2 = sa.query_skills(st, observed="unobserved", time_range="all")
+    assert q2["skills"] == []  # 不返回 unavailable rows
+
+
+def test_exact_event_allowlist(env) -> None:
+    """聚合只认 skill.completed / skill.failed（其他类型不计）。"""
+    _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
+    st = env["store"]
+    now = int(time.time())
+    st.record_timeline_event(_skill_event("pg", "completed", now - 100))
+    st.record_timeline_event(_skill_event("pg", "failed", now - 50))
+    # 非白名单事件（如 skill.started 类——即使存在也不计入）
+    st.record_timeline_event(timeline.normalize_event({
+        "timestamp": now, "event_type": "skill.started", "status": "started",
+        "skill": "pg", "summary": "x", "source_record_id": "sx"}))
     data = sa.compute_analytics(st, "all")
-    agg = time.time() - t0
-    assert data["coverage"]["skill_events"] == 10_000
-    assert len(data["skills"]) == 100
-    assert agg < 2.0, f"aggregation too slow: {agg:.2f}s"
-    print(f"10k: ingest={ingest:.2f}s aggregate={agg:.3f}s")
+    pg = next(s for s in data["skills"] if s["skill"] == "pg")
+    assert pg["observed_runs"] == 2  # 只 2 个白名单事件
+    assert pg["completed"] == 1 and pg["failed"] == 1
 
 
 def test_api_schema(env) -> None:
@@ -239,15 +363,19 @@ def test_source_unavailable_partial_and_unavailable_coverage(env, monkeypatch) -
     （禁止显示为"未观测到执行"）。"""
     _mk_registry(env["tmp"], [{"key": "pg", "source": "custom"}])
 
-    def boom(store, cutoff):
+    def boom(cutoff):
         raise RuntimeError("timeline db locked")
 
-    monkeypatch.setattr(sa, "_skill_events", boom)
+    monkeypatch.setattr(env["store"], "aggregate_skill_runtime", boom)
     data = sa.compute_analytics(env["store"], "all")
     assert data["coverage"]["partial"] is True
     assert data["coverage"]["source_status"]["timeline"] == "unavailable"
     pg = next(s for s in data["skills"] if s["skill"] == "pg")
     assert pg["runtime_coverage"] == "unavailable"  # 不是 inventory_only / observed
+    assert pg["observed_runs"] is None  # 源不可用 → runtime 字段全 null
+    assert pg["success_rate"] is None
+    assert pg["avg_duration_ms"] is None
+    assert pg["last_observed_at"] is None
 
 
 def test_source_healthy_zero_events(env) -> None:
@@ -317,26 +445,3 @@ def test_api_bounds_invalid_range(env) -> None:
     # 合法 range 正常
     q = sa.query_skills(st, time_range="24h")
     assert q["total"] == 1
-
-
-def test_100k_truth_benchmark(env) -> None:
-    """150 skills × 100k events：analytics/summary/single-skill 延迟 + RSS。"""
-    import resource
-    _mk_registry(env["tmp"], [{"key": f"s{i}", "source": "custom"} for i in range(150)])
-    st = env["store"]
-    t0 = time.time()
-    for i in range(100_000):
-        st.record_timeline_event(_skill_event(f"s{i % 150}", "completed", 1700000000 + (i % 5000),
-                                              dur=200 + (i % 100), rid=f"k{i}"))
-    ingest = time.time() - t0
-    t0 = time.time(); data = sa.compute_analytics(st, "all"); t_analytics = time.time() - t0
-    t0 = time.time(); summ = sa.compute_summary(st, "all"); t_summary = time.time() - t0
-    t0 = time.time(); d = sa.single_skill(st, "s7", "all"); t_detail = time.time() - t0
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # macOS: bytes
-    assert data["coverage"]["skill_events"] == 100_000
-    assert len(data["skills"]) == 150
-    assert summ["observed_runs"] == 100_000
-    assert d["skill"]["skill"] == "s7"
-    print(f"100k: ingest={ingest:.1f}s analytics={t_analytics*1000:.0f}ms "
-          f"summary={t_summary*1000:.0f}ms detail={t_detail*1000:.0f}ms "
-          f"RSS={rss/1024/1024:.1f}MB")

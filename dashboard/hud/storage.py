@@ -332,6 +332,84 @@ class TelemetryStore:
                 "incident_id", "summary", "source", "correlation_id"]
         return [dict(zip(cols, r)) for r in rows]
 
+    def aggregate_skill_runtime(self, cutoff: Optional[int] = None) -> dict:
+        """SQLite 原生聚合（只读）：skill runtime 统计。
+
+        事件白名单只认显式类型 skill.completed / skill.failed（不用 skill.*
+        前缀猜状态）；AVG 只包含可靠的 duration_ms > 0（无 → null）。
+        返回 {skill: {completed, failed, observed_runs, avg_duration_ms,
+        last_observed_at}}。
+        """
+        where = "event_type IN ('skill.completed','skill.failed')"
+        params: list = []
+        if cutoff is not None:
+            where += " AND ts >= ?"
+            params.append(cutoff)
+        sql = f"""SELECT skill,
+                 SUM(CASE WHEN event_type='skill.failed' THEN 1 ELSE 0 END) AS failed,
+                 SUM(CASE WHEN event_type='skill.completed' THEN 1 ELSE 0 END) AS completed,
+                 COUNT(*) AS observed_runs,
+                 AVG(CASE WHEN duration_ms > 0 THEN duration_ms END) AS avg_duration_ms,
+                 MAX(ts) AS last_observed_at
+                 FROM timeline_events WHERE {where}
+                 GROUP BY skill ORDER BY skill"""
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        out: dict[str, dict] = {}
+        for skill, failed, completed, observed, avg_dur, last_ts in rows:
+            out[skill] = {
+                "completed": completed or 0,
+                "failed": failed or 0,
+                "observed_runs": observed or 0,
+                "avg_duration_ms": avg_dur,  # AVG 空/全 NULL → None
+                "last_observed_at": last_ts,
+            }
+        return out
+
+    def query_skill_runtime_events(self, skill: str, cutoff: Optional[int] = None,
+                                   limit: int = 100) -> list[dict]:
+        """单 skill 最近运行事件（直接 SQL，不扫全量）。
+
+        WHERE skill=? AND event_type IN (白名单) ORDER BY ts DESC, event_id DESC
+        LIMIT ?（limit 1..100）。
+        """
+        limit = max(1, min(int(limit), 100))
+        where = "skill = ? AND event_type IN ('skill.completed','skill.failed')"
+        params: list = [skill]
+        if cutoff is not None:
+            where += " AND ts >= ?"
+            params.append(cutoff)
+        params.append(limit)
+        sql = "SELECT event_id, ts, event_type, status, skill, duration_ms, summary," \
+              " source FROM timeline_events WHERE " + where + \
+              " ORDER BY ts DESC, event_id DESC LIMIT ?"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [{"event_id": r[0], "timestamp": r[1], "event_type": r[2],
+                 "status": r[3], "skill": r[4], "duration_ms": r[5],
+                 "summary": r[6], "source": r[7]} for r in rows]
+
+    def bulk_record_timeline_events(self, events: list[dict]) -> int:
+        """bulk 写入（单连接单事务 executemany，INSERT OR IGNORE 幂等）。
+        返回新写入条数（测试/批量场景避免 10 万次独立连接）。"""
+        if not events:
+            return 0
+        cols = ("event_id", "ts", "event_type", "status", "session_id", "skill",
+                "tool", "tool_call_id", "duration_ms", "tokens", "cost_usd",
+                "incident_id", "summary", "source", "correlation_id",
+                "source_record_id")
+        # normalize_event 用 "timestamp" 键 → 映射到列名 "ts"
+        rows = []
+        for ev in events:
+            rows.append(tuple(ev.get(c) if c != "ts" else ev.get("timestamp")
+                              for c in cols))
+        with self._connect() as conn:
+            cur = conn.executemany(
+                f"INSERT OR IGNORE INTO timeline_events ({','.join(cols)})"
+                f" VALUES ({','.join('?' * len(cols))})", rows)
+            written = cur.rowcount
+        return written
+
     def timeline_stats(self) -> dict:
         """Timeline 汇总（总量 + 类型分布 + 最近事件时间）。"""
         with self._connect() as conn:

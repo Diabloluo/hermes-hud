@@ -1,17 +1,21 @@
-"""Hermes HUD — Skill Analytics v1。
+"""Hermes HUD — Skill Analytics v1（SQL Aggregation 架构）。
 
 把 Skill 从静态列表升级为可观测对象（observed truth only）：
 没有可靠运行证据 → "未观测到执行"（绝不写"从未使用"）。
 
-数据真相（Phase 1 Source Matrix 结论）：
-  - Skill Registry（~/.hermes/skill-registry/registry.json）= inventory 元数据
-  - timeline_events 的 skill.* = 唯一 first-class skill runtime identity
-  - Job Ledger / state.db 无可靠 skill identity → 不猜、不制造 telemetry
-  - Review Gate 结果未写回 registry → review_decision = unavailable（诚实）
-
-合约：observed_runs = completed + failed；success_rate = completed/observed_runs
-（denominator=0 → null，绝不显示 0%）；avg_duration_ms 仅可靠 duration_ms 参与；
-不把 session token/cost 分摊给 skill。
+架构（SQL Aggregation Final Gate）：
+  - 聚合走 storage.aggregate_skill_runtime()：SQLite 原生 GROUP BY，事件白名单
+    只认 skill.completed / skill.failed（不用 skill.* 前缀猜状态）
+  - 单 skill 详情走 query_skill_runtime_events()：WHERE skill=? + 白名单 +
+    ORDER BY ts DESC, event_id DESC LIMIT——不扫描全量
+  - 无 aggregate cache（sliding range / registry 变化 / source availability
+    无法由 (total,last_ts) 完整表达 → 不修 cache invalidation，直接每轮 SQL）
+  - Source truth：registry 与 timeline 分开判断 healthy/unavailable；
+    partial = 任一 unavailable；timeline unavailable → 全部 runtime 字段 null、
+    runtime_coverage=unavailable（不是"未观测到执行"）、
+    no_observed_execution=null（UI —）
+  - observed/unobserved 过滤不得返回 unavailable rows
+  - 不把 session token/cost 分摊给 skill（Cost Intelligence 后置）
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ REGISTRY_PATH = Path.home() / ".hermes" / "skill-registry" / "registry.json"
 
 TIME_RANGES = {"24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "all": None}
 
-_SKILL_TYPES = ("skill.completed", "skill.failed")
+_SKILL_TYPES = ("skill.completed", "skill.failed")  # 显式白名单（禁前缀猜）
 
 
 def _registry_data() -> Optional[dict]:
@@ -52,130 +56,83 @@ def _range_cutoff(time_range: str, now: Optional[int] = None) -> Optional[int]:
     return int(now if now is not None else _t.time()) - secs
 
 
-def _skill_events(store, cutoff: Optional[int]) -> tuple[list[dict], bool]:
-    """timeline_events 的 skill.* 事件（唯一可靠 skill runtime 来源）。
-
-    返回 (events, source_ok)：稳定游标分页（before ts + before_id，与
-    Timeline v1 完全一致）；cutoff 下推 SQLite（after=cutoff，不先全量
-    再 Python filter）。查询异常 → ([], False)（source unavailable）。
-    """
-    try:
-        events = []
-        before = None
-        before_id = None
-        while True:
-            rows = store.query_timeline(
-                limit=500, event_type="skill.", after=cutoff,
-                before=before, before_id=before_id)
-            if not rows:
-                break
-            events.extend(rows)
-            if len(rows) < 500:
-                break
-            last = rows[-1]
-            before, before_id = last["timestamp"], last["event_id"]
-        return events, True
-    except Exception as exc:  # noqa: BLE001
-        log.debug("skill_analytics: timeline unavailable: %s", exc)
-        return [], False
-
-
-_CACHE: dict[tuple, dict] = {}
-_CACHE_MAX = 8  # 最多 8 个 (range × stats) 条目，防无限增长
-
-
-def _cache_key(store, time_range: str) -> tuple:
-    """缓存键 = (db 路径, time_range, timeline 数据签名)——数据变化即失效。"""
-    db_path = str(getattr(store, "db_path", ""))
-    try:
-        stats = store.timeline_stats()
-        sig = (stats.get("total"), stats.get("last_ts"))
-    except Exception:  # noqa: BLE001 stats 不可用 → 用空签名（仍缓存聚合）
-        sig = (None, None)
-    return (db_path, time_range, sig)
+def _registry_map(registry: Optional[dict]) -> dict[str, dict]:
+    """registry 列表 → {key: meta}；malformed item skip（不崩）。"""
+    reg_skills: dict[str, dict] = {}
+    if not registry:
+        return reg_skills
+    for item in registry.get("skills", []):
+        if not isinstance(item, dict):
+            continue
+        key = item.get("key")
+        if not key:
+            continue
+        reg_skills[str(key)] = {
+            "registered": True,
+            "provenance": item.get("source") or item.get("source_confidence") or "unknown",
+            "review_decision": None,  # Review Gate 未写回 registry → unavailable
+            "risk": item.get("risk_level"),
+            "version": item.get("version"),
+            "author": item.get("author"),
+            "health": item.get("health"),
+            "has_tests": item.get("has_tests"),
+            "fingerprint": item.get("fingerprint"),
+        }
+    return reg_skills
 
 
 def compute_analytics(store, time_range: str = "7d") -> dict:
-    """Skill Analytics v1 主聚合：inventory（registry）× runtime（timeline）join。
+    """Skill Analytics v1 主聚合：registry（inventory）× SQL 聚合（runtime）join。
 
-    返回 {skills: [...], coverage: {...}}；任一源失败 → partial（不 500）。
-    Source availability truth：timeline 源不可用 → partial=true 且所有
+    Source truth：registry 与 timeline 分开 healthy/unavailable；
+    partial = 任一 unavailable；timeline unavailable → 全部 runtime 字段 null +
     runtime_coverage=unavailable（禁止显示为"未观测到执行"）。
-    100k 规模下聚合较慢（~8s）→ 按 (range, 数据签名) 缓存，数据变化自动
-    失效；无 TTL、无 materialized table。
     """
-    cache_key: tuple = _cache_key(store, time_range)
-    if cache_key in _CACHE:
-        return _CACHE[cache_key]
     registry = _registry_data()
-    reg_skills: dict[str, dict] = {}
-    if registry:
-        for item in registry.get("skills", []):
-            if not isinstance(item, dict):
-                continue  # malformed registry item → skip，不崩
-            key = item.get("key")
-            if not key:
-                continue
-            reg_skills[str(key)] = {
-                "registered": True,
-                "provenance": item.get("source") or item.get("source_confidence") or "unknown",
-                "review_decision": None,  # Review Gate 未写回 registry → unavailable
-                "risk": item.get("risk_level"),
-                "version": item.get("version"),
-                "author": item.get("author"),
-                "health": item.get("health"),
-                "has_tests": item.get("has_tests"),
-                "fingerprint": item.get("fingerprint"),
-            }
+    registry_ok = registry is not None
+    reg_skills = _registry_map(registry)
 
     cutoff = _range_cutoff(time_range)
     try:
-        events, timeline_ok = _skill_events(store, cutoff)
-    except Exception:  # noqa: BLE001 源异常 → 视为 unavailable（防御）
-        events, timeline_ok = [], False
+        runs = store.aggregate_skill_runtime(cutoff)
+        timeline_ok = True
+    except Exception as exc:  # noqa: BLE001
+        log.debug("skill_analytics: timeline aggregate unavailable: %s", exc)
+        runs, timeline_ok = {}, False
     timeline_unavailable = not timeline_ok
-
-    # runtime join（仅可靠 skill.* 事件）
-    runs: dict[str, dict[str, Any]] = {}
-    for ev in events:
-        skill = ev.get("skill")
-        if not skill:
-            continue
-        r = runs.setdefault(str(skill), {"completed": 0, "failed": 0,
-                                         "duration_total": 0, "duration_n": 0,
-                                         "last_observed": 0})
-        status = ev.get("status")
-        if status == "failed":
-            r["failed"] += 1
-        else:
-            r["completed"] += 1
-        dur = ev.get("duration_ms")
-        if isinstance(dur, (int, float)) and dur > 0:
-            r["duration_total"] += dur
-            r["duration_n"] += 1
-        ts = ev.get("timestamp") or 0
-        if ts > r["last_observed"]:
-            r["last_observed"] = ts
 
     all_keys = sorted(set(reg_skills) | set(runs))
     skills_out = []
     for key in all_keys:
         reg = reg_skills.get(key)
         rt = runs.get(key)
-        observed = rt is not None and (rt["completed"] + rt["failed"]) > 0
-        observed_runs = (rt["completed"] + rt["failed"]) if rt else 0
+        if timeline_unavailable:
+            # 源不可用：无法判断是否执行过 → 全部 runtime 字段 null + unavailable
+            skills_out.append({
+                "skill": key,
+                "registered": reg is not None,
+                "provenance": reg["provenance"] if reg else None,
+                "review_decision": reg["review_decision"] if reg else None,
+                "risk": reg["risk"] if reg else None,
+                "version": reg["version"] if reg else None,
+                "health": reg["health"] if reg else None,
+                "observed_runs": None,
+                "completed": None,
+                "failed": None,
+                "success_rate": None,
+                "avg_duration_ms": None,
+                "last_observed_at": None,
+                "runtime_coverage": "unavailable",
+            })
+            continue
+        observed_runs = rt["observed_runs"] if rt else 0
         completed = rt["completed"] if rt else 0
         failed = rt["failed"] if rt else 0
         success_rate = (completed / observed_runs) if observed_runs else None
-        avg_dur = (rt["duration_total"] / rt["duration_n"]
-                   if rt and rt["duration_n"] else None)
-        if timeline_unavailable:
-            # source unavailable：无法判断是否执行过 → unavailable（不是未观测到）
-            coverage = "unavailable"
-        elif reg:
-            coverage = "observed" if observed else "inventory_only"
+        if reg:
+            coverage = "observed" if observed_runs > 0 else "inventory_only"
         else:
-            coverage = "observed" if observed else "unavailable"
+            coverage = "observed" if observed_runs > 0 else "unavailable"
         skills_out.append({
             "skill": key,
             "registered": reg is not None,
@@ -188,38 +145,43 @@ def compute_analytics(store, time_range: str = "7d") -> dict:
             "completed": completed,
             "failed": failed,
             "success_rate": success_rate,
-            "avg_duration_ms": avg_dur,
-            "last_observed_at": rt["last_observed"] if rt and rt["last_observed"] else None,
+            "avg_duration_ms": rt["avg_duration_ms"] if rt else None,
+            "last_observed_at": rt["last_observed_at"] if rt else None,
             "runtime_coverage": coverage,
         })
 
-    # coverage object（Phase 11 + Truth Gate：明确 source status）
-    observed_skills = [s for s in skills_out if s["observed_runs"] > 0]
+    observed_skills = [s for s in skills_out if (s["observed_runs"] or 0) > 0]
     coverage = {
         "registered_skills": len(reg_skills),
         "skills_with_observed_runtime": len(observed_skills),
-        "skill_events": len(events),
+        "skill_events": sum(s["observed_runs"] for s in skills_out if s["observed_runs"]),
         "runtime_identity_source": ["timeline_events skill.*"],
-        "coverage_complete": False,  # 无权威证据 → 恒 false（Phase 11）
-        "registry_metadata_present": bool(registry),
-        "review_metadata_present": False,  # Review Gate 未接入 → 绝不 true
-        "partial": timeline_unavailable,
+        "coverage_complete": False,
+        "registry_metadata_present": registry_ok,
+        "review_metadata_present": False,
+        "partial": (not registry_ok) or timeline_unavailable,
         "source_status": {
             "timeline": "unavailable" if timeline_unavailable else "healthy",
-            "registry": "unavailable" if registry is None else "healthy",
+            "registry": "unavailable" if not registry_ok else "healthy",
         },
     }
-    result = {"skills": skills_out, "coverage": coverage}
-    if len(_CACHE) >= _CACHE_MAX:
-        _CACHE.clear()  # 简单有界：超限清空重建（正确性优先）
-    _CACHE[cache_key] = result
-    return result
+    return {"skills": skills_out, "coverage": coverage}
 
 
 def compute_summary(store, time_range: str = "7d") -> dict:
-    """Summary cards：Registered / Observed / Runs / Success Rate / Failed / 未观测到。"""
+    """Summary cards：Registered / Observed / Runs / Success Rate / Failed /
+    未观测到执行（timeline unavailable → no_observed_execution=null，UI —）。"""
     data = compute_analytics(store, time_range)
     skills = data["skills"]
+    tl_unavailable = data["coverage"]["source_status"]["timeline"] == "unavailable"
+    if tl_unavailable:
+        # 源不可用：无法区分"未观测"与"观测"→ no_observed_execution=null
+        return {
+            "registered_skills": data["coverage"]["registered_skills"],
+            "observed_skills": None, "observed_runs": None, "success_rate": None,
+            "failed_runs": None, "no_observed_execution": None,
+            "coverage": data["coverage"], "time_range": time_range,
+        }
     observed = [s for s in skills if s["observed_runs"] > 0]
     total_runs = sum(s["observed_runs"] for s in skills)
     completed = sum(s["completed"] for s in skills)
@@ -244,28 +206,32 @@ def query_skills(store, time_range: str = "7d", status: str | None = None,
     """过滤 + 排序 + 分页（limit ≤ 200）。
 
     非法 time_range → ValueError（API 层转 400，不静默退化为 all）。
+    observed/unobserved 过滤不得返回 unavailable rows。
     """
     if time_range not in TIME_RANGES:
         raise ValueError(f"invalid time range: {time_range} (24h|7d|30d|all)")
     data = compute_analytics(store, time_range)
     skills = data["skills"]
     if status == "failed":
-        skills = [s for s in skills if s["failed"] > 0]
+        skills = [s for s in skills if s["failed"]]
     elif status == "success":
-        skills = [s for s in skills if s["completed"] > 0]
+        skills = [s for s in skills if s["completed"]]
     if provenance:
         skills = [s for s in skills if s.get("provenance") == provenance]
     if observed == "observed":
-        skills = [s for s in skills if s["observed_runs"] > 0]
+        skills = [s for s in skills if (s["observed_runs"] or 0) > 0]
     elif observed == "unobserved":
-        skills = [s for s in skills if s["observed_runs"] == 0]
+        # 未观测到执行：只含源健康且确为零运行的 skill（unavailable rows 排除）
+        skills = [s for s in skills
+                  if s["runtime_coverage"] != "unavailable"
+                  and (s["observed_runs"] or 0) == 0]
     if search:
         q = search.lower()
         skills = [s for s in skills if q in s["skill"].lower()]
     sort_key = {
         "name": lambda s: s["skill"].lower(),
-        "runs": lambda s: s["observed_runs"],
-        "failures": lambda s: s["failed"],
+        "runs": lambda s: s["observed_runs"] or 0,
+        "failures": lambda s: s["failed"] or 0,
         # 成功率最低：0%（有观测失败）排在 null/unobserved 之前 → null 用 2 垫底
         "rate": lambda s: (s["success_rate"] if s["success_rate"] is not None else 2),
         "recent": lambda s: (s["last_observed_at"] or 0),
@@ -280,13 +246,19 @@ def query_skills(store, time_range: str = "7d", status: str | None = None,
 
 def single_skill(store, skill: str, time_range: str = "7d",
                  timeline_limit: int = 20) -> dict:
-    """单 skill 详情：registry 元数据 + 统计 + 最近 timeline 事件（直接引用，不复制）。"""
+    """单 skill 详情：registry 元数据 + 统计 + 最近运行事件。
+
+    事件直接 SQL 查询（query_skill_runtime_events，不扫描全量）；
+    统计来自 compute_analytics 的 SQL 聚合结果（不复制数据）。
+    """
     data = compute_analytics(store, time_range)
     skill_data = next((s for s in data["skills"] if s["skill"] == skill), None)
     if skill_data is None:
         return {"error": f"skill not found: {skill}"}
     cutoff = _range_cutoff(time_range)
-    events, _ = _skill_events(store, cutoff)
-    related = [e for e in events if e.get("skill") == skill]
-    related = related[:timeline_limit]
+    try:
+        related = store.query_skill_runtime_events(skill, cutoff, limit=timeline_limit)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("skill_analytics: detail events unavailable: %s", exc)
+        related = []
     return {"skill": skill_data, "recent_timeline_events": related}
