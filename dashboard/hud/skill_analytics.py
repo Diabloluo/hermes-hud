@@ -80,11 +80,33 @@ def _skill_events(store, cutoff: Optional[int]) -> tuple[list[dict], bool]:
         return [], False
 
 
+_CACHE: dict[tuple, dict] = {}
+_CACHE_MAX = 8  # 最多 8 个 (range × stats) 条目，防无限增长
+
+
+def _cache_key(store, time_range: str) -> tuple:
+    """缓存键 = (db 路径, time_range, timeline 数据签名)——数据变化即失效。"""
+    db_path = str(getattr(store, "db_path", ""))
+    try:
+        stats = store.timeline_stats()
+        sig = (stats.get("total"), stats.get("last_ts"))
+    except Exception:  # noqa: BLE001 stats 不可用 → 用空签名（仍缓存聚合）
+        sig = (None, None)
+    return (db_path, time_range, sig)
+
+
 def compute_analytics(store, time_range: str = "7d") -> dict:
     """Skill Analytics v1 主聚合：inventory（registry）× runtime（timeline）join。
 
     返回 {skills: [...], coverage: {...}}；任一源失败 → partial（不 500）。
+    Source availability truth：timeline 源不可用 → partial=true 且所有
+    runtime_coverage=unavailable（禁止显示为"未观测到执行"）。
+    100k 规模下聚合较慢（~8s）→ 按 (range, 数据签名) 缓存，数据变化自动
+    失效；无 TTL、无 materialized table。
     """
+    cache_key: tuple = _cache_key(store, time_range)
+    if cache_key in _CACHE:
+        return _CACHE[cache_key]
     registry = _registry_data()
     reg_skills: dict[str, dict] = {}
     if registry:
@@ -187,7 +209,11 @@ def compute_analytics(store, time_range: str = "7d") -> dict:
             "registry": "unavailable" if registry is None else "healthy",
         },
     }
-    return {"skills": skills_out, "coverage": coverage}
+    result = {"skills": skills_out, "coverage": coverage}
+    if len(_CACHE) >= _CACHE_MAX:
+        _CACHE.clear()  # 简单有界：超限清空重建（正确性优先）
+    _CACHE[cache_key] = result
+    return result
 
 
 def compute_summary(store, time_range: str = "7d") -> dict:
