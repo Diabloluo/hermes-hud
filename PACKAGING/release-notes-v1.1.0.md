@@ -22,7 +22,11 @@ Every install-relevant change is now automatically verified on a clean macOS run
 
 ---
 
-**Install**: `git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud && python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable`
+**Install** (pinned to this release tag — not floating `main`):
+```bash
+git clone --branch v1.1.0 --depth 1 https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
+python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
+```
 
 **Docs**: [README](https://github.com/Diabloluo/hermes-hud#readme) · [INSTALL.md](https://github.com/Diabloluo/hermes-hud/blob/main/INSTALL.md) · [First 5 minutes](https://github.com/Diabloluo/hermes-hud/blob/main/FIRST_5_MINUTES.md) · [Changelog](https://github.com/Diabloluo/hermes-hud/blob/main/CHANGELOG.md)
 
