@@ -158,8 +158,14 @@ jobs:
           curl -sf -H "X-Hermes-Session-Token: $TOKEN" \
             -o /tmp/snapshot.json http://127.0.0.1:9121/api/plugins/hermes-hud/snapshot
           python scripts/fresh_install_check.py check-json /tmp/snapshot.json \
-            generated_at_iso tz db gateway system
+            generated_at_iso tz db gateway system active_sessions
           echo "--- snapshot size: $(wc -c < /tmp/snapshot.json) bytes"
+          # v1.1.0 endpoints: timeline / skill analytics / cost summary (read-only, never 500)
+          for ep in timeline cost/summary skills/analytics; do
+            curl -sf -H "X-Hermes-Session-Token: $TOKEN" \
+              "http://127.0.0.1:9121/api/plugins/hermes-hud/$ep?limit=5&range=7d" \
+              -o "/tmp/$(echo "$ep" | tr '/' '_').json" && echo "GET /$ep -> 200 OK"
+          done
 
       - name: Regression guards — no CST is not defined
         run: |
