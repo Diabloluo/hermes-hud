@@ -277,15 +277,16 @@ def test_source_outage_and_recovery(env, monkeypatch) -> None:
     # healthy
     d1 = sa.compute_analytics(st, "all")
     assert d1["coverage"]["source_status"]["timeline"] == "healthy"
-    # 故障
+    # 故障（单点替换，保留原方法引用用于恢复——避免 undo 撤销 fixture 的 REGISTRY_PATH）
+    orig_agg = st.aggregate_skill_runtime
     monkeypatch.setattr(st, "aggregate_skill_runtime",
                         lambda cutoff: (_ for _ in ()).throw(RuntimeError("locked")))
     d2 = sa.compute_analytics(st, "all")
     assert d2["coverage"]["partial"] is True
     assert d2["coverage"]["source_status"]["timeline"] == "unavailable"
     assert all(s["runtime_coverage"] == "unavailable" for s in d2["skills"])
-    # 恢复（DB 零变更；monkeypatch 撤销）
-    monkeypatch.undo()
+    # 恢复（DB 零变更）
+    monkeypatch.setattr(st, "aggregate_skill_runtime", orig_agg)
     d3 = sa.compute_analytics(st, "all")
     assert d3["coverage"]["source_status"]["timeline"] == "healthy"
     assert d3["coverage"]["partial"] is False
