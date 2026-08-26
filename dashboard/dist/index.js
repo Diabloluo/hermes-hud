@@ -367,6 +367,7 @@
     const ciModels = usePoll(API + "/cost/models?range=" + ciRange, 15000).data;
     const ciSessions = usePoll(API + "/cost/sessions?range=" + ciRange + "&limit=10", 15000).data;
     const ciBudget = usePoll(API + "/cost/budget", 15000).data;
+    const ciTS = usePoll(API + "/cost/timeseries?range=" + ciRange, 15000).data;  // canonical 趋势
 
     const ciRanges = [
       { id: "today", label: "今日" }, { id: "24h", label: "24h" },
@@ -382,6 +383,19 @@
     // 非 All 范围：累计 usage row 归属估算（window_exact=false）
     const ciAttrib = ci && ci.window_exact === false;
     const ciBudgetUncertain = ciBudget && ciBudget.budget_status === "attribution_uncertain";
+    // 金额显示规则（partial row truth）：complete → $X；known>0 → 已知部分；
+    // known=0 → —（定价未知）；禁止 $0.000 冒充
+    function ciCostCell(s) {
+      if (!s) return "—";
+      if (s.cost_complete) return "$" + (s.estimated_cost_usd || 0).toFixed(3);
+      if (s.pricing_known_rows > 0) {
+        return "已知部分 $" + (s.estimated_cost_usd || 0).toFixed(3) +
+          " · " + Math.round((s.pricing_coverage_ratio || 0) * 100) + "%";
+      }
+      return "—（定价未知）";
+    }
+    const ciEmptyText = (ci && ci.source_status === "unavailable")
+      ? "费用数据源不可用" : "暂无费用数据";
 
     const ciCards = [
       { k: "估算费用", v: ciFmt(ci && ci.estimated_cost_usd) },
@@ -400,12 +414,14 @@
       }
     }
 
-    const dayLabels = byDay.map(function (d) { return d.day.slice(5); });
-    const costVals = byDay.map(function (d) { return d.est_cost; });
-    const inVals = byDay.map(function (d) { return d.input; });
+    // canonical 趋势（/cost/timeseries，遵守 window/coverage 语义）
+    const tsPoints = (ciTS && ciTS.points) || [];
+    const tsVals = tsPoints.map(function (p) { return p.estimated_cost_usd; });
+    const tsLabels = tsPoints.map(function (p) { return p.date.slice(5); });
+    const tsPartial = ciTS && ciTS.pricing_coverage && ciTS.pricing_coverage.partial;
 
-    const db = (snap && snap.db) || {};
-    const dbUsage = db.usage || {};
+    const dayLabels = byDay.map(function (d) { return d.day.slice(5); });
+    const inVals = byDay.map(function (d) { return d.input; });
 
     return h(React.Fragment, null,
       // —— Cost Intelligence 区块（Phase 10-11）——
@@ -437,18 +453,18 @@
                   h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
                     (s.title || s.session_id.slice(0, 20))),
                   h("span", { style: { opacity: 0.6, fontSize: 11 } }, s.models.join("/")),
-                  h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, "$" + s.estimated_cost_usd.toFixed(3)));
+                  h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, ciCostCell(s)));
               }))
-            : empty("暂无费用数据（源健康 + 0 花费 或 源不可用）")),
+            : empty(ciEmptyText)),
         card("模型分布（估算费用）",
           (ciModels && ciModels.models && ciModels.models.length)
             ? h("div", null, ciModels.models.slice(0, 8).map(function (m) {
                 return h("div", { key: m.model, style: { display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12, borderBottom: "1px solid var(--border)" } },
                   h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, m.model),
                   h("span", { style: { opacity: 0.6, fontSize: 11 } }, m.sessions + " 会话"),
-                  h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, "$" + m.estimated_cost_usd.toFixed(3)));
+                  h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, ciCostCell(m)));
               }))
-            : empty("暂无模型数据")),
+            : empty(ciEmptyText)),
         h(Badge, { variant: "secondary" }, "费用为本地估算，非账单")),
 
       h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 4 } },
@@ -465,36 +481,36 @@
         card("输入 Token", h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.input))),
         card("输出 Token", h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.output))),
         card("Cache 读", h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.cache_read))),
-        card("估算费用", h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtUSD(totals.est_cost)),
-          h(Badge, { variant: "secondary" }, "实际 $" + (totals.actual_cost || 0).toFixed(2)))),
+        card("API 调用", h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.api_calls || 0)))),
 
       h("div", { className: "hud-grid hud-grid-2" },
-        card("每日估算费用 (最近 " + days + " 天)",
-          costVals.length ? h("div", null,
-            h(MiniBars, { values: costVals, height: 90, fmt: function (v, i) { return dayLabels[i] + " $" + v.toFixed(2); } }),
+        card("每日估算费用（" + ciRange + " · canonical /cost/timeseries）",
+          tsVals.length ? h("div", null,
+            h(MiniBars, { values: tsVals, height: 90, fmt: function (v, i) { return tsLabels[i] + " $" + v.toFixed(2); } }),
+            tsPartial ? h("div", { style: { fontSize: 11, opacity: 0.75, padding: "4px 0" } },
+              "部分成本数据：趋势仅含定价来源已知的行。") : null,
             h("div", { style: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 } },
-              dayLabels.slice(-14).map(function (d, i) {
+              tsLabels.slice(-14).map(function (d, i) {
                 return h("span", { key: d, style: { fontSize: 10, opacity: 0.6, fontVariantNumeric: "tabular-nums" } }, d.slice(5));
               })))
-            : empty("无数据")),
+            : empty(ciEmptyText)),
         card("每日输入 Token",
           inVals.length ? h(MiniBars, { values: inVals, height: 90, fmt: function (v, i) { return dayLabels[i] + " " + fmtTokens(v); } }) : empty("无数据"))),
 
       h("div", { className: "hud-grid hud-grid-2" },
-        card("按模型 (近 " + days + " 天)",
+        card("按模型 · 调用/Token（近 " + days + " 天 · 费用见上方 /cost/models）",
           byModel.length === 0 ? empty("无数据") : h("table", { className: "hud-table" },
             h("thead", null, h("tr", null,
               h("th", null, "模型"), h("th", { className: "num" }, "调用"), h("th", { className: "num" }, "输入"),
-              h("th", { className: "num" }, "输出"), h("th", { className: "num" }, "费用"))),
+              h("th", { className: "num" }, "输出"))),
             h("tbody", null, byModel.map(function (m) {
               return h("tr", { key: m.model },
                 h("td", { style: { fontWeight: 600 } }, m.model),
                 h("td", { className: "num" }, String(m.api_calls || m.sessions || 0)),
                 h("td", { className: "num" }, fmtTokens(m.input)),
-                h("td", { className: "num" }, fmtTokens(m.output)),
-                h("td", { className: "num" }, fmtUSD(m.est_cost)));
+                h("td", { className: "num" }, fmtTokens(m.output)));
             })))),
-        card("辅助调用类型 (近 " + days + " 天)",
+        card("辅助调用类型（近 " + days + " 天 · 仅调用数/Token）",
           byTask.length === 0
             ? h("div", null,
                 empty("无辅助调用数据"),
@@ -503,21 +519,17 @@
             : h("table", { className: "hud-table" },
               h("thead", null, h("tr", null,
                 h("th", null, "任务类型"), h("th", { className: "num" }, "调用数"),
-                h("th", { className: "num" }, "输入"), h("th", { className: "num" }, "费用"))),
+                h("th", { className: "num" }, "输入"))),
               h("tbody", null, byTask.map(function (t) {
                 return h("tr", { key: t.task },
                   h("td", { style: { fontWeight: 600 } }, t.task),
                   h("td", { className: "num" }, String(t.api_calls)),
-                  h("td", { className: "num" }, fmtTokens(t.input)),
-                  h("td", { className: "num" }, fmtUSD(t.est_cost)));
+                  h("td", { className: "num" }, fmtTokens(t.input)));
               }))))),
       h("div", { className: "hud-footnote" },
         "口径：主会话读 sessions 表；辅助调用读 session_model_usage.task != ''；" +
-        "按 (session, model, task) 去重后合并。日界线 Asia/Shanghai。" +
-        (dbUsage.estimated_cost_usd != null
-          ? " 全库累计估算 $" + dbUsage.estimated_cost_usd.toFixed(2) + "。"
-          : "") +
-        " actual_cost_usd 当前无账单数据，所有费用均为估算。"));
+        "按 (session, model, task) 去重后合并。日界线使用 HUD 配置时区。" +
+        " 所有费用均为估算（estimated），非账单。"));
   }
 
   // -------------------------------------------------------------------------

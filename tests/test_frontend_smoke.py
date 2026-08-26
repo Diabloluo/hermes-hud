@@ -99,17 +99,44 @@ def hud_env():
         env.pop(k, None)
     env["HERMES_HOME"] = str(home)
     # —— demo fixture：预填 3 条 skill.* timeline 事件（仅 smoke 用，明确非生产数据）——
+    _now = int(time.time())
     try:
         import sys as _sys
         _sys.path.insert(0, str(REPO / "dashboard"))
         from hud import storage as _st, timeline as _tl
         _store = _st.TelemetryStore(db_path=home / "hud" / "telemetry.db")
-        _now = int(time.time())
         for i, st_ in enumerate(("completed", "completed", "failed")):
             _store.record_timeline_event(_tl.normalize_event({
                 "timestamp": _now - (2 - i) * 60, "event_type": f"skill.{st_}",
                 "status": st_, "skill": "demo-skill", "summary": f"Skill demo-skill {st_}",
                 "source_record_id": f"smoke-demo:{i}:{st_}", "duration_ms": 800}))
+    except Exception:  # noqa: BLE001  demo 注入失败不阻塞 smoke
+        pass
+    # —— demo fixture：预建 healthy state.db（1 条 known usage + 1 条 unknown）——
+    try:
+        import sqlite3 as _sq
+        _db = home / "state.db"
+        _c = _sq.connect(_db)
+        _c.execute("CREATE TABLE session_model_usage (session_id TEXT, model TEXT,"
+                   " billing_provider TEXT, billing_base_url TEXT, billing_mode TEXT,"
+                   " task TEXT, api_call_count INT, input_tokens INT, output_tokens INT,"
+                   " cache_read_tokens INT, cache_write_tokens INT, reasoning_tokens INT,"
+                   " estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT,"
+                   " cost_source TEXT, first_seen REAL, last_seen REAL)")
+        _c.execute("CREATE TABLE sessions (id TEXT, source TEXT, model TEXT,"
+                   " started_at REAL, ended_at REAL, title TEXT)")
+        _c.execute("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   ("demo-sess", "demo-model", "custom", None, None, None, 1, 1000, 100, 0, 0, 0,
+                    0.05, 0.0, "estimated", "official_docs_snapshot", _now - 3600, _now - 60))
+        # 同一 session 的 unknown 定价行 → 混合 → "已知部分" 语义
+        _c.execute("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   ("demo-sess", "demo-model", "custom", None, None, None, 1, 200, 20, 0, 0, 0,
+                    0.0, 0.0, "unknown", "none", _now - 3000, _now - 300))
+        _c.execute("INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   ("demo-sess2", "demo-model2", "custom", None, None, None, 1, 500, 50, 0, 0, 0,
+                    0.0, 0.0, "unknown", "none", _now - 7200, _now - 120))
+        _c.commit()
+        _c.close()
     except Exception:  # noqa: BLE001  demo 注入失败不阻塞 smoke
         pass
     dbg_log = Path(tempfile.mkdtemp(prefix="hud-smoke-log-")) / "dashboard.log"
@@ -310,7 +337,8 @@ def _click_usage(cdp: CDP) -> None:
 
 
 def test_ci_summary_cards_and_estimated_semantics(hud_env) -> None:
-    """Cost Intelligence 区块渲染：估算费用卡片 + Estimated 语义 + 范围选择器。"""
+    """Cost Intelligence 区块渲染：估算费用卡片 + Estimated 语义 + 范围选择器
+    + 无 legacy 误导（实际 $ / Asia/Shanghai）+ canonical timeseries。"""
     cdp = hud_env["cdp"]
     _click_usage(cdp)
     txt = cdp.eval("document.body.textContent") or ""
@@ -318,6 +346,13 @@ def test_ci_summary_cards_and_estimated_semantics(hud_env) -> None:
     assert "估算费用" in txt
     assert "Estimated cost" in txt  # 语义：估算，非账单
     assert "估算费用 / Estimated cost" in txt
+    # —— Final UI Semantics Gate ——
+    assert "实际 $" not in txt          # legacy actual 措辞已删
+    assert "Asia/Shanghai" not in txt   # 硬编码时区已删
+    assert "日界线使用 HUD 配置时区" in txt
+    assert "/cost/timeseries" in txt    # 趋势图标注 canonical 源
+    assert "已知部分 $" in txt          # partial（known+unknown 混合 demo）→ 已知部分
+    assert "定价未知" in txt            # unknown-only 行 → —（定价未知）
 
 
 def test_ci_range_and_tables(hud_env) -> None:
@@ -332,3 +367,5 @@ def test_ci_range_and_tables(hud_env) -> None:
     txt = cdp.eval("document.body.textContent") or ""
     assert "Top Sessions" in txt
     assert "模型分布" in txt
+    # unknown-only 行不得显示 $0.000（ciCostCell → —定价未知）
+    assert "$0.000" not in txt

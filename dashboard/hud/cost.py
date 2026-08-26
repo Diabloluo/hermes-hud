@@ -181,6 +181,10 @@ def compute_summary(home: Path, time_range: str = "7d",
         "cost_complete": bool(cost_complete),
         "source_status": {"usage": "healthy" if source_ok else "unavailable"},
     }
+    # Average truth：global cost_complete=false → avg=null（禁止 known/全部 sessions 冒充）
+    avg_cost = None
+    if cost_complete and sessions:
+        avg_cost = cost_total / sessions
     out = {
         "schema_version": 1,
         "range": time_range,
@@ -189,8 +193,7 @@ def compute_summary(home: Path, time_range: str = "7d",
         "output_tokens": output_tok,
         "total_tokens": total_tokens,
         "sessions": sessions,
-        "avg_cost_per_session_usd": (cost_total / sessions
-                                     if cost_total is not None and sessions else None),
+        "avg_cost_per_session_usd": avg_cost,
         "cost_complete": cost_complete,
         "source_status": "healthy" if source_ok else "unavailable",
         "cost_semantics": "estimated",
