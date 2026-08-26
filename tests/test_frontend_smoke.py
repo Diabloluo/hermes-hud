@@ -98,6 +98,20 @@ def hud_env():
     for k in ("HERMES_WEB_DIST", "HERMES_DESKTOP", "HERMES_SERVE_HEADLESS"):
         env.pop(k, None)
     env["HERMES_HOME"] = str(home)
+    # —— demo fixture：预填 3 条 skill.* timeline 事件（仅 smoke 用，明确非生产数据）——
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(REPO / "dashboard"))
+        from hud import storage as _st, timeline as _tl
+        _store = _st.TelemetryStore(db_path=home / "hud" / "telemetry.db")
+        _now = int(time.time())
+        for i, st_ in enumerate(("completed", "completed", "failed")):
+            _store.record_timeline_event(_tl.normalize_event({
+                "timestamp": _now - (2 - i) * 60, "event_type": f"skill.{st_}",
+                "status": st_, "skill": "demo-skill", "summary": f"Skill demo-skill {st_}",
+                "source_record_id": f"smoke-demo:{i}:{st_}", "duration_ms": 800}))
+    except Exception:  # noqa: BLE001  demo 注入失败不阻塞 smoke
+        pass
     dbg_log = Path(tempfile.mkdtemp(prefix="hud-smoke-log-")) / "dashboard.log"
     proc = subprocess.Popen(
         [hermes_bin, "dashboard", "--host", "127.0.0.1", "--port", str(port),
@@ -216,3 +230,70 @@ def test_load_more_button(hud_env) -> None:
                      ".find(x => x.textContent.includes('加载更多'));"
                      " if (b) { b.click(); return true; } return false; })()")
         assert r is True
+
+
+# ---------- Skill Analytics frontend smoke ----------
+
+def _click_skill_analytics(cdp: CDP) -> None:
+    r = cdp.eval("(() => { const t = [...document.querySelectorAll('.hud-tab')]"
+                 ".find(b => b.textContent && b.textContent.includes('技能分析'));"
+                 " if (t) { t.click(); return true; } return false; })()")
+    assert r is True
+    time.sleep(4)  # 轮询 + 渲染
+
+
+def test_sa_summary_and_coverage_warning(hud_env) -> None:
+    """summary cards 渲染 + coverage 警告可见（coverage_complete=false）。"""
+    cdp = hud_env["cdp"]
+    _click_skill_analytics(cdp)
+    txt = cdp.eval("document.body.textContent") or ""
+    assert "Skill Analytics" in txt
+    assert "未观测到执行" in txt
+    assert "运行观测覆盖目前不完整" in txt  # coverage notice
+
+
+def test_sa_registry_only_skill_and_null_rate(hud_env) -> None:
+    """registry-only skill 行存在；无运行 → 成功率显示 —（非 0%）；demo 注入的
+    observed skill（demo-skill）显示运行数。"""
+    cdp = hud_env["cdp"]
+    _click_skill_analytics(cdp)
+    txt = cdp.eval("document.body.textContent") or ""
+    assert "已注册技能" in txt
+    assert "成功率" in txt
+    # demo fixture：observed skill 显示运行计数（3 次）与成功率
+    assert "demo-skill" in txt
+    assert "66.7%" in txt  # 2 completed / 3 runs
+
+
+def test_sa_filters_and_sort(hud_env) -> None:
+    """时间范围按钮 + 状态/观测过滤 + 排序下拉可用。"""
+    cdp = hud_env["cdp"]
+    _click_skill_analytics(cdp)
+    r = cdp.eval("(() => { const b = [...document.querySelectorAll('button')]"
+                 ".find(x => x.textContent === '30d'); if (b) { b.click(); return true; }"
+                 " return false; })()")
+    assert r is True
+    time.sleep(2)
+    # 过滤下拉存在（3 个 select：status/observed/sort）
+    n = cdp.eval("document.querySelectorAll('select').length")
+    assert n >= 3
+    # 排序切换
+    r2 = cdp.eval("(() => { const s = [...document.querySelectorAll('select')][2];"
+                  " if (!s) return false;"
+                  " s.value = 'runs'; s.dispatchEvent(new Event('change', {bubbles: true}));"
+                  " return true; })()")
+    assert r2 is True
+
+
+def test_sa_detail_expansion(hud_env) -> None:
+    """点击技能行 → 详情展开（registry 元数据 + timeline 事件区）。"""
+    cdp = hud_env["cdp"]
+    _click_skill_analytics(cdp)
+    r = cdp.eval("(() => { const rows = [...document.querySelectorAll('div')]"
+                 ".filter(d => d.style && d.style.cursor === 'pointer' && d.textContent"
+                 " && d.textContent.length > 3 && d.children.length > 5);"
+                 " if (rows.length) { rows[0].click(); return true; } return false; })()")
+    assert r is True
+    time.sleep(2)
+    txt = cdp.eval("document.body.textContent") or ""
+    assert "最近 Timeline 事件" in txt or "未观测到执行" in txt

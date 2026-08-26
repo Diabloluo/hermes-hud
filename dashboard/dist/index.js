@@ -1022,6 +1022,7 @@
     { id: "timeline", label: "时间线", icon: "🕒" },
     { id: "memory", label: "记忆", icon: "🧠" },
     { id: "skills", label: "技能", icon: "⚒" },
+    { id: "skillanalytics", label: "技能分析", icon: "📊" },
     { id: "cron", label: "定时任务", icon: "⏱" },
     { id: "channels", label: "渠道", icon: "⇄" },
     { id: "incidents", label: "错误·事故", icon: "⚠" },
@@ -1206,6 +1207,176 @@
             newCount + " 条新事件（点击载入）"))));
   }
 
+  // -------------------------------------------------------------------------
+  // Skill Analytics（技能分析 v1 —— observed truth only）
+  // -------------------------------------------------------------------------
+
+  const SA_RANGES = [
+    { id: "24h", label: "24h" }, { id: "7d", label: "7d" },
+    { id: "30d", label: "30d" }, { id: "all", label: "All" },
+  ];
+
+  function saRate(r) {
+    if (r === null || r === undefined) return "—";  // denominator=0 → —（不显示 0%）
+    return (r * 100).toFixed(1) + "%";
+  }
+
+  function saTime(ts) {
+    if (!ts) return "—";
+    const d = new Date(ts * 1000);
+    return d.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+
+  function saDur(ms) {
+    if (ms === null || ms === undefined) return "—";
+    if (ms >= 1000) return (ms / 1000).toFixed(1) + "s";
+    return ms + "ms";
+  }
+
+  function saCoverageZh(c) {
+    if (c === "observed") return "已观测";
+    if (c === "inventory_only") return "仅清单";
+    return "—";
+  }
+
+  function SkillAnalyticsTab() {
+    const [range, setRange] = useState("7d");
+    const [status, setStatus] = useState("all");
+    const [observed, setObserved] = useState("all");
+    const [search, setSearch] = useState("");
+    const [sort, setSort] = useState("name");
+    const [expanded, setExpanded] = useState(null);
+    const [detail, setDetail] = useState(null);
+    const [detailErr, setDetailErr] = useState(null);
+
+    function qs() {
+      const p = new URLSearchParams({ range: range, limit: "200", sort: sort });
+      if (status !== "all") p.set("status", status);
+      if (observed !== "all") p.set("observed", observed);
+      if (search.trim()) p.set("search", search.trim());
+      return API + "/skills/analytics?" + p.toString();
+    }
+    const { data } = usePoll(qs(), 8000);
+    const { data: summary } = usePoll(API + "/skills/analytics/summary?range=" + range, 8000);
+    const skills = (data && data.skills) || [];
+    const cov = (data && data.coverage) || summary && summary.coverage;
+
+    function openDetail(skill) {
+      SDK.fetchJSON(API + "/skills/analytics/" + encodeURIComponent(skill) +
+        "?range=" + range + "&timeline_limit=20")
+        .then(function (d) { setDetail(d); setDetailErr(null); })
+        .catch(function (e) { setDetailErr(String(e && e.message ? e.message : e)); });
+    }
+
+    // Summary cards
+    const cards = [
+      { k: "已注册技能", v: summary ? summary.registered_skills : "—" },
+      { k: "已观测执行", v: summary ? summary.observed_skills : "—" },
+      { k: "观测运行次数", v: summary ? summary.observed_runs : "—" },
+      { k: "成功率", v: summary ? saRate(summary.success_rate) : "—" },
+      { k: "失败次数", v: summary ? summary.failed_runs : "—" },
+      { k: "未观测到执行", v: summary ? summary.no_observed_execution : "—" },
+    ];
+    const summaryRow = h("div", { style: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 10 } },
+      cards.map(function (c) {
+        return h("div", { key: c.k, style: { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px" } },
+          h("div", { style: { fontSize: 11, opacity: 0.65 } }, c.k),
+          h("div", { style: { fontSize: 18, fontWeight: 700, marginTop: 2 } }, c.v));
+      }));
+
+    const covNotice = cov && !cov.coverage_complete ? h("div", { style: { fontSize: 12, padding: "6px 10px", background: "rgba(255,193,7,.12)", border: "1px solid rgba(255,193,7,.4)", borderRadius: 6, marginBottom: 10 } },
+      "运行观测覆盖目前不完整；统计仅包含具有可靠身份的 Skill 执行事件。" +
+      "（Runtime execution coverage is partial.）") : null;
+
+    const filters = h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 } },
+      SA_RANGES.map(function (r) {
+        return h("button", {
+          key: r.id, className: "hud-tab" + (range === r.id ? " active" : ""),
+          style: { padding: "4px 10px", fontSize: 12 },
+          onClick: function () { setRange(r.id); },
+        }, r.label);
+      }),
+      h("select", { value: status, style: { fontSize: 12, padding: "3px 6px" },
+        onChange: function (e) { setStatus(e.target.value); } },
+        h("option", { value: "all" }, "全部状态"),
+        h("option", { value: "failed" }, "有失败"),
+        h("option", { value: "success" }, "有成功")),
+      h("select", { value: observed, style: { fontSize: 12, padding: "3px 6px" },
+        onChange: function (e) { setObserved(e.target.value); } },
+        h("option", { value: "all" }, "全部"),
+        h("option", { value: "observed" }, "已观测"),
+        h("option", { value: "unobserved" }, "未观测到执行")),
+      h("input", { placeholder: "搜索技能名…", value: search,
+        style: { fontSize: 12, padding: "3px 6px", width: 140 },
+        onChange: function (e) { setSearch(e.target.value); } }),
+      h("select", { value: sort, style: { fontSize: 12, padding: "3px 6px" },
+        onChange: function (e) { setSort(e.target.value); } },
+        h("option", { value: "name" }, "按名称"),
+        h("option", { value: "runs" }, "运行最多"),
+        h("option", { value: "failures" }, "失败最多"),
+        h("option", { value: "rate" }, "成功率最低"),
+        h("option", { value: "recent" }, "最近运行")));
+
+    const head = ["技能", "来源", "Review", "风险", "运行", "成功", "失败", "成功率", "平均耗时", "最近观测", "覆盖"];
+    const headRow = h("div", { key: "head", style: { display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 0.6fr 0.6fr 0.6fr 0.6fr 0.8fr 0.9fr 1.2fr 0.9fr", gap: 6, padding: "6px 8px", fontSize: 11, opacity: 0.65, fontWeight: 600, borderBottom: "1px solid var(--border)" } },
+      head.map(function (hcol) { return h("span", { key: hcol }, hcol); }));
+
+    const rows = skills.map(function (s) {
+      const open = expanded === s.skill;
+      const line = h("div", { key: s.skill, style: { display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 0.6fr 0.6fr 0.6fr 0.6fr 0.8fr 0.9fr 1.2fr 0.9fr", gap: 6, padding: "6px 8px", fontSize: 12, borderBottom: "1px solid var(--border)", cursor: "pointer", alignItems: "center" },
+        onClick: function () {
+          setExpanded(open ? null : s.skill);
+          if (!open) openDetail(s.skill);
+        } },
+        h("span", { style: { fontWeight: 600 } }, s.skill),
+        h("span", { style: { fontSize: 11, opacity: 0.75 } }, s.provenance || "—"),
+        h("span", { style: { fontSize: 11 } }, s.review_decision || "—"),
+        h("span", { style: { fontSize: 11 } }, s.risk || "—"),
+        h("span", { style: { textAlign: "right" } }, s.observed_runs || "—"),
+        h("span", { style: { textAlign: "right", color: "#3fb950" } }, s.completed || "—"),
+        h("span", { style: { textAlign: "right", color: s.failed ? "#e5534b" : "inherit" } }, s.failed || "—"),
+        h("span", { style: { textAlign: "right" } }, saRate(s.success_rate)),
+        h("span", { style: { textAlign: "right" } }, saDur(s.avg_duration_ms)),
+        h("span", { style: { textAlign: "right", fontSize: 11, opacity: 0.75 } }, saTime(s.last_observed_at)),
+        h("span", { style: { fontSize: 11 } }, saCoverageZh(s.runtime_coverage)));
+      const detailBlock = open && detail && detail.skill && detail.skill.skill === s.skill
+        ? h("div", { key: s.skill + "-d", style: { padding: "10px 14px", fontSize: 12, background: "var(--card)", borderBottom: "1px solid var(--border)" } },
+            kv("技能", s.skill),
+            kv("来源 / Provenance", s.provenance || "—"),
+            kv("Review 决策", s.review_decision || "—"),
+            kv("风险", s.risk || "—"),
+            kv("版本", s.version || "—"),
+            kv("健康", s.health || "—"),
+            kv("观测运行", s.observed_runs || "—"),
+            kv("成功率", saRate(s.success_rate)),
+            kv("平均耗时", saDur(s.avg_duration_ms)),
+            kv("最近观测", saTime(s.last_observed_at)),
+            h("div", { style: { fontSize: 11, opacity: 0.65, marginTop: 8, marginBottom: 4 } }, "最近 Timeline 事件（直接引用，不复制）"),
+            h("div", { style: { maxHeight: 220, overflowY: "auto" } },
+              (detail.recent_timeline_events || []).map(function (ev) {
+                return h("div", { key: ev.event_id, style: { padding: "3px 0", fontSize: 11, fontFamily: "monospace", borderBottom: "1px solid var(--border)" } },
+                  saTime(ev.timestamp) + "  " + ev.event_type + "  " + (ev.status || "") + "  " + (ev.summary || ""));
+              }),
+              (!detail.recent_timeline_events || !detail.recent_timeline_events.length)
+                ? h("div", { style: { padding: 6, opacity: 0.5 } }, "未观测到执行（No observed executions）") : null))
+        : null;
+      return [line, detailBlock];
+    });
+
+    return card("Skill Analytics — 技能运行观测（observed truth only）",
+      h("div", null,
+        summaryRow,
+        covNotice,
+        filters,
+        detailErr && h("div", { style: { fontSize: 12, color: "#e5534b", padding: 6 } }, "详情加载失败: " + detailErr),
+        skills.length === 0
+          ? empty("暂无技能数据（registry 或 timeline 不可用时的正常降级）")
+          : [headRow, rows],
+        data && data.total > 200 && h("div", { style: { textAlign: "center", padding: 8, fontSize: 12, opacity: 0.7 } },
+          "共 " + data.total + " 个技能（分页上限 200，可搜索/过滤缩小范围）")));
+  }
+
   function HudApp() {
     const [tab, setTab] = useState("overview");
     const { data: snap } = usePoll(API + "/snapshot", 2000);
@@ -1318,6 +1489,7 @@
       tab === "timeline" ? h(TimelineTab, null) :
       tab === "memory" ? h(MemoryTab, { snap: snap }) :
       tab === "skills" ? h(SkillsTab, null) :
+      tab === "skillanalytics" ? h(SkillAnalyticsTab, null) :
       tab === "cron" ? h(CronTab, { snap: snap }) :
       tab === "channels" ? h(ChannelsTab, { snap: snap }) :
       tab === "incidents" ? h(IncidentsTab, { snap: snap }) :

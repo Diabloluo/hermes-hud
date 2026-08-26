@@ -330,6 +330,47 @@ async def get_skills() -> dict:
     return await asyncio.to_thread(collectors.collect_skills)
 
 
+@router.get("/skills/analytics")
+async def get_skill_analytics(range: str = "7d", status: str | None = None,
+                              provenance: str | None = None,
+                              observed: str | None = None,
+                              search: str | None = None, sort: str = "name",
+                              limit: int = 50, offset: int = 0) -> dict:
+    """Skill Analytics v1：inventory × runtime join（observed truth only）。
+
+    任一源失败 → partial result（不 500）。limit ≤ 200。
+    """
+    from hud import skill_analytics
+    try:
+        return skill_analytics.query_skills(
+            store, time_range=range, status=status, provenance=provenance,
+            observed=observed, search=search, sort=sort, limit=limit, offset=offset)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc), "skills": [], "total": 0}
+
+
+@router.get("/skills/analytics/summary")
+async def get_skill_analytics_summary(range: str = "7d") -> dict:
+    """Summary cards 数据。"""
+    from hud import skill_analytics
+    try:
+        return skill_analytics.compute_summary(store, time_range=range)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+@router.get("/skills/analytics/{skill}")
+async def get_skill_analytics_detail(skill: str, range: str = "7d",
+                                     timeline_limit: int = 20) -> dict:
+    """单 skill 详情（含最近 timeline 事件，直接引用不复制）。"""
+    from hud import skill_analytics
+    try:
+        return skill_analytics.single_skill(store, skill, time_range=range,
+                                            timeline_limit=timeline_limit)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
 @router.get("/settings")
 async def get_settings() -> dict:
     """HUD 自身配置/阈值（只读展示）。"""
