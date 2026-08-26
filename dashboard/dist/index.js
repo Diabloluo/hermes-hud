@@ -379,6 +379,9 @@
       return (v === null || v === undefined) ? "—" : v.toLocaleString();
     };
     const ciPart = ci && (ci.partial || ci.coverage && !ci.coverage.cost_complete);
+    // 非 All 范围：累计 usage row 归属估算（window_exact=false）
+    const ciAttrib = ci && ci.window_exact === false;
+    const ciBudgetUncertain = ciBudget && ciBudget.budget_status === "attribution_uncertain";
 
     const ciCards = [
       { k: "估算费用", v: ciFmt(ci && ci.estimated_cost_usd) },
@@ -388,8 +391,13 @@
       { k: "Sessions", v: (ci && ci.sessions === null || ci && ci.sessions === undefined) ? "—" : (ci ? ci.sessions : "—") },
       { k: "平均每 Session", v: ciFmt(ci && ci.avg_cost_per_session_usd) },
     ];
-    if (ciBudget && ciBudget.budget_configured && ciBudget.usage_ratio !== null && ciBudget.usage_ratio !== undefined) {
-      ciCards.push({ k: "今日预算使用率", v: (ciBudget.usage_ratio * 100).toFixed(1) + "%" });
+    if (ciBudget && ciBudget.budget_configured) {
+      ciCards.push({ k: "今日归属估算费用", v: ciFmt(ciBudget.today_estimated_cost_usd) });
+      if (ciBudgetUncertain) {
+        ciCards.push({ k: "今日预算比例", v: "不可用（累计数据）" });
+      } else if (ciBudget.usage_ratio !== null && ciBudget.usage_ratio !== undefined) {
+        ciCards.push({ k: "今日预算使用率", v: (ciBudget.usage_ratio * 100).toFixed(1) + "%" });
+      }
     }
 
     const dayLabels = byDay.map(function (d) { return d.day.slice(5); });
@@ -414,7 +422,9 @@
       ciPart ? h("div", { style: { fontSize: 12, padding: "6px 10px", background: "rgba(255,193,7,.12)", border: "1px solid rgba(255,193,7,.4)", borderRadius: 6, margin: "6px 0" } },
         "部分成本数据：仅部分 usage 记录含费用，汇总是已知部分。" +
         "（Partial cost data — coverage " +
-        (ci && ci.coverage ? Math.round((ci.coverage.cost_coverage_ratio || 0) * 100) + "%" : "—") + "）") : null,
+        (ci && ci.coverage ? Math.round((ci.coverage.pricing_coverage_ratio || 0) * 100) + "%" : "—") + "）") : null,
+      ciAttrib ? h("div", { style: { fontSize: 11, padding: "4px 10px", opacity: 0.85, marginBottom: 4 } },
+        "时间范围费用为归属估算：Hermes 当前仅保存累计 usage row，跨时间边界的调用无法精确拆分。（Time-window cost is attribution-based.）") : null,
       h("div", { className: "hud-grid hud-grid-4", style: { marginTop: 8 } },
         ciCards.map(function (c) {
           return card(c.k, h("div", { style: { fontSize: 20, fontWeight: 700 } }, c.v));
