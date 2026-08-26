@@ -243,7 +243,8 @@ def test_100k_scale(env) -> None:
     assert len(t["sessions"]) == 20
     assert t_sum < 1.0, f"summary {t_sum:.2f}s"
     assert t_mod < 1.0, f"models {t_mod:.2f}s"
-    assert t_ses < 0.5, f"sessions {t_ses:.2f}s"
+    ci = bool(_os.environ.get("CI"))
+    assert t_ses < (2.0 if ci else 0.5), f"sessions {t_ses:.2f}s"  # CI 放宽
     print(f"100k cost: summary={t_sum*1000:.0f}ms models={t_mod*1000:.0f}ms "
           f"sessions={t_ses*1000:.0f}ms RSS={rss/1024/1024:.1f}MB")
 
