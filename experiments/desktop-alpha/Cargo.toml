@@ -15,6 +15,12 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["blocking", "json"], default-features = false }
 semver = "1"
 
+[features]
+default = []
+# 编译期 test hooks（DR-2）：仅 internal test/validation build 启用；
+# Public release build（无此 feature）不含 test escape hooks。
+desktop-test-hooks = []
+
 [profile.release]
 strip = true
 lto = true

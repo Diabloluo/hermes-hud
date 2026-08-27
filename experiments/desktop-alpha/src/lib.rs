@@ -71,13 +71,16 @@ fn state_id(s: &State) -> &'static str {
 // env override（test only）。禁止 shell -c / eval / 任意命令。
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// Test-only overrides（B）：HUD_HERMES_BIN / HUD_DESKTOP_TEST_HOME /
-// HUD_DESKTOP_AUTOSTART 仅在 HUD_DESKTOP_TEST_MODE=1 时生效。
+// Test-only overrides（B/DR-2）：HUD_HERMES_BIN / HUD_DESKTOP_TEST_HOME /
+// HUD_DESKTOP_AUTOSTART / TEST_MODE 仅编译进 test / desktop-test-hooks build。
+// Public release build 根本不含这些入口（编译期边界，非运行时门控）。
 // ---------------------------------------------------------------------------
+#[cfg(any(test, feature = "desktop-test-hooks"))]
 fn test_mode() -> bool {
     std::env::var("HUD_DESKTOP_TEST_MODE").is_ok()
 }
 
+#[cfg(any(test, feature = "desktop-test-hooks"))]
 fn hermes_home() -> Option<std::ffi::OsString> {
     if test_mode() {
         if let Some(h) = std::env::var_os("HUD_DESKTOP_TEST_HOME") {
@@ -87,13 +90,22 @@ fn hermes_home() -> Option<std::ffi::OsString> {
     std::env::var_os("HOME")
 }
 
+// Public build：无 test hooks——HOME 恒真实
+#[cfg(not(any(test, feature = "desktop-test-hooks")))]
+fn hermes_home() -> Option<std::ffi::OsString> {
+    std::env::var_os("HOME")
+}
+
 fn find_hermes() -> Option<PathBuf> {
-    // env override（仅 test mode；release .app 忽略）
-    if test_mode() {
-        if let Ok(b) = std::env::var("HUD_HERMES_BIN") {
-            let p = PathBuf::from(&b);
-            if p.exists() {
-                return Some(p);
+    // env override（仅 test/desktop-test-hooks build 存在）
+    #[cfg(any(test, feature = "desktop-test-hooks"))]
+    {
+        if test_mode() {
+            if let Ok(b) = std::env::var("HUD_HERMES_BIN") {
+                let p = PathBuf::from(&b);
+                if p.exists() {
+                    return Some(p);
+                }
             }
         }
     }
@@ -106,7 +118,7 @@ fn find_hermes() -> Option<PathBuf> {
             }
         }
     }
-    // known user-local paths（HUD_DESKTOP_TEST_HOME 仅 test mode 生效）
+    // known user-local paths（HUD_DESKTOP_TEST_HOME 仅 test build 生效）
     if let Some(home) = hermes_home() {
         for rel in KNOWN_HERMES_PATHS {
             let cand = Path::new(&home).join(rel);
@@ -297,14 +309,17 @@ fn push_state(m: &Machine, state: State) {
         let mut cur = m.state.lock().unwrap();
         *cur = state.clone();
     }
-    // 状态日志（自动化验证通道；不含敏感数据）——append 保留状态序列
-    use std::io::Write as _;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/hud-state.log")
+    // 状态日志（test/desktop-test-hooks build 才写；public build 无此文件）
+    #[cfg(any(test, feature = "desktop-test-hooks"))]
     {
-        let _ = writeln!(f, "{}", state_id(&state));
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/hud-state.log")
+        {
+            let _ = writeln!(f, "{}", state_id(&state));
+        }
     }
     let id = state_id(&state);
     let detail = match &state {
@@ -330,6 +345,7 @@ fn detect_once(m: &Machine) -> bool {
             } else {
                 push_state(m, State::HermesNotFound);
             }
+            #[cfg(any(test, feature = "desktop-test-hooks"))]
             let _ = std::fs::write("/tmp/hud-detect.log", format!("probe err: {e}\n"));
             return false;
         }
@@ -359,11 +375,13 @@ fn detect_once(m: &Machine) -> bool {
             }
             if let Some(raw) = outcome.strip_prefix("unverified:") {
                 let reason = format!("compatibility unverified: {raw}");
+                #[cfg(any(test, feature = "desktop-test-hooks"))]
                 let _ = std::fs::write("/tmp/hud-handshake.log", format!("{reason}\n"));
                 go_fallback(m, State::ConnectionFailed(reason));
                 false
             } else {
                 let outcome = pct_decode(&outcome);
+                #[cfg(any(test, feature = "desktop-test-hooks"))]
                 let _ = std::fs::write("/tmp/hud-handshake.log", format!("payload: {outcome}\n"));
                 let parsed: Option<(Option<u64>, String)> =
                     serde_json::from_str::<serde_json::Value>(&outcome)
@@ -576,14 +594,16 @@ pub fn run() {
                 };
                 push_state(&m, State::Detecting);
                 if !detect_once(&m) {
-                    // 测试模式（HUD_DESKTOP_TEST_MODE=1 + HUD_DESKTOP_AUTOSTART=1）：
-                    // DashboardNotRunning 时自动走 Start 路径（复用 spawn_and_poll）
-                    if test_mode()
-                        && std::env::var("HUD_DESKTOP_AUTOSTART").is_ok()
-                        && find_hermes().is_some()
+                    // autostart fixture（B/DR-2）：仅 test/desktop-test-hooks build
+                    #[cfg(any(test, feature = "desktop-test-hooks"))]
                     {
-                        if maybe_spawn_dashboard().ok().flatten().is_some() {
-                            spawn_and_poll(m);
+                        if test_mode()
+                            && std::env::var("HUD_DESKTOP_AUTOSTART").is_ok()
+                            && find_hermes().is_some()
+                        {
+                            if maybe_spawn_dashboard().ok().flatten().is_some() {
+                                spawn_and_poll(m);
+                            }
                         }
                     }
                 }

@@ -1,0 +1,83 @@
+name: Desktop Release (skeleton — DR-2, NON-PUBLISHING)
+
+# DR-2: DRY / NON-PUBLISHING skeleton. Proves the Public/Internal build split.
+# - Trigger: workflow_dispatch ONLY. NO pull_request / pull_request_target /
+#   automatic push / automatic tag release.
+# - Permissions: contents: read ONLY. No contents:write, packages:write,
+#   id-token:write.
+# - This workflow references NO APPLE_* secrets and has NO release capability:
+#   no tag, no GitHub Release, no asset upload, no signing, no notarization.
+# - Builds the PUBLIC release binary (desktop-test-hooks OFF), runs the
+#   negative-string proof, cargo tests, and asserts exact-source truth.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or ref to validate (default: main)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  public-internal-split-proof:
+    name: Public build + negative-string proof + tests
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+
+      # Exact-source truth (J): built source SHA must equal GITHUB_SHA.
+      - name: Record source SHA
+        id: sha
+        run: |
+          GITHUB_SHA="${{ github.sha }}"
+          echo "github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "checked_out=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_SHA" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::exact-source mismatch: GITHUB_SHA=$GITHUB_SHA checked_out=$(git rev-parse HEAD)"
+            exit 1
+          fi
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo test (all env-gated tests)
+        working-directory: experiments/desktop-alpha
+        run: cargo test
+
+      - name: Public release build (desktop-test-hooks OFF)
+        working-directory: experiments/desktop-alpha
+        run: cargo build --release
+
+      - name: Negative-string proof (no test hooks in public binary)
+        working-directory: experiments/desktop-alpha
+        run: |
+          BIN=target/release/hermes-hud-desktop
+          for s in HUD_HERMES_BIN HUD_DESKTOP_TEST_HOME HUD_DESKTOP_AUTOSTART \
+                   HUD_DESKTOP_TEST_MODE /tmp/hud-state.log /tmp/hud-handshake.log \
+                   /tmp/hud-detect.log; do
+            c=$(strings "$BIN" | grep -cF "$s" || true)
+            echo "$s: $c"
+            if [ "$c" != "0" ]; then
+              echo "::error::test-hook string '$s' present in public binary ($c)"
+              exit 1
+            fi
+          done
+          echo "negative-string proof: PASS"
+
+      - name: Security tests (nav guard / semver / argv / probe-before-spawn)
+        working-directory: experiments/desktop-alpha
+        run: cargo test --features desktop-test-hooks
+
+      - name: Output exact-source truth
+        run: |
+          echo "GITHUB_SHA=${{ steps.sha.outputs.github_sha }}"
+          echo "BUILT_SOURCE_SHA=${{ steps.sha.outputs.checked_out }}"
+          echo "MATCH=yes"

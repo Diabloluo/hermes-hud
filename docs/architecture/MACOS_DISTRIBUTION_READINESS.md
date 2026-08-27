@@ -114,24 +114,36 @@ empirical failure appears in DR-3, revisit with evidence — not preemptively.
 | CI suitability | **excellent** (no interactive 2FA) | poor (2FA/timing issues in headless CI) |
 | Revocation | revoke key in ASC, instant | revoke app-specific password |
 | Rotation | regenerate key, re-upload secret | regenerate password |
-| Least privilege | scope key to notarization only | Apple ID password can access account surface |
+| Least privilege | key role-scoped (minimum role supporting notarization) | Apple ID password can access account surface |
 | Owner dependency | key owner must be ASC user | account owner for app-specific passwords |
 | Secret exposure | .p8 short-lived in runner | password similar exposure |
 
-**Recommended: Option A (App Store Connect API Key)** — Tauri envs
+**Canonical notarization key semantics（DR-2 修正）**: the credential is an
+**App Store Connect Team API Key** with the **minimum role that supports
+notarization**. Team API keys are role-scoped but apply **account-wide across
+apps** — they are NOT app-isolated notarization-only credentials. An
+**Individual API Key is NOT used** for notarization (current Apple docs state
+individual keys cannot be used with notarytool).
+
+**Recommended: Option A (ASC Team API Key)** — Tauri envs
 `APPLE_API_ISSUER`, `APPLE_API_KEY` (key ID), `APPLE_API_KEY_PATH` (file).
 Backup: `APPLE_ID` + `APPLE_PASSWORD` + `APPLE_TEAM_ID`. DR-1 creates no real key.
 
-## J. Secret Inventory (proposed GitHub Actions secrets)
+## J. Secret Inventory (proposed — DR-2 reclassified)
 
+**Sensitive secrets** (GitHub Secrets — high sensitivity):
 | Logical name | Content | Used by |
 |---|---|---|
 | `APPLE_CERTIFICATE` | base64 Developer ID .p12 | import → temp keychain |
 | `APPLE_CERTIFICATE_PASSWORD` | .p12 password | import |
-| `APPLE_SIGNING_IDENTITY` | e.g. "Developer ID Application: …" | codesign -s |
-| `APPLE_API_ISSUER` | ASC API issuer UUID | notarytool |
-| `APPLE_API_KEY` | ASC API key ID | notarytool |
 | `APPLE_API_PRIVATE_KEY` | .p8 content | write to ephemeral file |
+
+**Identifiers / configuration** (may later become GitHub Variables, not secrets):
+| Logical name | Content | Used by |
+|---|---|---|
+| `APPLE_SIGNING_IDENTITY` | e.g. "Developer ID Application: …" | codesign -s |
+| `APPLE_API_ISSUER` | ASC Team API issuer UUID | notarytool |
+| `APPLE_API_KEY` | ASC Team API key ID | notarytool |
 
 .p8 lifecycle in CI: secret → ephemeral file → `APPLE_API_KEY_PATH` → build →
 secure delete (job ends; runner disposed). Never commit/artifact/log/cache.
