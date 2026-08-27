@@ -57,6 +57,31 @@ HUD Core / Backend API  (plugin_api.py — FastAPI, 21 REST + 1 WS)
 > They will be replaced with our own measured numbers in Desktop Foundation
 > v0.1 (Actual Desktop Benchmark, section L).
 
+## L. Hermes HUD Prototype Measured Benchmark (2026-08-27, Desktop Foundation v0.1)
+
+Machine: Mac (Apple Silicon) · macOS 26.6.2 (25G83) · arm64 · rustc 1.98.0 ·
+cargo 1.98.0 · Tauri 2.11.4 (tauri-cli) · release build (LTO + strip).
+
+| Metric | Hermes HUD prototype (measured) | Tauri reference | Electron reference |
+|---|---|---|---|
+| .app bundle size | **5.4 MB** | 3–15 MB | 50–150 MB |
+| executable size | 5,683,616 bytes (5.4 MB) | — | — |
+| idle RSS (main + WebContent) | **97.8 + 23.6 = 121.4 MB** | ~42 MB (bare) | ~168 MB |
+| cold launch → HUD connection ×3 | 0.83 / 0.83 / 0.83 s → **median 0.83 s** | ~380 ms (bare) | ~1,420 ms |
+| warm launch ×3 | 0.84 / 0.82 / 0.82 s → **median 0.82 s** | — | — |
+| first HUD usable render | ~1.5–2 s (est.; connection + WKWebView page load + React first paint) | — | — |
+
+Notes:
+- Our app ships an embedded Tauri shell only — no plugin backend (Python
+  Dashboard provides it), hence 5.4 MB.
+- idle RSS includes the WKWebView WebContent process (23.6 MB) which the bare
+  Tauri reference does not count; the main-process figure (97.8 MB) is the
+  comparable number.
+- cold vs warm are near-identical (0.83 vs 0.82 s): Rust cold start is fast
+  and WebKit process reuse dominates.
+- Measurements taken with `lsof`-detected first connection to the Dashboard
+  at 127.0.0.1:9119 (median of 3 runs, not best run).
+
 **Decision: Tauri 2.** Size/RAM/security defaults win; the Node-vs-Rust concern
 is moot because our business logic lives in the existing Python backend and the
 Rust shell only needs HTTP + WS + tray.

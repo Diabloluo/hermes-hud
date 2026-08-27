@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Hermes HUD — Dashboard not detected</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #0d1117; color: #e6edf3;
+         display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .card { text-align: center; max-width: 420px; padding: 32px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #f85149; display: inline-block;
+         margin-right: 8px; }
+  h1 { font-size: 18px; margin: 16px 0 8px; }
+  p { font-size: 13px; color: #8b949e; line-height: 1.6; }
+  button { margin-top: 16px; padding: 8px 22px; border-radius: 6px; border: 1px solid #30363d;
+           background: #21262d; color: #e6edf3; font-size: 13px; cursor: pointer; }
+  button:hover { background: #30363d; }
+  a { color: #58a6ff; font-size: 12px; }
+  #reason { font-size: 12px; color: #f85149; margin-top: 12px; min-height: 16px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="dot"></span>
+  <h1>Hermes Dashboard not detected</h1>
+  <p>请确认 Hermes Dashboard 正在运行：<br>
+     <code>hermes dashboard --host 127.0.0.1 --port 9119 --no-open</code></p>
+  <button onclick="location.href='http://127.0.0.1:9119/hud'">Retry</button>
+  <p><a href="#" onclick="return false">Open setup instructions</a></p>
+  <div id="reason"></div>
+</div>
+<script>
+  // 探测失败/不兼容原因由 Rust 启动线程注入（本地 bundled 页面，无 IPC 权限）
+  window.__hud_show_fallback__ = function (reason) {
+    var el = document.getElementById("reason");
+    if (el && reason) { el.textContent = "连接状态: " + reason; }
+  };
+  window.__hud_show_fallback__ = window.__hud_show_fallback__;
+  if (window.__hud_fallback_reason__) {
+    window.__hud_show_fallback__(window.__hud_fallback_reason__);
+  }
+</script>
+</body>
+</html>
