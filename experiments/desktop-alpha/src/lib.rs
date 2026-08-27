@@ -61,12 +61,42 @@ fn smoke_report(path: &str, lines: &[(&str, String)]) {
     let _ = std::fs::write(path, format!("{{\n{body}\n}}\n"));
 }
 
-/// 探测 Dashboard + 版本契约：
-/// - GET /（200 = 服务存活）
-/// - GET /health：401 = 服务在但需鉴权（正常态——native 不抓 token，
-///   Auth Boundary）→ detected；200 = 公开 → 校验 api_schema_version /
-///   plugin_version，不匹配 → 明确兼容性原因（fallback 屏展示）。
-fn probe_dashboard() -> Result<Option<String>, String> {
+/// 兼容性判定（semver crate，单一实现——Rust 侧；页面 JS 只回传原始值）。
+fn version_compat(api: Option<u64>, plugin: &str) -> Result<(), String> {
+    if api != Some(EXPECTED_API_SCHEMA) {
+        return Err(format!(
+            "incompatible API schema: {:?} (expected {EXPECTED_API_SCHEMA})",
+            api
+        ));
+    }
+    let ver = semver::Version::parse(plugin).map_err(|e| {
+        format!("malformed plugin_version {plugin:?}: {e} (expected >= {MIN_PLUGIN_VERSION})")
+    })?;
+    let min = semver::Version::parse(MIN_PLUGIN_VERSION).expect("MIN_PLUGIN_VERSION is valid semver");
+    if ver >= min {
+        Ok(())
+    } else {
+        Err(format!(
+            "incompatible plugin_version {plugin:?} (expected >= {MIN_PLUGIN_VERSION})"
+        ))
+    }
+}
+
+/// 探测结果三态：
+/// - Verified：/health 公开可读且版本匹配
+/// - AuthRequired：root 存活但 /health 401（需页面上下文 handshake）
+/// - Incompatible(reason)：公开但版本不匹配 / 其他失败 → fallback
+enum Probe {
+    Verified,
+    AuthRequired,
+    Incompatible(String),
+}
+
+/// 探测 Dashboard：GET /（200 = 服务存活）；GET /health：
+/// - 401 = auth-required / compatibility-unverified（NOT compatibility OK）→
+///   导航 /hud 后由 page-context handshake 验证（工单 3）
+/// - 200 = 公开 → semver 版本校验
+fn probe_dashboard() -> Result<Probe, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(2000))
         .build()
@@ -76,30 +106,89 @@ fn probe_dashboard() -> Result<Option<String>, String> {
         .send()
         .map_err(|e| format!("dashboard probe failed: {e}"))?;
     if !root.status().is_success() {
-        return Ok(Some(format!("dashboard HTTP {}", root.status())));
+        return Ok(Probe::Incompatible(format!("dashboard HTTP {}", root.status())));
     }
-    // 版本契约（仅当 /health 公开可读；401 → 正常鉴权态，跳过检查）
     let health = client
-        .get(format!("http://{DASHBOARD_HOST}:{}/api/plugins/hermes-hud/health", dashboard_port()))
+        .get(format!(
+            "http://{DASHBOARD_HOST}:{}/api/plugins/hermes-hud/health",
+            dashboard_port()
+        ))
         .send()
         .map_err(|e| format!("health probe failed: {e}"))?;
     if health.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Ok(None);  // 服务在（需鉴权）→ 导航 /hud，页面内鉴权
+        return Ok(Probe::AuthRequired);  // auth-required / compatibility-unverified
     }
     if health.status().is_success() {
         let body: serde_json::Value = health.json().map_err(|e| format!("health json: {e}"))?;
         let api = body.get("api_schema_version").and_then(|v| v.as_u64());
         let plugin = body.get("plugin_version").and_then(|v| v.as_str()).unwrap_or("");
-        match api {
-            Some(v) if v == EXPECTED_API_SCHEMA && plugin >= MIN_PLUGIN_VERSION => Ok(None),
-            _ => Ok(Some(format!(
-                "incompatible: api_schema_version={:?} plugin_version={:?} (expected {} / >= {})",
-                api, plugin, EXPECTED_API_SCHEMA, MIN_PLUGIN_VERSION
-            ))),
+        match version_compat(api, plugin) {
+            Ok(()) => Ok(Probe::Verified),
+            Err(e) => Ok(Probe::Incompatible(e)),
         }
     } else {
-        Ok(Some(format!("health HTTP {}", health.status())))
+        Ok(Probe::Incompatible(format!("health HTTP {}", health.status())))
     }
+}
+
+/// Page-context handshake：注入只做版本检查的 JS（在页面上下文用现有
+/// Dashboard auth 机制调 /health）。token 不离开页面、不回传 Rust、不写盘。
+/// 结果（仅 api_schema_version + plugin_version 原始值）经 location.hash 回传。
+const HANDSHAKE_JS: &str = r#"
+(async () => {
+  try {
+    const SDK = window.__HERMES_PLUGIN_SDK__;
+    const url = '/api/plugins/hermes-hud/health';
+    let d;
+    if (SDK && SDK.fetchJSON) { d = await SDK.fetchJSON(url); }
+    else {
+      d = await fetch(url, { headers: { 'X-Hermes-Session-Token': (window.__HERMES_SESSION_TOKEN__ || '') } });
+      d = await d.json();
+    }
+    // 成功：紧凑 JSON（无 #/空格）——Rust 直接解析；token 绝不外传
+    location.hash = 'hud_compat=' + JSON.stringify({ api_schema_version: d.api_schema_version, plugin_version: d.plugin_version });
+  } catch (e) {
+    location.hash = 'hud_compat=' + 'unverified:' + encodeURIComponent(String(e && e.message || e).slice(0, 80));
+  }
+})();
+"#;
+
+/// 读取 handshake 结果（location.hash → 原始版本值）。
+fn read_handshake(win: &tauri::WebviewWindow) -> Option<String> {
+    let frag = win
+        .url()
+        .ok()
+        .and_then(|u| u.fragment().map(|f| f.to_string()))
+        .unwrap_or_default();
+    let val = frag.strip_prefix("hud_compat=")?;
+    Some(val.to_string())
+}
+
+/// 简单 percent-decode（fragment() 返回 URL 编码——handshake JSON 需解码）。
+fn pct_decode(s: &str) -> String {
+    fn hex(b: u8) -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
+        }
+    }
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// smoke 模式：把 JS 表达式结果写入 location.hash，Rust 读回断言。
@@ -130,23 +219,95 @@ pub fn run() {
             .on_navigation(|url| nav_allowed(url))
             .build()?;
 
-            // 启动探测：Dashboard 可达且兼容 → 导航到 /hud；否则留在 fallback
+            // 启动探测：三态决定 → Verified/AuthRequired 导航 /hud（后者随后
+            // page-context handshake）；Incompatible/Err → fallback（fail closed）
             let win = window.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_millis(500));
-                let reason = match probe_dashboard() {
-                    Ok(None) => None,
-                    Ok(Some(r)) => Some(r),
-                    Err(e) => Some(e),
+                // 注入 fallback 实际 dashboard URL（Retry 用当前端口，非硬编码）
+                let _ = win.eval(&format!(
+                    "window.__hud_retry_url__ = {:?};",
+                    dashboard_url()
+                ));
+                let probe = match probe_dashboard() {
+                    Ok(p) => p,
+                    Err(e) => Probe::Incompatible(e),
                 };
-                if let Some(r) = reason.clone() {
-                    let _ = win.eval(format!(
-                        "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
-                        r, r
-                    ));
-                } else {
-                    DETECTED.store(true, Ordering::Relaxed);
-                    let _ = win.navigate(dashboard_url().parse().unwrap());
+                let probe_summary = match &probe {
+                    Probe::Verified => "ok".to_string(),
+                    Probe::AuthRequired => "auth-required / compatibility-unverified".to_string(),
+                    Probe::Incompatible(r) => r.clone(),
+                };
+                match probe {
+                    Probe::Verified => {
+                        DETECTED.store(true, Ordering::Relaxed);
+                        let _ = win.navigate(dashboard_url().parse().unwrap());
+                    }
+                    Probe::AuthRequired => {
+                        // auth-required / compatibility-unverified：导航 /hud，
+                        // 页面加载后 page-context handshake 验证（工单 3）
+                        DETECTED.store(true, Ordering::Relaxed);
+                        let _ = win.navigate(dashboard_url().parse().unwrap());
+                        std::thread::sleep(Duration::from_secs(3));  // 等页面 + SDK 注入
+                        let _ = win.eval(HANDSHAKE_JS);
+                        // 轮询 handshake 结果（最长 ~8s；超时 = unverified → fail closed）
+                        let mut outcome = String::from("unverified:timeout");
+                        for _ in 0..16 {
+                            std::thread::sleep(Duration::from_millis(500));
+                            if let Some(v) = read_handshake(&win) {
+                                if !v.is_empty() && v != "unverified:timeout" {
+                                    outcome = v;
+                                    break;
+                                }
+                            }
+                        }
+                        if let Some(raw) = outcome.strip_prefix("unverified:") {
+                            let _ = std::fs::write("/tmp/hud-handshake.log", format!("unverified: {raw}\n"));
+                            // 检查本身失败 → fail closed → fallback
+                            let _ = win.navigate(
+                                "tauri://localhost/fallback.html".parse().unwrap(),
+                            );
+                            let _ = win.eval(&format!(
+                                "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
+                                format!("compatibility unverified: {raw}"), format!("compatibility unverified: {raw}")
+                            ));
+                        } else {
+                            let outcome = pct_decode(&outcome);  // fragment 是 URL 编码
+                            let _ = std::fs::write("/tmp/hud-handshake.log", format!("payload: {outcome}\n"));
+                            // raw JSON {api_schema_version, plugin_version} → semver 判定
+                            let parsed: Option<(Option<u64>, String)> = serde_json::from_str::<serde_json::Value>(&outcome)
+                                .ok()
+                                .and_then(|v| Some((
+                                    v.get("api_schema_version").and_then(|x| x.as_u64()),
+                                    v.get("plugin_version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                )));
+                            match parsed {
+                                Some((api, plugin)) => match version_compat(api, &plugin) {
+                                    Ok(()) => { /* compatibility_verified — 留在 /hud */ }
+                                    Err(e) => {
+                                        let _ = win.navigate("tauri://localhost/fallback.html".parse().unwrap());
+                                        let _ = win.eval(&format!(
+                                            "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
+                                            e, e
+                                        ));
+                                    }
+                                },
+                                None => {
+                                    let _ = win.navigate("tauri://localhost/fallback.html".parse().unwrap());
+                                    let _ = win.eval(&format!(
+                                        "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
+                                        format!("compatibility unverified: bad handshake payload {outcome:?}"), format!("compatibility unverified: bad handshake payload")
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    Probe::Incompatible(r) => {
+                        let _ = win.eval(&format!(
+                            "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
+                            r, r
+                        ));
+                    }
                 }
                 // —— smoke 模式（HUD_DESKTOP_SMOKE=1）：自动验证 + 报告 + 退出 ——
                 if std::env::var("HUD_DESKTOP_SMOKE").is_ok() {
@@ -160,6 +321,16 @@ pub fn run() {
                     let has_hud = js_probe(
                         &win,
                         "!!(document.querySelector('.hud-tab') || document.body.textContent.includes('指挥中心'))",
+                    );
+                    // 诊断：SDK/token/fallback reason（handshake 路径证据）
+                    let sdk_present = js_probe(&win, "typeof window.__HERMES_PLUGIN_SDK__");
+                    let token_present = js_probe(
+                        &win,
+                        "!!(window.__HERMES_SESSION_TOKEN__ || (window.__HERMES_PLUGIN_SDK__ && window.__HERMES_PLUGIN_SDK__.__token__))",
+                    );
+                    let fallback_reason = js_probe(
+                        &win,
+                        "String(window.__hud_fallback_reason__ || '')",
                     );
                     // 功能 Tab 渲染证据（JS 内 textContent 检查——无编码问题）
                     let tab_timeline = js_probe(
@@ -197,13 +368,16 @@ pub fn run() {
                     let first_render_ms = t0.elapsed().as_millis();
                     let rows: Vec<(&str, String)> = vec![
                         ("detected", DETECTED.load(Ordering::Relaxed).to_string()),
-                        ("probe_reason", reason.clone().unwrap_or_else(|| "ok".into())),
+                        ("probe_reason", probe_summary),
                         ("api_schema_version", format!("{EXPECTED_API_SCHEMA}")),
                         ("min_plugin_version", MIN_PLUGIN_VERSION.into()),
                         ("remote_ipc_internals", ipc),
                         ("remote_tauri_global", tauri_global),
                         ("remote_host", host),
                         ("hud_page_loaded", has_hud),
+                        ("sdk_present", sdk_present),
+                        ("token_present", token_present),
+                        ("fallback_reason", fallback_reason),
                         ("tab_timeline_rendered", tab_timeline.to_string()),
                         ("tab_skill_analytics_rendered", tab_skill_analytics.to_string()),
                         ("tab_cost_intelligence_rendered", tab_cost.to_string()),
@@ -284,5 +458,29 @@ mod tests {
         assert!(!nav_allowed(&u("file:///etc/passwd")));
         assert!(!nav_allowed(&u("javascript:alert(1)")));
         assert!(!nav_allowed(&u("data:text/html,<script>alert(1)</script>")));
+    }
+
+    // —— semver 兼容性判定（工单 5：标准 semver，非字符串比较）——
+    #[test]
+    fn semver_pass_cases() {
+        for v in ["1.1.0", "1.1.1", "1.2.0", "2.0.0"] {
+            assert!(version_compat(Some(1), v).is_ok(), "{v} should PASS");
+        }
+    }
+
+    #[test]
+    fn semver_fail_cases() {
+        assert!(version_compat(Some(1), "1.0.9").is_err());
+        assert!(version_compat(Some(1), "1.1.0-rc.1").is_err());  // pre-release < 1.1.0
+        assert!(version_compat(Some(0), "1.1.0").is_err());       // schema mismatch
+        assert!(version_compat(None, "1.1.0").is_err());
+    }
+
+    #[test]
+    fn semver_malformed_fail_closed() {
+        // malformed → FAIL CLOSED（不 panic、返回 Err）
+        for bad in ["", "not-a-version", "1.1", "v1.1.0", "1.1.0.0"] {
+            assert!(version_compat(Some(1), bad).is_err(), "{bad:?} should FAIL CLOSED");
+        }
     }
 }

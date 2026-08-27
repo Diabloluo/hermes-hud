@@ -24,7 +24,7 @@
   <h1>Hermes Dashboard not detected</h1>
   <p>请确认 Hermes Dashboard 正在运行：<br>
      <code>hermes dashboard --host 127.0.0.1 --port 9119 --no-open</code></p>
-  <button onclick="location.href='http://127.0.0.1:9119/hud'">Retry</button>
+  <button onclick="location.href = (window.__hud_retry_url__ || 'http://127.0.0.1:9119/hud')">Retry</button>
   <p><a href="#" onclick="return false">Open setup instructions</a></p>
   <div id="reason"></div>
 </div>
@@ -34,10 +34,14 @@
     var el = document.getElementById("reason");
     if (el && reason) { el.textContent = "连接状态: " + reason; }
   };
-  window.__hud_show_fallback__ = window.__hud_show_fallback__;
-  if (window.__hud_fallback_reason__) {
-    window.__hud_show_fallback__(window.__hud_fallback_reason__);
-  }
+  // 轮询等待 Rust 注入（时序无关——页面可能早于注入完成）
+  var _tries = 0;
+  var _iv = setInterval(function () {
+    if (window.__hud_fallback_reason__) {
+      window.__hud_show_fallback__(window.__hud_fallback_reason__);
+      clearInterval(_iv);
+    } else if (++_tries > 20) { clearInterval(_iv); }
+  }, 300);
 </script>
 </body>
 </html>
