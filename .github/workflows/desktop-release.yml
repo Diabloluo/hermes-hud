@@ -30,10 +30,10 @@ jobs:
       - name: Validate input SHA format
         run: |
           SHA="${{ inputs.sha }}"
-          case "$SHA" in
-            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
-            *) echo "::error::input must be full 40-char commit SHA"; exit 1 ;;
-          esac
+          if ! printf '%s' "$SHA" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::input must be full 40-char commit SHA (got: '$SHA')"
+            exit 1
+          fi
 
       - name: Checkout exact SHA
         uses: actions/checkout@v4
