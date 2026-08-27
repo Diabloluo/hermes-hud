@@ -779,13 +779,24 @@ mod tests {
     fn override_ignored_without_test_mode() {
         let _g = lock_env();
         // release .app：无 TEST_MODE → HUD_HERMES_BIN / HUD_DESKTOP_TEST_HOME 忽略
+        // （不依赖真实 hermes 存在——断言 override 路径未被返回即可，CI 兼容）
         std::env::remove_var("HUD_DESKTOP_TEST_MODE");
-        std::env::set_var("HUD_HERMES_BIN", "/nonexistent/hermes");
+        let fake = std::env::temp_dir().join("hud-fake-hermes3");
+        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::env::set_var("HUD_HERMES_BIN", &fake);
         std::env::set_var("HUD_DESKTOP_TEST_HOME", "/tmp/hermes-hud-empty-home");
         let old_path = std::env::var("PATH").unwrap_or_default();
         std::env::set_var("PATH", "");
         let found = find_hermes();
-        assert!(found.is_some(), "release must ignore test overrides (known path wins)");
+        assert!(
+            found.as_ref() != Some(&fake),
+            "release must ignore test overrides (fake HUD_HERMES_BIN must NOT win)"
+        );
         std::env::set_var("PATH", &old_path);
         std::env::remove_var("HUD_HERMES_BIN");
         std::env::remove_var("HUD_DESKTOP_TEST_HOME");
