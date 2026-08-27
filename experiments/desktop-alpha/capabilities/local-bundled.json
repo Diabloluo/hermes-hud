@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local-bundled",
+  "description": "Local-only capability (tauri:// bundled pages): zero plugin permissions. The one custom command (start_dashboard) is gated inside Rust by origin check (tauri:// allowed, http remote DENIED) — capability `local: true` keeps this confined to bundled assets; remote /hud (http://127.0.0.1:<port>) inherits nothing.",
+  "windows": ["main"],
+  "local": true,
+  "permissions": []
+}

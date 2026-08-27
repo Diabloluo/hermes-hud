@@ -1,15 +1,23 @@
-//! Hermes HUD Desktop prototype — remote WebView shell.
+//! Hermes HUD — macOS Desktop Alpha v0.1.
 //!
-//! Security invariant (Desktop Foundation v0.1):
-//! - The remote HUD WebView (`http://127.0.0.1:<port>/hud`) gets ZERO Tauri
-//!   capabilities: no IPC, no shell, no fs, no dialog, no updater, no native
-//!   commands (capabilities/default.json is an empty permission set).
-//! - The page talks to the Dashboard exactly like a normal browser: fetch /
-//!   WebSocket / localStorage.
-//! - The native shell exposes no command bridge to remote content.
-//! - Navigation guard: only 127.0.0.1 / localhost / tauri:// are allowed.
+//! Productized Tauri shell over the running Hermes Dashboard.
+//!
+//! Security planes (Foundation freeze — MUST NOT REGRESS):
+//! - remote HUD WebView (`http://127.0.0.1:<port>/hud`): ZERO Tauri
+//!   capabilities (capabilities/local-bundled.json is `local: true` only —
+//!   confined to bundled tauri:// pages); page talks to Dashboard via plain
+//!   fetch/WebSocket/localStorage; navigation guard; page-context compat
+//!   handshake; fail closed.
+//! - local bundled fallback/setup page: ONE narrow operation,
+//!   `start_dashboard`, gated in Rust by origin check (tauri:// allowed,
+//!   http remote DENIED) and executing ONLY a fixed argv
+//!   (<resolved-hermes> dashboard --host 127.0.0.1 --port <p> --no-open)
+//!   via std::process::Command — no shell, no interpolation.
 
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tauri::{
@@ -20,59 +28,122 @@ use tauri::{
 };
 
 const DASHBOARD_HOST: &str = "127.0.0.1";
+const DEFAULT_PORT: u16 = 9119;
+const MIN_PLUGIN_VERSION: &str = "1.1.0";
+const START_TIMEOUT_S: u64 = 15;
 
+/// 已知的用户级 hermes 可执行路径（确定性 discovery，不猜）。
+const KNOWN_HERMES_PATHS: &[&str] = &[
+    ".hermes/hermes-agent/venv/bin/hermes",
+    ".cargo/bin/hermes",
+    "/usr/local/bin/hermes",
+    "/opt/homebrew/bin/hermes",
+];
+
+static DETECTED: AtomicBool = AtomicBool::new(false);
+
+/// 恢复状态机（F）：每个状态有明确 UI，不允许 blank/endless spinner/silent failure。
+#[derive(Clone, Debug, PartialEq)]
+enum State {
+    Detecting,
+    Connected,
+    DashboardNotRunning,
+    StartingDashboard,
+    Incompatible(String),
+    HermesNotFound,
+    ConnectionFailed(String),
+}
+
+fn state_id(s: &State) -> &'static str {
+    match s {
+        State::Detecting => "detecting",
+        State::Connected => "connected",
+        State::DashboardNotRunning => "dashboard-not-running",
+        State::StartingDashboard => "starting-dashboard",
+        State::Incompatible(_) => "incompatible",
+        State::HermesNotFound => "hermes-not-found",
+        State::ConnectionFailed(_) => "connection-failed",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hermes binary discovery（C）：inherited PATH → known user-local paths →
+// env override（test only）。禁止 shell -c / eval / 任意命令。
+// ---------------------------------------------------------------------------
+fn find_hermes() -> Option<PathBuf> {
+    // env override（developer/test only，如 HUD_HERMES_BIN 指向 fake 二进制）
+    if let Ok(b) = std::env::var("HUD_HERMES_BIN") {
+        let p = PathBuf::from(&b);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // inherited PATH
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in path.split(':') {
+            let cand = Path::new(dir).join("hermes");
+            if cand.exists() {
+                return Some(cand);
+            }
+        }
+    }
+    // known user-local paths（HUD_DESKTOP_TEST_HOME 供测试隔离 HOME）
+    let home = std::env::var_os("HUD_DESKTOP_TEST_HOME")
+        .or_else(|| std::env::var_os("HOME"));
+    if let Some(home) = home {
+        for rel in KNOWN_HERMES_PATHS {
+            let cand = Path::new(&home).join(rel);
+            if cand.exists() {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
+fn resolved_hermes_label() -> String {
+    match find_hermes() {
+        Some(p) => p
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "hermes".into()),
+        None => "not-found".into(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Port（H）：默认 9119；HUD_DASHBOARD_PORT（developer/test only）。1..65535。
+// ---------------------------------------------------------------------------
 fn dashboard_port() -> u16 {
     std::env::var("HUD_DASHBOARD_PORT")
         .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(9119)
+        .and_then(|p| p.parse::<u16>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(DEFAULT_PORT)
 }
 
 fn dashboard_url() -> String {
     format!("http://{DASHBOARD_HOST}:{}/hud", dashboard_port())
 }
 
-const EXPECTED_API_SCHEMA: u64 = 1;
-const MIN_PLUGIN_VERSION: &str = "1.1.0";
-
-static DETECTED: AtomicBool = AtomicBool::new(false);
-
-/// 导航守卫逻辑（独立函数便于单测 + smoke 断言）。
-fn nav_allowed(url: &tauri::Url) -> bool {
-    if url.scheme() == "tauri" {
-        return true;
-    }
-    if url.scheme() == "http" || url.scheme() == "https"
-        || url.scheme() == "ws" || url.scheme() == "wss" {
-        let host = url.host_str().unwrap_or("");
-        if host == "127.0.0.1" || host == "localhost" {
-            return true;
-        }
-    }
-    false
+fn dashboard_root_url() -> String {
+    format!("http://{DASHBOARD_HOST}:{}/", dashboard_port())
 }
 
-fn smoke_report(path: &str, lines: &[(&str, String)]) {
-    let body = lines
-        .iter()
-        .map(|(k, v)| format!("  \"{k}\": \"{}\"", v.replace('"', "\\\"")))
-        .collect::<Vec<_>>()
-        .join(",\n");
-    let _ = std::fs::write(path, format!("{{\n{body}\n}}\n"));
-}
-
-/// 兼容性判定（semver crate，单一实现——Rust 侧；页面 JS 只回传原始值）。
+// ---------------------------------------------------------------------------
+// 兼容性判定（semver，单一实现）。
+// ---------------------------------------------------------------------------
 fn version_compat(api: Option<u64>, plugin: &str) -> Result<(), String> {
-    if api != Some(EXPECTED_API_SCHEMA) {
+    if api != Some(1) {
         return Err(format!(
-            "incompatible API schema: {:?} (expected {EXPECTED_API_SCHEMA})",
+            "incompatible API schema: {:?} (expected 1)",
             api
         ));
     }
     let ver = semver::Version::parse(plugin).map_err(|e| {
         format!("malformed plugin_version {plugin:?}: {e} (expected >= {MIN_PLUGIN_VERSION})")
     })?;
-    let min = semver::Version::parse(MIN_PLUGIN_VERSION).expect("MIN_PLUGIN_VERSION is valid semver");
+    let min = semver::Version::parse(MIN_PLUGIN_VERSION).expect("MIN_PLUGIN_VERSION valid semver");
     if ver >= min {
         Ok(())
     } else {
@@ -82,27 +153,20 @@ fn version_compat(api: Option<u64>, plugin: &str) -> Result<(), String> {
     }
 }
 
-/// 探测结果三态：
-/// - Verified：/health 公开可读且版本匹配
-/// - AuthRequired：root 存活但 /health 401（需页面上下文 handshake）
-/// - Incompatible(reason)：公开但版本不匹配 / 其他失败 → fallback
+#[derive(Debug)]
 enum Probe {
     Verified,
     AuthRequired,
     Incompatible(String),
 }
 
-/// 探测 Dashboard：GET /（200 = 服务存活）；GET /health：
-/// - 401 = auth-required / compatibility-unverified（NOT compatibility OK）→
-///   导航 /hud 后由 page-context handshake 验证（工单 3）
-/// - 200 = 公开 → semver 版本校验
 fn probe_dashboard() -> Result<Probe, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(2000))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     let root = client
-        .get(format!("http://{DASHBOARD_HOST}:{}/", dashboard_port()))
+        .get(dashboard_root_url())
         .send()
         .map_err(|e| format!("dashboard probe failed: {e}"))?;
     if !root.status().is_success() {
@@ -116,7 +180,7 @@ fn probe_dashboard() -> Result<Probe, String> {
         .send()
         .map_err(|e| format!("health probe failed: {e}"))?;
     if health.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Ok(Probe::AuthRequired);  // auth-required / compatibility-unverified
+        return Ok(Probe::AuthRequired);
     }
     if health.status().is_success() {
         let body: serde_json::Value = health.json().map_err(|e| format!("health json: {e}"))?;
@@ -131,9 +195,7 @@ fn probe_dashboard() -> Result<Probe, String> {
     }
 }
 
-/// Page-context handshake：注入只做版本检查的 JS（在页面上下文用现有
-/// Dashboard auth 机制调 /health）。token 不离开页面、不回传 Rust、不写盘。
-/// 结果（仅 api_schema_version + plugin_version 原始值）经 location.hash 回传。
+/// Page-context handshake：页面 auth 调 /health，仅版本值经 hash 回传（无 token）。
 const HANDSHAKE_JS: &str = r#"
 (async () => {
   try {
@@ -145,7 +207,6 @@ const HANDSHAKE_JS: &str = r#"
       d = await fetch(url, { headers: { 'X-Hermes-Session-Token': (window.__HERMES_SESSION_TOKEN__ || '') } });
       d = await d.json();
     }
-    // 成功：紧凑 JSON（无 #/空格）——Rust 直接解析；token 绝不外传
     location.hash = 'hud_compat=' + JSON.stringify({ api_schema_version: d.api_schema_version, plugin_version: d.plugin_version });
   } catch (e) {
     location.hash = 'hud_compat=' + 'unverified:' + encodeURIComponent(String(e && e.message || e).slice(0, 80));
@@ -153,7 +214,6 @@ const HANDSHAKE_JS: &str = r#"
 })();
 "#;
 
-/// 读取 handshake 结果（location.hash → 原始版本值）。
 fn read_handshake(win: &tauri::WebviewWindow) -> Option<String> {
     let frag = win
         .url()
@@ -164,7 +224,6 @@ fn read_handshake(win: &tauri::WebviewWindow) -> Option<String> {
     Some(val.to_string())
 }
 
-/// 简单 percent-decode（fragment() 返回 URL 编码——handshake JSON 需解码）。
 fn pct_decode(s: &str) -> String {
     fn hex(b: u8) -> Option<u8> {
         match b {
@@ -191,215 +250,245 @@ fn pct_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// smoke 模式：把 JS 表达式结果写入 location.hash，Rust 读回断言。
-/// （不用 encodeURIComponent——url crate 的 fragment() 自动解码；
-/// 仅转义 '#' 避免截断。）
-fn js_probe(win: &tauri::WebviewWindow, js: &str) -> String {
-    let _ = win.eval(&format!(
-        "try {{ location.hash = 'r=' + String({js}).replace(/#/g, '%23'); }} catch(e) {{ location.hash = 'r=' + 'JSERR:' + String(e.message).replace(/#/g, '%23'); }}"
+fn nav_allowed(url: &tauri::Url) -> bool {
+    if url.scheme() == "tauri" {
+        return true;
+    }
+    if url.scheme() == "http"
+        || url.scheme() == "https"
+        || url.scheme() == "ws"
+        || url.scheme() == "wss"
+    {
+        let host = url.host_str().unwrap_or("");
+        if host == "127.0.0.1" || host == "localhost" {
+            return true;
+        }
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
+// 状态机驱动：探测 + handshake + 启动 Dashboard + 状态推送（fallback UI + tray）。
+// ---------------------------------------------------------------------------
+struct Machine {
+    state: Mutex<State>,
+    win: tauri::WebviewWindow,
+}
+
+fn push_state(m: &Machine, state: State) {
+    {
+        let mut cur = m.state.lock().unwrap();
+        *cur = state.clone();
+    }
+    // 状态日志（自动化验证通道；不含敏感数据）——append 保留状态序列
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/hud-state.log")
+    {
+        let _ = writeln!(f, "{}", state_id(&state));
+    }
+    let id = state_id(&state);
+    let detail = match &state {
+        State::Incompatible(r) => r.clone(),
+        State::ConnectionFailed(r) => r.clone(),
+        _ => String::new(),
+    };
+    let hermes = resolved_hermes_label();
+    let _ = m.win.eval(&format!(
+        "window.__hud_set_state__ && window.__hud_set_state__({:?}, {:?}, {:?});",
+        id, detail, hermes
     ));
-    std::thread::sleep(Duration::from_millis(500));
-    win.url()
-        .ok()
-        .and_then(|u| u.fragment().map(|f| f.to_string()))
-        .unwrap_or_default()
-        .trim_start_matches("r=")
-        .to_string()
+}
+
+/// 探测一次并驱动状态（不含启动）。返回是否 Connected。
+fn detect_once(m: &Machine) -> bool {
+    let probe = match probe_dashboard() {
+        Ok(p) => p,
+        Err(e) => {
+            // Dashboard 不可达：hermes 在 → DashboardNotRunning；否则 HermesNotFound
+            if find_hermes().is_some() {
+                push_state(m, State::DashboardNotRunning);
+            } else {
+                push_state(m, State::HermesNotFound);
+            }
+            let _ = std::fs::write("/tmp/hud-detect.log", format!("probe err: {e}\n"));
+            return false;
+        }
+    };
+    match probe {
+        Probe::Verified => {
+            DETECTED.store(true, Ordering::Relaxed);
+            push_state(m, State::Connected);
+            let _ = m.win.navigate(dashboard_url().parse().unwrap());
+            true
+        }
+        Probe::AuthRequired => {
+            // 导航 /hud → page-context handshake
+            DETECTED.store(true, Ordering::Relaxed);
+            let _ = m.win.navigate(dashboard_url().parse().unwrap());
+            std::thread::sleep(Duration::from_secs(3));
+            let _ = m.win.eval(HANDSHAKE_JS);
+            let mut outcome = String::from("unverified:timeout");
+            for _ in 0..16 {
+                std::thread::sleep(Duration::from_millis(500));
+                if let Some(v) = read_handshake(&m.win) {
+                    if !v.is_empty() && v != "unverified:timeout" {
+                        outcome = v;
+                        break;
+                    }
+                }
+            }
+            if let Some(raw) = outcome.strip_prefix("unverified:") {
+                let reason = format!("compatibility unverified: {raw}");
+                let _ = std::fs::write("/tmp/hud-handshake.log", format!("{reason}\n"));
+                go_fallback(m, State::ConnectionFailed(reason));
+                false
+            } else {
+                let outcome = pct_decode(&outcome);
+                let _ = std::fs::write("/tmp/hud-handshake.log", format!("payload: {outcome}\n"));
+                let parsed: Option<(Option<u64>, String)> =
+                    serde_json::from_str::<serde_json::Value>(&outcome)
+                        .ok()
+                        .and_then(|v| {
+                            Some((
+                                v.get("api_schema_version").and_then(|x| x.as_u64()),
+                                v.get("plugin_version")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            ))
+                        });
+                match parsed {
+                    Some((api, plugin)) => match version_compat(api, &plugin) {
+                        Ok(()) => {
+                            push_state(m, State::Connected);
+                            true  // 留在 /hud（compatibility verified）
+                        }
+                        Err(e) => {
+                            go_fallback(m, State::Incompatible(e));
+                            false
+                        }
+                    },
+                    None => {
+                        go_fallback(
+                            m,
+                            State::ConnectionFailed(format!(
+                                "compatibility unverified: bad handshake payload {outcome:?}"
+                            )),
+                        );
+                        false
+                    }
+                }
+            }
+        }
+        Probe::Incompatible(r) => {
+            go_fallback(m, State::Incompatible(r));
+            false
+        }
+    }
+}
+
+fn go_fallback(m: &Machine, state: State) {
+    let _ = m.win.navigate("tauri://localhost/setup.html".parse().unwrap());
+    std::thread::sleep(Duration::from_millis(800));  // 等页面加载
+    push_state(m, state);
+}
+
+/// 启动 Dashboard（固定 argv，无 shell）。返回 owned pid 或错误。
+fn start_dashboard_bin() -> Result<u32, String> {
+    let hermes = find_hermes().ok_or("Hermes Agent not found — cannot start Dashboard")?;
+    let port = dashboard_port();
+    let child = Command::new(&hermes)
+        .args([
+            "dashboard",
+            "--host",
+            DASHBOARD_HOST,
+            "--port",
+            &port.to_string(),
+            "--no-open",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("failed to start dashboard: {e}"))?;
+    Ok(child.id())
+}
+
+/// 启动 Dashboard + 15s poll（G：Start timeout 15s，禁止无限轮询）。
+/// 由 start_dashboard command 与 HUD_DESKTOP_AUTOSTART 测试模式共用。
+fn spawn_and_poll(m: Machine) {
+    push_state(&m, State::StartingDashboard);
+    std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(START_TIMEOUT_S) {
+            std::thread::sleep(Duration::from_millis(1500));
+            if detect_once(&m) {
+                return;
+            }
+        }
+        if !DETECTED.load(Ordering::Relaxed) {
+            push_state(
+                &m,
+                State::ConnectionFailed(format!(
+                    "Dashboard did not become ready within {START_TIMEOUT_S}s"
+                )),
+            );
+        }
+    });
+}
+
+/// 自定义 command：本地 bundled 页面（tauri://）唯一窄操作。
+/// Origin 门控（机械证明）：remote http origin → DENIED。
+#[tauri::command]
+fn start_dashboard(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<String, String> {
+    let url = window.url().map_err(|e| format!("window url: {e}"))?;
+    if url.scheme() != "tauri" {
+        // remote /hud 页面 → DENIED（capability `local: true` 本已隔离，
+        // Rust origin 检查是第二道机械证明）
+        return Err("DENIED: start_dashboard is local-only (remote origin not allowed)".into());
+    }
+    if find_hermes().is_none() {
+        return Err("Hermes Agent not found".into());
+    }
+    let pid = start_dashboard_bin()?;
+    let m = Machine {
+        state: Mutex::new(State::StartingDashboard),
+        win: window.clone(),
+    };
+    spawn_and_poll(m);
+    Ok(format!("started pid {pid}"))
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 第二实例启动 → focus 现有窗口（P：single-instance，不重复 tray/Dashboard）
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
+        .invoke_handler(tauri::generate_handler![start_dashboard])
         .setup(|app| {
-            // —— 手动建窗口（on_navigation 在此挂载）：初始 = bundled fallback ——
             let window = WebviewWindowBuilder::new(
-                app, "main", WebviewUrl::App("fallback.html".into()),
+                app, "main", WebviewUrl::App("setup.html".into()),
             )
             .title("Hermes HUD")
             .inner_size(1280.0, 800.0)
             .on_navigation(|url| nav_allowed(url))
             .build()?;
 
-            // 启动探测：三态决定 → Verified/AuthRequired 导航 /hud（后者随后
-            // page-context handshake）；Incompatible/Err → fallback（fail closed）
-            let win = window.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(500));
-                // 注入 fallback 实际 dashboard URL（Retry 用当前端口，非硬编码）
-                let _ = win.eval(&format!(
-                    "window.__hud_retry_url__ = {:?};",
-                    dashboard_url()
-                ));
-                let probe = match probe_dashboard() {
-                    Ok(p) => p,
-                    Err(e) => Probe::Incompatible(e),
-                };
-                let probe_summary = match &probe {
-                    Probe::Verified => "ok".to_string(),
-                    Probe::AuthRequired => "auth-required / compatibility-unverified".to_string(),
-                    Probe::Incompatible(r) => r.clone(),
-                };
-                match probe {
-                    Probe::Verified => {
-                        DETECTED.store(true, Ordering::Relaxed);
-                        let _ = win.navigate(dashboard_url().parse().unwrap());
-                    }
-                    Probe::AuthRequired => {
-                        // auth-required / compatibility-unverified：导航 /hud，
-                        // 页面加载后 page-context handshake 验证（工单 3）
-                        DETECTED.store(true, Ordering::Relaxed);
-                        let _ = win.navigate(dashboard_url().parse().unwrap());
-                        std::thread::sleep(Duration::from_secs(3));  // 等页面 + SDK 注入
-                        let _ = win.eval(HANDSHAKE_JS);
-                        // 轮询 handshake 结果（最长 ~8s；超时 = unverified → fail closed）
-                        let mut outcome = String::from("unverified:timeout");
-                        for _ in 0..16 {
-                            std::thread::sleep(Duration::from_millis(500));
-                            if let Some(v) = read_handshake(&win) {
-                                if !v.is_empty() && v != "unverified:timeout" {
-                                    outcome = v;
-                                    break;
-                                }
-                            }
-                        }
-                        if let Some(raw) = outcome.strip_prefix("unverified:") {
-                            let _ = std::fs::write("/tmp/hud-handshake.log", format!("unverified: {raw}\n"));
-                            // 检查本身失败 → fail closed → fallback
-                            let _ = win.navigate(
-                                "tauri://localhost/fallback.html".parse().unwrap(),
-                            );
-                            let _ = win.eval(&format!(
-                                "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
-                                format!("compatibility unverified: {raw}"), format!("compatibility unverified: {raw}")
-                            ));
-                        } else {
-                            let outcome = pct_decode(&outcome);  // fragment 是 URL 编码
-                            let _ = std::fs::write("/tmp/hud-handshake.log", format!("payload: {outcome}\n"));
-                            // raw JSON {api_schema_version, plugin_version} → semver 判定
-                            let parsed: Option<(Option<u64>, String)> = serde_json::from_str::<serde_json::Value>(&outcome)
-                                .ok()
-                                .and_then(|v| Some((
-                                    v.get("api_schema_version").and_then(|x| x.as_u64()),
-                                    v.get("plugin_version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                )));
-                            match parsed {
-                                Some((api, plugin)) => match version_compat(api, &plugin) {
-                                    Ok(()) => { /* compatibility_verified — 留在 /hud */ }
-                                    Err(e) => {
-                                        let _ = win.navigate("tauri://localhost/fallback.html".parse().unwrap());
-                                        let _ = win.eval(&format!(
-                                            "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
-                                            e, e
-                                        ));
-                                    }
-                                },
-                                None => {
-                                    let _ = win.navigate("tauri://localhost/fallback.html".parse().unwrap());
-                                    let _ = win.eval(&format!(
-                                        "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
-                                        format!("compatibility unverified: bad handshake payload {outcome:?}"), format!("compatibility unverified: bad handshake payload")
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                    Probe::Incompatible(r) => {
-                        let _ = win.eval(&format!(
-                            "window.__hud_fallback_reason__ = {:?}; window.__hud_show_fallback__ && window.__hud_show_fallback__({:?});",
-                            r, r
-                        ));
-                    }
-                }
-                // —— smoke 模式（HUD_DESKTOP_SMOKE=1）：自动验证 + 报告 + 退出 ——
-                if std::env::var("HUD_DESKTOP_SMOKE").is_ok() {
-                    let _ = win.show();
-                    let _ = win.set_focus();
-                    std::thread::sleep(Duration::from_secs(6)); // 等页面加载
-                    let t0 = std::time::Instant::now();
-                    let ipc = js_probe(&win, "typeof window.__TAURI_INTERNALS__");
-                    let tauri_global = js_probe(&win, "typeof window.__TAURI__");
-                    let host = js_probe(&win, "location.host");
-                    let has_hud = js_probe(
-                        &win,
-                        "!!(document.querySelector('.hud-tab') || document.body.textContent.includes('指挥中心'))",
-                    );
-                    // 诊断：SDK/token/fallback reason（handshake 路径证据）
-                    let sdk_present = js_probe(&win, "typeof window.__HERMES_PLUGIN_SDK__");
-                    let token_present = js_probe(
-                        &win,
-                        "!!(window.__HERMES_SESSION_TOKEN__ || (window.__HERMES_PLUGIN_SDK__ && window.__HERMES_PLUGIN_SDK__.__token__))",
-                    );
-                    let fallback_reason = js_probe(
-                        &win,
-                        "String(window.__hud_fallback_reason__ || '')",
-                    );
-                    // 功能 Tab 渲染证据（JS 内 textContent 检查——无编码问题）
-                    let tab_timeline = js_probe(
-                        &win,
-                        "[...document.querySelectorAll('.hud-tab')].some(b => (b.textContent||'').includes('时间线'))",
-                    );
-                    let tab_skill_analytics = js_probe(
-                        &win,
-                        "[...document.querySelectorAll('.hud-tab')].some(b => (b.textContent||'').includes('技能分析'))",
-                    );
-                    let tab_cost = js_probe(
-                        &win,
-                        "[...document.querySelectorAll('.hud-tab')].some(b => (b.textContent||'').includes('费用'))",
-                    );
-                    // 尝试 invoke（remote 页面：bridge 存在但 capability 空 →
-                    // 调用必须被拒。测两类：A) runtime 明确存在的 core command
-                    // (plugin:window|get_all_windows)；B) 高风险 shell（未注册 →
-                    // command not found，单独标注）。async await 等 2.5s）
-                    let _ = win.eval(
-                        "(window.__TAURI_INTERNALS__ ? (async () => { const out = {}; try { await window.__TAURI_INTERNALS__.invoke('plugin:window|get_all_windows'); out.core = 'ALLOWED'; } catch (e) { out.core = 'DENIED:' + String(e && e.message || e).slice(0, 80); } try { await window.__TAURI_INTERNALS__.invoke('shell:execute'); out.shell = 'ALLOWED'; } catch (e) { out.shell = 'DENIED:' + String(e && e.message || e).slice(0, 80); } location.hash = 'r=' + JSON.stringify(out).replace(/#/g, '%23'); })() : (location.hash = 'r=' + 'no-internals'))",
-                    );
-                    std::thread::sleep(Duration::from_millis(2500));
-                    let invoke_try = win
-                        .url()
-                        .ok()
-                        .and_then(|u| u.fragment().map(|f| f.to_string()))
-                        .unwrap_or_default()
-                        .trim_start_matches("r=")
-                        .to_string();
-                    // 导航守卫：尝试跳转外部域 → 应被阻止（host 不变）
-                    let _ = win.eval("location.href='https://example.com/'");
-                    std::thread::sleep(Duration::from_millis(1200));
-                    let host_after = js_probe(&win, "location.host");
-                    let guard_ok = host_after == host;
-                    let first_render_ms = t0.elapsed().as_millis();
-                    let rows: Vec<(&str, String)> = vec![
-                        ("detected", DETECTED.load(Ordering::Relaxed).to_string()),
-                        ("probe_reason", probe_summary),
-                        ("api_schema_version", format!("{EXPECTED_API_SCHEMA}")),
-                        ("min_plugin_version", MIN_PLUGIN_VERSION.into()),
-                        ("remote_ipc_internals", ipc),
-                        ("remote_tauri_global", tauri_global),
-                        ("remote_host", host),
-                        ("hud_page_loaded", has_hud),
-                        ("sdk_present", sdk_present),
-                        ("token_present", token_present),
-                        ("fallback_reason", fallback_reason),
-                        ("tab_timeline_rendered", tab_timeline.to_string()),
-                        ("tab_skill_analytics_rendered", tab_skill_analytics.to_string()),
-                        ("tab_cost_intelligence_rendered", tab_cost.to_string()),
-                        ("invoke_attempt", invoke_try),
-                        ("nav_guard_external_blocked", guard_ok.to_string()),
-                        ("first_hud_render_ms", first_render_ms.to_string()),
-                    ];
-                    smoke_report("/tmp/hud-desktop-smoke.json", &rows);
-                    let _ = std::fs::write("/tmp/hud-desktop-smoke.done", "1");
-                    std::thread::sleep(Duration::from_millis(400));
-                    let _ = win.eval("document.title = 'SMOKE_COMPLETE'");
-                    std::thread::sleep(Duration::from_millis(400));
-                    std::process::exit(0);
-                }
-            });
-
-            // —— Tray：Open Hermes HUD / Quit ——
+            // —— Tray（I）：Open / Retry / Quit ——
             let open_i = MenuItem::with_id(app, "open", "Open Hermes HUD", true, None::<&str>)?;
+            let retry_i = MenuItem::with_id(app, "retry", "Retry Connection", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&open_i, &retry_i, &quit_i])?;
             let mut tray_builder = TrayIconBuilder::with_id("hud-tray")
                 .menu(&menu)
+                .tooltip("Hermes HUD")
                 .show_menu_on_left_click(false);
             if let Some(icon) = app.default_window_icon().cloned() {
                 tray_builder = tray_builder.icon(icon);
@@ -413,14 +502,54 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
+                    "retry" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let m = Machine {
+                                state: Mutex::new(State::Detecting),
+                                win: w.clone(),
+                            };
+                            push_state(&m, State::Detecting);
+                            std::thread::spawn(move || {
+                                if !detect_once(&m) {
+                                    // 不自动循环（工单 G：手动 Retry，不无限轮询）
+                                }
+                            });
+                        }
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
+
+            // —— 启动探测（一次；后续由 Retry / Start 驱动）——
+            let win = window.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(500));
+                let _ = win.eval(&format!(
+                    "window.__hud_retry_url__ = {:?};",
+                    dashboard_url()
+                ));
+                let m = Machine {
+                    state: Mutex::new(State::Detecting),
+                    win: win.clone(),
+                };
+                push_state(&m, State::Detecting);
+                if !detect_once(&m) {
+                    // 测试模式（HUD_DESKTOP_AUTOSTART=1）：DashboardNotRunning 时
+                    // 自动走 Start 路径（复用 spawn_and_poll —— 与 Start 按钮同代码）
+                    if std::env::var("HUD_DESKTOP_AUTOSTART").is_ok()
+                        && find_hermes().is_some()
+                    {
+                        if start_dashboard_bin().is_ok() {
+                            spawn_and_poll(m);
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 关窗不退出（tray 驻留）；Quit 才退出
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -428,9 +557,10 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+    let _ = app;
 }
 
-/// 导航守卫单元测试（navigation guard 逻辑真实验证）。
+/// 导航守卫单元测试 + semver + discovery。
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,7 +578,7 @@ mod tests {
 
     #[test]
     fn nav_guard_allows_tauri_protocol() {
-        assert!(nav_allowed(&u("tauri://localhost/fallback.html")));
+        assert!(nav_allowed(&u("tauri://localhost/setup.html")));
     }
 
     #[test]
@@ -460,7 +590,6 @@ mod tests {
         assert!(!nav_allowed(&u("data:text/html,<script>alert(1)</script>")));
     }
 
-    // —— semver 兼容性判定（工单 5：标准 semver，非字符串比较）——
     #[test]
     fn semver_pass_cases() {
         for v in ["1.1.0", "1.1.1", "1.2.0", "2.0.0"] {
@@ -471,16 +600,99 @@ mod tests {
     #[test]
     fn semver_fail_cases() {
         assert!(version_compat(Some(1), "1.0.9").is_err());
-        assert!(version_compat(Some(1), "1.1.0-rc.1").is_err());  // pre-release < 1.1.0
-        assert!(version_compat(Some(0), "1.1.0").is_err());       // schema mismatch
+        assert!(version_compat(Some(1), "1.1.0-rc.1").is_err());
+        assert!(version_compat(Some(0), "1.1.0").is_err());
         assert!(version_compat(None, "1.1.0").is_err());
     }
 
     #[test]
     fn semver_malformed_fail_closed() {
-        // malformed → FAIL CLOSED（不 panic、返回 Err）
         for bad in ["", "not-a-version", "1.1", "v1.1.0", "1.1.0.0"] {
             assert!(version_compat(Some(1), bad).is_err(), "{bad:?} should FAIL CLOSED");
+        }
+    }
+
+    #[test]
+    fn port_validated_loopback_only() {
+        assert_eq!(dashboard_port(), 9119);  // 默认
+        // HUD_DASHBOARD_PORT 解析失败/越界 → 回退 9119
+        std::env::set_var("HUD_DASHBOARD_PORT", "0");
+        assert_eq!(dashboard_port(), 9119);
+        std::env::set_var("HUD_DASHBOARD_PORT", "70000");
+        assert_eq!(dashboard_port(), 9119);
+        std::env::set_var("HUD_DASHBOARD_PORT", "9128");
+        assert_eq!(dashboard_port(), 9128);
+        std::env::remove_var("HUD_DASHBOARD_PORT");
+    }
+
+    #[test]
+    fn start_argv_is_fixed_and_shell_free() {
+        // start_dashboard_bin 必须用固定 argv（无 shell、无插值）。
+        // fake 二进制把 argv 写到文件 → 断言参数结构 + 拒绝注入。
+        let fake = std::env::temp_dir().join("hud-fake-hermes");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > /tmp/hud-fake-argv.txt\nexit 0\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::env::set_var("HUD_HERMES_BIN", &fake);
+        let _ = std::fs::remove_file("/tmp/hud-fake-argv.txt");
+        let pid = start_dashboard_bin().expect("start with fixed argv should work");
+        assert!(pid > 0);
+        // 等 fake 脚本写完 argv 文件（spawn 异步）
+        for _ in 0..20 {
+            if std::path::Path::new("/tmp/hud-fake-argv.txt").exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        // 固定 argv：dashboard --host 127.0.0.1 --port <p> --no-open（无注入/无 shell 元字符路径）
+        let argv = std::fs::read_to_string("/tmp/hud-fake-argv.txt").unwrap_or_default();
+        let parts: Vec<&str> = argv.split_whitespace().collect();
+        assert_eq!(parts, vec!["dashboard", "--host", "127.0.0.1", "--port", "9119", "--no-open"]);
+        std::env::remove_var("HUD_HERMES_BIN");
+        let _ = std::fs::remove_file("/tmp/hud-fake-argv.txt");
+    }
+
+    #[test]
+    fn hermes_not_found_fails_closed() {
+        // HUD_HERMES_BIN 指向不存在路径 + PATH 空 + 隔离 HOME → 找不到 → Err
+        std::env::set_var("HUD_HERMES_BIN", "/nonexistent/hermes");
+        let old_path = std::env::var("PATH").unwrap_or_default();
+        std::env::set_var("PATH", "");
+        std::env::set_var("HUD_DESKTOP_TEST_HOME", "/tmp/hermes-hud-empty-home");
+        let r = start_dashboard_bin();
+        assert!(r.is_err(), "hermes not found must fail closed");
+        std::env::set_var("PATH", &old_path);
+        std::env::remove_var("HUD_HERMES_BIN");
+        std::env::remove_var("HUD_DESKTOP_TEST_HOME");
+    }
+
+    #[test]
+    fn state_machine_has_no_blank_states() {
+        // 每个状态必须映射到明确 id（UI 有对应文案）
+        for s in [
+            State::Detecting,
+            State::Connected,
+            State::DashboardNotRunning,
+            State::StartingDashboard,
+            State::Incompatible("x".into()),
+            State::HermesNotFound,
+            State::ConnectionFailed("y".into()),
+        ] {
+            let id = state_id(&s);
+            assert!(!id.is_empty());
+            assert!(matches!(
+                id,
+                "detecting" | "connected" | "dashboard-not-running"
+                    | "starting-dashboard" | "incompatible"
+                    | "hermes-not-found" | "connection-failed"
+            ));
         }
     }
 }

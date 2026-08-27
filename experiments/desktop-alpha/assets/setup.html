@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Hermes HUD</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #0d1117; color: #e6edf3;
+         display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .card { text-align: center; max-width: 460px; padding: 36px; }
+  .logo { font-size: 40px; }
+  h1 { font-size: 20px; margin: 12px 0 4px; }
+  .ver { font-size: 12px; color: #8b949e; margin-bottom: 16px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .state-line { font-size: 14px; margin: 12px 0; display: flex; align-items: center; justify-content: center; }
+  p.detail { font-size: 13px; color: #8b949e; line-height: 1.6; }
+  #reason { font-size: 12px; color: #f85149; margin-top: 10px; min-height: 16px; word-break: break-all; }
+  .btns { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  button { padding: 9px 24px; border-radius: 6px; border: 1px solid #30363d; background: #21262d;
+           color: #e6edf3; font-size: 13px; cursor: pointer; }
+  button:hover { background: #30363d; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .about { margin-top: 26px; font-size: 11px; color: #6e7681; text-align: left; }
+  .about div { padding: 2px 0; }
+  code { background: #161b22; padding: 1px 6px; border-radius: 4px; }
+  a { color: #58a6ff; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🛰️</div>
+  <h1>Hermes HUD</h1>
+  <div class="ver">macOS Desktop Alpha 0.1.0</div>
+  <div class="state-line"><span class="dot" id="dot"></span><span id="state">检测中…</span></div>
+  <p class="detail" id="detail">正在探测本地 Hermes Dashboard。</p>
+  <div id="reason"></div>
+  <div class="btns" id="btns"></div>
+  <div class="about">
+    <div>Desktop version: <code>0.1.0-alpha</code></div>
+    <div>HUD API schema: <code>1</code> &nbsp;·&nbsp; HUD plugin: <code>≥ 1.1.0</code></div>
+    <div>Hermes Agent: <code id="hermes-label">—</code></div>
+  </div>
+</div>
+<script>
+  // —— 状态机 UI（F/G：每个状态明确文案；无 blank / endless spinner）——
+  var STATES = {
+    "detecting": { dot: "#e3b341", text: "检测中…", detail: "正在探测本地 Hermes Dashboard。" },
+    "connected": { dot: "#3fb950", text: "● Connected", detail: "Hermes Dashboard 已连接。" },
+    "dashboard-not-running": { dot: "#f85149", text: "Dashboard 未运行", detail: "检测到 Hermes Agent，但 Dashboard 尚未启动。" },
+    "starting-dashboard": { dot: "#e3b341", text: "正在启动 Dashboard…", detail: "正在安全启动本地 Dashboard（最长 15 秒）。" },
+    "incompatible": { dot: "#f85149", text: "插件版本不兼容", detail: "HUD 插件版本与 Desktop 不兼容，无法继续使用 HUD。" },
+    "hermes-not-found": { dot: "#f85149", text: "Hermes Agent not found", detail: "未找到 Hermes Agent。请安装 Hermes 后重试。" },
+    "connection-failed": { dot: "#f85149", text: "连接失败", detail: "无法连接到 Hermes Dashboard。" }
+  };
+  function setState(id, detail, hermes) {
+    var s = STATES[id] || STATES["connection-failed"];
+    document.getElementById("dot").style.background = s.dot;
+    document.getElementById("state").textContent = s.text;
+    document.getElementById("detail").textContent = detail || s.detail;
+    if (hermes) document.getElementById("hermes-label").textContent = hermes;
+    var reason = (id === "incompatible" || id === "connection-failed") ? detail : "";
+    document.getElementById("reason").textContent = reason ? "原因: " + reason : "";
+    var btns = document.getElementById("btns");
+    btns.innerHTML = "";
+    if (id === "dashboard-not-running") {
+      btns.innerHTML = '<button class="primary" id="b-start">Start Hermes Dashboard</button>';
+      document.getElementById("b-start").onclick = function () { startDashboard(); };
+    } else if (id === "hermes-not-found") {
+      btns.innerHTML = '<button id="b-retry">Retry</button>';
+      document.getElementById("b-retry").onclick = function () { location.reload(); };
+    } else if (id === "incompatible" || id === "connection-failed") {
+      btns.innerHTML = '<button id="b-retry2">Retry</button>';
+      document.getElementById("b-retry2").onclick = function () { location.reload(); };
+    } else if (id === "detecting" || id === "starting-dashboard") {
+      btns.innerHTML = '<button disabled>请稍候…</button>';
+    } else {
+      btns.innerHTML = '<a href="#" onclick="return false">HUD 已可用（可最小化到菜单栏）</a>';
+    }
+  }
+  // Rust 状态机推送入口（页面可能先于注入加载——轮询兜底）
+  window.__hud_set_state__ = function (id, detail, hermes) { setState(id, detail, hermes); };
+  var _t = 0, _iv = setInterval(function () {
+    if (window.__hud_pending_state__) { setState.apply(null, window.__hud_pending_state__); clearInterval(_iv); }
+    else if (++_t > 40) { clearInterval(_iv); }
+  }, 300);
+  // Start：本地 bundled 页面 invoke（local-only capability + Rust origin 门控）
+  function startDashboard() {
+    var el = document.getElementById("b-start");
+    if (el) { el.disabled = true; el.textContent = "启动中…"; }
+    if (window.__TAURI_INTERNALS__) {
+      window.__TAURI_INTERNALS__.invoke("start_dashboard")
+        .then(function (r) { setState("starting-dashboard", "已启动（" + r + "）"); })
+        .catch(function (e) { setState("connection-failed", String(e && e.message || e)); });
+    } else {
+      setState("connection-failed", "IPC 不可用（local page 应具备 local-only capability）");
+    }
+  }
+</script>
+</body>
+</html>
