@@ -764,6 +764,13 @@ mod tests {
             .spawn()
             .expect("fake dashboard");
         std::thread::sleep(Duration::from_millis(1200));
+        // CI runner 慢——轮询 fake dashboard 可达（最多 5s）
+        for _ in 0..25 {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
         std::env::set_var("HUD_DASHBOARD_PORT", port.to_string());
         let spawned = maybe_spawn_dashboard().expect("probe ok");
         assert!(spawned.is_none(), "Dashboard reachable → must NOT spawn (spawn count = 0)");
