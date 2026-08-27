@@ -7,7 +7,10 @@
   body { font-family: -apple-system, "PingFang SC", sans-serif; background: #0d1117; color: #e6edf3;
          display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
   .card { text-align: center; max-width: 460px; padding: 36px; }
-  .logo { font-size: 40px; }
+  .logo {
+    width: 88px; height: 88px; margin: 0 auto 8px;
+  }
+  .logo svg { width: 100%; height: 100%; }
   h1 { font-size: 20px; margin: 12px 0 4px; }
   .ver { font-size: 12px; color: #8b949e; margin-bottom: 16px; }
   .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
@@ -28,7 +31,30 @@
 </head>
 <body>
 <div class="card">
-  <div class="logo">🛰️</div>
+  <!-- Observer Core Brand Mark（中央 ring + 3 nodes 120° + 分段轨道弧） -->
+  <div class="logo">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="2" width="96" height="96" rx="20" fill="#1A1F2A"/>
+      <defs>
+        <linearGradient id="oc-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#00E5FF"/>
+          <stop offset="100%" stop-color="#6CFFB6"/>
+        </linearGradient>
+      </defs>
+      <!-- 三段轨道弧（缺口 120° 各 60°） -->
+      <path d="M 50 22 A 28 28 0 0 1 72 40" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 72 40 A 28 28 0 0 1 74 68" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 74 68 A 28 28 0 0 1 26 68" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 26 68 A 28 28 0 0 1 28 40" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 28 40 A 28 28 0 0 1 50 22" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
+      <!-- 3 nodes（120° 分布） -->
+      <circle cx="50" cy="22" r="6.5" fill="#6CFFB6"/>
+      <circle cx="74" cy="54" r="6.5" fill="#6CFFB6"/>
+      <circle cx="26" cy="54" r="6.5" fill="#6CFFB6"/>
+      <!-- 中心 core（强锚点） -->
+      <circle cx="50" cy="50" r="4.5" fill="#6CFFB6"/>
+    </svg>
+  </div>
   <h1>Hermes HUD</h1>
   <div class="ver">macOS Desktop Alpha 0.1.0</div>
   <div class="state-line"><span class="dot" id="dot"></span><span id="state">检测中…</span></div>

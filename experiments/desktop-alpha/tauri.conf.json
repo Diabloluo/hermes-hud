@@ -17,7 +17,7 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
-    "icon": ["icons/icon.png"],
+    "icon": ["icons/icon.icns"],
     "category": "DeveloperTool",
     "shortDescription": "Hermes HUD macOS Desktop Alpha",
     "longDescription": "Local-first, read-only observability for Hermes Agent — desktop shell over the running Hermes Dashboard. Alpha (unsigned, local testing only)."

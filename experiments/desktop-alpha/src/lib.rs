@@ -70,12 +70,31 @@ fn state_id(s: &State) -> &'static str {
 // Hermes binary discovery（C）：inherited PATH → known user-local paths →
 // env override（test only）。禁止 shell -c / eval / 任意命令。
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Test-only overrides（B）：HUD_HERMES_BIN / HUD_DESKTOP_TEST_HOME /
+// HUD_DESKTOP_AUTOSTART 仅在 HUD_DESKTOP_TEST_MODE=1 时生效。
+// ---------------------------------------------------------------------------
+fn test_mode() -> bool {
+    std::env::var("HUD_DESKTOP_TEST_MODE").is_ok()
+}
+
+fn hermes_home() -> Option<std::ffi::OsString> {
+    if test_mode() {
+        if let Some(h) = std::env::var_os("HUD_DESKTOP_TEST_HOME") {
+            return Some(h);
+        }
+    }
+    std::env::var_os("HOME")
+}
+
 fn find_hermes() -> Option<PathBuf> {
-    // env override（developer/test only，如 HUD_HERMES_BIN 指向 fake 二进制）
-    if let Ok(b) = std::env::var("HUD_HERMES_BIN") {
-        let p = PathBuf::from(&b);
-        if p.exists() {
-            return Some(p);
+    // env override（仅 test mode；release .app 忽略）
+    if test_mode() {
+        if let Ok(b) = std::env::var("HUD_HERMES_BIN") {
+            let p = PathBuf::from(&b);
+            if p.exists() {
+                return Some(p);
+            }
         }
     }
     // inherited PATH
@@ -87,10 +106,8 @@ fn find_hermes() -> Option<PathBuf> {
             }
         }
     }
-    // known user-local paths（HUD_DESKTOP_TEST_HOME 供测试隔离 HOME）
-    let home = std::env::var_os("HUD_DESKTOP_TEST_HOME")
-        .or_else(|| std::env::var_os("HOME"));
-    if let Some(home) = home {
+    // known user-local paths（HUD_DESKTOP_TEST_HOME 仅 test mode 生效）
+    if let Some(home) = hermes_home() {
         for rel in KNOWN_HERMES_PATHS {
             let cand = Path::new(&home).join(rel);
             if cand.exists() {
@@ -396,8 +413,15 @@ fn go_fallback(m: &Machine, state: State) {
     push_state(m, state);
 }
 
-/// 启动 Dashboard（固定 argv，无 shell）。返回 owned pid 或错误。
-fn start_dashboard_bin() -> Result<u32, String> {
+/// 启动 Dashboard（固定 argv，无 shell）——**probe-before-spawn**：
+/// Command::new 之前立即再次 probe；Dashboard 已存在 → 不 spawn（Ok(None)），
+/// 直接 connect/recover 现有实例（原子语义：spawn 前一刻才决定）。
+/// 返回 Ok(Some(pid)) = 本进程启动；Ok(None) = 已存在未启动；Err = 失败。
+fn maybe_spawn_dashboard() -> Result<Option<u32>, String> {
+    match probe_dashboard() {
+        Ok(Probe::Verified) | Ok(Probe::AuthRequired) => return Ok(None),
+        _ => {}
+    }
     let hermes = find_hermes().ok_or("Hermes Agent not found — cannot start Dashboard")?;
     let port = dashboard_port();
     let child = Command::new(&hermes)
@@ -413,7 +437,7 @@ fn start_dashboard_bin() -> Result<u32, String> {
         .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|e| format!("failed to start dashboard: {e}"))?;
-    Ok(child.id())
+    Ok(Some(child.id()))
 }
 
 /// 启动 Dashboard + 15s poll（G：Start timeout 15s，禁止无限轮询）。
@@ -452,13 +476,25 @@ fn start_dashboard(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Resul
     if find_hermes().is_none() {
         return Err("Hermes Agent not found".into());
     }
-    let pid = start_dashboard_bin()?;
+    let spawned = maybe_spawn_dashboard()?;
+    if spawned.is_none() {
+        // Dashboard 已存在（probe-before-spawn 原子判定）→ 直接 connect
+        let m = Machine {
+            state: Mutex::new(State::Detecting),
+            win: window.clone(),
+        };
+        push_state(&m, State::Detecting);
+        std::thread::spawn(move || {
+            detect_once(&m);
+        });
+        return Ok("dashboard already running — connected".into());
+    }
     let m = Machine {
         state: Mutex::new(State::StartingDashboard),
         win: window.clone(),
     };
     spawn_and_poll(m);
-    Ok(format!("started pid {pid}"))
+    Ok(format!("started pid {}", spawned.unwrap()))
 }
 
 pub fn run() {
@@ -486,7 +522,12 @@ pub fn run() {
             let retry_i = MenuItem::with_id(app, "retry", "Retry Connection", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_i, &retry_i, &quit_i])?;
+            // Tray 使用 Observer Core monochrome template mark（非彩色 App icon）
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray_template_20.png"))
+                .map_err(|e| e.to_string())?;
             let mut tray_builder = TrayIconBuilder::with_id("hud-tray")
+                .icon(tray_icon)
+                .icon_as_template(true)  // macOS template image：明暗菜单栏自动适配
                 .menu(&menu)
                 .tooltip("Hermes HUD")
                 .show_menu_on_left_click(false);
@@ -535,12 +576,13 @@ pub fn run() {
                 };
                 push_state(&m, State::Detecting);
                 if !detect_once(&m) {
-                    // 测试模式（HUD_DESKTOP_AUTOSTART=1）：DashboardNotRunning 时
-                    // 自动走 Start 路径（复用 spawn_and_poll —— 与 Start 按钮同代码）
-                    if std::env::var("HUD_DESKTOP_AUTOSTART").is_ok()
+                    // 测试模式（HUD_DESKTOP_TEST_MODE=1 + HUD_DESKTOP_AUTOSTART=1）：
+                    // DashboardNotRunning 时自动走 Start 路径（复用 spawn_and_poll）
+                    if test_mode()
+                        && std::env::var("HUD_DESKTOP_AUTOSTART").is_ok()
                         && find_hermes().is_some()
                     {
-                        if start_dashboard_bin().is_ok() {
+                        if maybe_spawn_dashboard().ok().flatten().is_some() {
                             spawn_and_poll(m);
                         }
                     }
@@ -564,6 +606,13 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// env 相关测试共享串行锁（cargo test 并行会互踩 HUD_* 环境变量）。
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn u(s: &str) -> tauri::Url {
         s.parse().unwrap()
@@ -614,7 +663,8 @@ mod tests {
 
     #[test]
     fn port_validated_loopback_only() {
-        assert_eq!(dashboard_port(), 9119);  // 默认
+        let _g = lock_env();
+        assert_eq!(dashboard_port(), 9119); // 默认
         // HUD_DASHBOARD_PORT 解析失败/越界 → 回退 9119
         std::env::set_var("HUD_DASHBOARD_PORT", "0");
         assert_eq!(dashboard_port(), 9119);
@@ -627,6 +677,7 @@ mod tests {
 
     #[test]
     fn start_argv_is_fixed_and_shell_free() {
+        let _g = lock_env();
         // start_dashboard_bin 必须用固定 argv（无 shell、无插值）。
         // fake 二进制把 argv 写到文件 → 断言参数结构 + 拒绝注入。
         let fake = std::env::temp_dir().join("hud-fake-hermes");
@@ -640,9 +691,13 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
+        std::env::set_var("HUD_DESKTOP_TEST_MODE", "1");
         std::env::set_var("HUD_HERMES_BIN", &fake);
+        std::env::set_var("HUD_DASHBOARD_PORT", "9494");  // 空端口 → probe 失败 → spawn
         let _ = std::fs::remove_file("/tmp/hud-fake-argv.txt");
-        let pid = start_dashboard_bin().expect("start with fixed argv should work");
+        let pid = maybe_spawn_dashboard()
+            .expect("start with fixed argv should work")
+            .expect("should spawn (no dashboard at test port)");
         assert!(pid > 0);
         // 等 fake 脚本写完 argv 文件（spawn 异步）
         for _ in 0..20 {
@@ -654,23 +709,85 @@ mod tests {
         // 固定 argv：dashboard --host 127.0.0.1 --port <p> --no-open（无注入/无 shell 元字符路径）
         let argv = std::fs::read_to_string("/tmp/hud-fake-argv.txt").unwrap_or_default();
         let parts: Vec<&str> = argv.split_whitespace().collect();
-        assert_eq!(parts, vec!["dashboard", "--host", "127.0.0.1", "--port", "9119", "--no-open"]);
+        assert_eq!(parts, vec!["dashboard", "--host", "127.0.0.1", "--port", "9494", "--no-open"]);
         std::env::remove_var("HUD_HERMES_BIN");
+        std::env::remove_var("HUD_DESKTOP_TEST_MODE");
+        std::env::remove_var("HUD_DASHBOARD_PORT");
         let _ = std::fs::remove_file("/tmp/hud-fake-argv.txt");
     }
 
     #[test]
-    fn hermes_not_found_fails_closed() {
-        // HUD_HERMES_BIN 指向不存在路径 + PATH 空 + 隔离 HOME → 找不到 → Err
+    fn probe_before_spawn_no_duplicate() {
+        let _g = lock_env();
+        // state 显示 stopped → Start 前 Dashboard 变得可达 → spawn count = 0
+        std::env::set_var("HUD_DESKTOP_TEST_MODE", "1");
+        let fake = std::env::temp_dir().join("hud-fake-hermes2");
+        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::env::set_var("HUD_HERMES_BIN", &fake);
+        // fake dashboard（root 200 + /health 401 → AuthRequired = 已存在）
+        // 动态找空闲端口（避免残留服务器占用固定端口）
+        let port = (9400u16..9600)
+            .find(|p| std::net::TcpListener::bind(("127.0.0.1", *p)).is_ok())
+            .unwrap_or(9996);
+        let fake_src = format!(
+            "import http.server\nclass H(http.server.BaseHTTPRequestHandler):\n def do_GET(self):\n  if self.path == '/':\n   self.send_response(200); self.end_headers(); self.wfile.write(b'ok')\n  else:\n   self.send_response(401); self.end_headers()\n def log_message(self, *a): pass\nhttp.server.HTTPServer(('127.0.0.1', {port}), H).serve_forever()"
+        );
+        let mut child = Command::new("python3")
+            .args(["-c", &fake_src])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("fake dashboard");
+        std::thread::sleep(Duration::from_millis(1200));
+        std::env::set_var("HUD_DASHBOARD_PORT", port.to_string());
+        let spawned = maybe_spawn_dashboard().expect("probe ok");
+        assert!(spawned.is_none(), "Dashboard reachable → must NOT spawn (spawn count = 0)");
+        assert!(!std::path::Path::new("/tmp/hud-fake-argv.txt").exists());
+        let _ = child.kill();
+        let _ = child.wait();
+        std::env::remove_var("HUD_HERMES_BIN");
+        std::env::remove_var("HUD_DESKTOP_TEST_MODE");
+        std::env::remove_var("HUD_DASHBOARD_PORT");
+    }
+
+    #[test]
+    fn override_ignored_without_test_mode() {
+        let _g = lock_env();
+        // release .app：无 TEST_MODE → HUD_HERMES_BIN / HUD_DESKTOP_TEST_HOME 忽略
+        std::env::remove_var("HUD_DESKTOP_TEST_MODE");
         std::env::set_var("HUD_HERMES_BIN", "/nonexistent/hermes");
+        std::env::set_var("HUD_DESKTOP_TEST_HOME", "/tmp/hermes-hud-empty-home");
+        let old_path = std::env::var("PATH").unwrap_or_default();
+        std::env::set_var("PATH", "");
+        let found = find_hermes();
+        assert!(found.is_some(), "release must ignore test overrides (known path wins)");
+        std::env::set_var("PATH", &old_path);
+        std::env::remove_var("HUD_HERMES_BIN");
+        std::env::remove_var("HUD_DESKTOP_TEST_HOME");
+    }
+
+    #[test]
+    fn hermes_not_found_fails_closed() {
+        let _g = lock_env();
+        // TEST_MODE + 不存在 override + PATH 空 + 隔离 HOME → 找不到 → Err
+        std::env::set_var("HUD_DESKTOP_TEST_MODE", "1");
+        std::env::set_var("HUD_HERMES_BIN", "/nonexistent/hermes");
+        std::env::set_var("HUD_DASHBOARD_PORT", "9495");  // 空端口 → probe 失败 → 查 hermes
         let old_path = std::env::var("PATH").unwrap_or_default();
         std::env::set_var("PATH", "");
         std::env::set_var("HUD_DESKTOP_TEST_HOME", "/tmp/hermes-hud-empty-home");
-        let r = start_dashboard_bin();
+        let r = maybe_spawn_dashboard();
         assert!(r.is_err(), "hermes not found must fail closed");
         std::env::set_var("PATH", &old_path);
         std::env::remove_var("HUD_HERMES_BIN");
         std::env::remove_var("HUD_DESKTOP_TEST_HOME");
+        std::env::remove_var("HUD_DESKTOP_TEST_MODE");
+        std::env::remove_var("HUD_DASHBOARD_PORT");
     }
 
     #[test]
