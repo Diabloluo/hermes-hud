@@ -1,22 +1,21 @@
-name: Desktop Release (skeleton — DR-2, NON-PUBLISHING)
+name: Desktop Release (skeleton — DR-3A, NON-PUBLISHING)
 
-# DR-2: DRY / NON-PUBLISHING skeleton. Proves the Public/Internal build split.
-# - Trigger: workflow_dispatch ONLY. NO pull_request / pull_request_target /
-#   automatic push / automatic tag release.
-# - Permissions: contents: read ONLY. No contents:write, packages:write,
-#   id-token:write.
-# - This workflow references NO APPLE_* secrets and has NO release capability:
-#   no tag, no GitHub Release, no asset upload, no signing, no notarization.
-# - Builds the PUBLIC release binary (desktop-test-hooks OFF), runs the
-#   negative-string proof, cargo tests, and asserts exact-source truth.
+# DR-3A hardened skeleton. Still NON-PUBLISHING:
+# - Trigger: workflow_dispatch ONLY (no PR / push / tag automation).
+# - Input: full 40-char commit SHA (source contract) — validated mechanically:
+#   checked out SHA == requested SHA == GITHUB_SHA. No silent fallback to main.
+# - Environment: desktop-release (protected-branches deployment policy; ZERO
+#   secrets). Does NOT run on forks/PRs by construction.
+# - Permissions: contents: read ONLY.
+# - NO APPLE_* / secrets.* references. No signing, notarization, tag,
+#   GitHub Release, asset upload, or contents: write.
 
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: "Commit SHA or ref to validate (default: main)"
-        required: false
-        default: "main"
+      sha:
+        description: "Full 40-char commit SHA to validate (release source contract)"
+        required: true
 
 permissions:
   contents: read
@@ -25,23 +24,36 @@ jobs:
   public-internal-split-proof:
     name: Public build + negative-string proof + tests
     runs-on: macos-latest
+    environment: desktop-release
     timeout-minutes: 30
     steps:
-      - name: Checkout exact source
+      - name: Validate input SHA format
+        run: |
+          SHA="${{ inputs.sha }}"
+          case "$SHA" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "::error::input must be full 40-char commit SHA"; exit 1 ;;
+          esac
+
+      - name: Checkout exact SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ inputs.sha }}
           fetch-depth: 0
 
-      # Exact-source truth (J): built source SHA must equal GITHUB_SHA.
-      - name: Record source SHA
+      # Exact-source truth (J): built source SHA == requested SHA == GITHUB_SHA.
+      - name: Source-SHA contract
         id: sha
         run: |
-          GITHUB_SHA="${{ github.sha }}"
-          echo "github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "github_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "requested=${{ inputs.sha }}" >> "$GITHUB_OUTPUT"
           echo "checked_out=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if [ "$GITHUB_SHA" != "$(git rev-parse HEAD)" ]; then
-            echo "::error::exact-source mismatch: GITHUB_SHA=$GITHUB_SHA checked_out=$(git rev-parse HEAD)"
+          if [ "${{ inputs.sha }}" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::checked-out SHA != requested SHA"
+            exit 1
+          fi
+          if [ "${{ inputs.sha }}" != "${{ github.sha }}" ]; then
+            echo "::error::requested SHA != GITHUB_SHA"
             exit 1
           fi
 
@@ -79,5 +91,6 @@ jobs:
       - name: Output exact-source truth
         run: |
           echo "GITHUB_SHA=${{ steps.sha.outputs.github_sha }}"
+          echo "REQUESTED_SHA=${{ steps.sha.outputs.requested }}"
           echo "BUILT_SOURCE_SHA=${{ steps.sha.outputs.checked_out }}"
           echo "MATCH=yes"
