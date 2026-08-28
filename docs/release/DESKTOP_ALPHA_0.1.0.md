@@ -36,6 +36,7 @@ beyond any single agent.
 ---
 
 **Alpha** · Apple Silicon (arm64) only · requires Hermes Agent (HUD plugin
-≥ 1.1.0) · no auto updater yet · unsigned builds are for testing only.
+≥ 1.1.1 — the first official HUD release with API schema 1) · no auto
+updater yet · unsigned builds are for testing only.
 
 Install: see [docs/desktop/INSTALL_MACOS.md](../desktop/INSTALL_MACOS.md)
