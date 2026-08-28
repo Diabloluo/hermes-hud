@@ -1,7 +1,7 @@
 # Apple Developer Credential Preparation — DR-3B
 
-Status: **PENDING_APPLE_ENROLLMENT** (user steps required; no credentials staged)
-Baseline: `f3ef6ecef3a43f589d00a89590c0f43e358dba6b`
+Status: **COMPLETE** (2026-08-28 — DR-3B closeout)
+Baseline: `eb36985c764353a87f71c984e3e6a600feedeae7`
 Date: 2026-08-27
 
 ## USER-ONLY SECURITY RULE
@@ -113,11 +113,14 @@ secure offline backup of the original .p12/.p8.
   `APPLE_API_ISSUER`, `APPLE_API_KEY`
 - Never read values; never print personal identity info.
 
-## Current status (2026-08-27)
+## DR-3B Closeout (2026-08-28)
 
-- Local codesigning identities: **0** (no Developer ID certificate yet)
-- desktop-release environment secrets: 0 · variables: 0
-- Repository Apple secrets: none (only Telegram notification secrets)
-
-→ **PENDING_APPLE_ENROLLMENT** until the user completes A–C; then D
-verification, then E–J; DR-3B closeout when K shows the six names staged.
+- Status: **COMPLETE**
+- Developer ID identity = **ready** (1 valid identity; Team ID R49V6YUC3X; expiry 2031-08-29; private key paired)
+- .p12 = **ready** (outside repo, chmod 600)
+- ASC Team API Key = **ready** (Role: Developer; name "Hermes HUD Notarization")
+- .p8 = **ready** (outside repo, chmod 600)
+- desktop-release Environment = **3 secrets + 3 variables staged** (names only; values never stored in this repo)
+- signing = **not started**
+- notarization = **not started**
+- Next: DR-4 (Developer ID signed build); credential auth validated at DR-5 (no fake notarization probe).
