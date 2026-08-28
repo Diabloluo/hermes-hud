@@ -17,3 +17,8 @@ node_modules/
 
 # macOS
 .DS_Store
+
+# Apple 签名/公证凭据（防误提交；真实凭据存放于仓库外 + chmod 600 + GitHub Environment Secrets）
+*.p12
+*.p8
+*.pfx
