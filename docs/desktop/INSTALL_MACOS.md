@@ -20,8 +20,10 @@
 ## Prerequisites
 
 - **Hermes Agent** already installed (≥ 0.19.0) with the **HUD plugin**
-  (≥ 1.1.0). Hermes HUD Desktop is a window into your existing Hermes
-  setup — it does not install Hermes Agent.
+  (≥ 1.1.1). Hermes HUD Desktop requires HUD API schema 1; the first
+  official HUD release providing this contract is **v1.1.1**. Hermes HUD
+  Desktop is a window into your existing Hermes setup — it does not install
+  Hermes Agent.
 - macOS on **Apple Silicon** (arm64).
 
 ## System requirements

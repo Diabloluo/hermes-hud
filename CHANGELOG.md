@@ -3,6 +3,15 @@
 本文件记录 Hermes HUD 的可见变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.1] - 2026-08-28
+
+### Fixed
+- **Desktop Compatibility Patch** — 将 HUD API schema=1 契约正式纳入公开 tag：
+  - `dashboard/hud/version.py`（`HUD_API_SCHEMA_VERSION=1` + manifest 单点版本读取）随 v1.1.1 首次进入公开发布
+  - `/health`、`/settings` 均发射 `api_schema_version=1` + `plugin_version`；WS envelope 携带 `schema_version=1`
+  - **Public baseline 变更**：Hermes HUD Desktop 要求 **HUD plugin ≥ 1.1.1**（首个提供 API schema 1 契约的官方 HUD 版本）；v1.1.0 tag 保持历史原样，未移动/覆盖
+  - 无 breaking change；既有 Web/API 行为保留（旧字段完整）
+
 ## [1.1.0] - 2026-08-26
 
 ### Added

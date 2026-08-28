@@ -19,7 +19,7 @@ from hud import version  # noqa: E402
 
 def test_unified_version_constant() -> None:
     assert version.HUD_API_SCHEMA_VERSION == 1
-    assert version.HUD_MIN_PLUGIN_VERSION == "1.1.0"
+    assert version.HUD_MIN_PLUGIN_VERSION == "1.1.1"
 
 
 def test_plugin_version_reads_manifest() -> None:

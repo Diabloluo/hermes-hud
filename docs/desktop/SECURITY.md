@@ -35,9 +35,10 @@ In plain language, this is what the Desktop app does and does not do.
 
 ## Compatibility checks
 
-- The app verifies HUD plugin compatibility (`api_schema_version`, plugin
-  version ≥ 1.1.0) before showing HUD, and fails closed with a clear
-  message otherwise.
+- The app verifies HUD plugin compatibility (`api_schema_version == 1`;
+  plugin version ≥ 1.1.0 per the frozen binary, public support baseline
+  v1.1.1+) before showing HUD, and fails closed with a clear message
+  otherwise.
 
 ## Alert helper (optional, separate)
 
