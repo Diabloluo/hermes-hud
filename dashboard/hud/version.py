@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 HUD_API_SCHEMA_VERSION = 1
-HUD_MIN_PLUGIN_VERSION = "1.1.0"  # Desktop v0.1 支持的最低 HUD 插件版本
+HUD_MIN_PLUGIN_VERSION = "1.1.1"  # Desktop v0.1 支持的最低 HUD 插件版本（首个提供 schema=1 契约的公开版本）
 
 _MANIFEST = Path(__file__).resolve().parents[1] / "manifest.json"
 

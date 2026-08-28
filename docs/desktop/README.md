@@ -23,8 +23,8 @@ Hermes HUD Desktop is a native macOS window into your Hermes Agent. It is a
 | macOS | ✅ (current OS versions) |
 | Architecture | **Apple Silicon (arm64) only** |
 | Desktop version | 0.1.0-alpha |
-| Hermes Agent | required (≥ 0.19.0; HUD plugin ≥ 1.1.0) |
-| HUD plugin | separately versioned (v1.1.0) — independent of Desktop |
+| Hermes Agent | required (≥ 0.19.0; HUD plugin ≥ 1.1.1) |
+| HUD plugin | separately versioned (v1.1.1) — independent of Desktop |
 | Intel / Universal / Windows / Linux Desktop | ❌ not provided / not claimed |
 
 ## Relationship of the three pieces
@@ -32,7 +32,7 @@ Hermes HUD Desktop is a native macOS window into your Hermes Agent. It is a
 | Piece | What it is | Versioning |
 |---|---|---|
 | **Hermes Agent** | the AI agent runtime (state.db, gateway, etc.) | own versioning |
-| **Hermes HUD plugin** | dashboard plugin (Web UI + backend API) | v1.1.0 |
+| **Hermes HUD plugin** | dashboard plugin (Web UI + backend API) | v1.1.1 |
 | **Hermes HUD Desktop** | native app shell over the Dashboard | 0.1.0-alpha |
 
 Downloading Hermes HUD Desktop does **not** install Hermes Agent. You need a

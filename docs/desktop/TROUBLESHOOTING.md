@@ -19,8 +19,10 @@
 
 ## "插件版本不兼容" / incompatible plugin
 
-- Desktop requires HUD plugin ≥ 1.1.0 (API schema 1). Update the HUD
-  plugin and restart the Dashboard, then Retry.
+- Desktop requires HUD plugin ≥ 1.1.1 (API schema 1). The first official
+  HUD release providing this contract is **v1.1.1** — if you installed the
+  plugin from the `v1.1.0` tag, upgrade to `v1.1.1` (install command pins
+  `--branch v1.1.1`), restart the Dashboard, then Retry.
 
 ## Dashboard won't start
 
