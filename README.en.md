@@ -4,7 +4,7 @@
 
 > A local, real-time monitoring command center for Hermes Agent — health overview, token/cost, models, memory, sessions, cron jobs, channels, errors, and machine health at a glance. When something goes wrong, you see it immediately.
 
-A **user-level Hermes Dashboard plugin**: it does not modify the `~/.hermes/hermes-agent` core, survives Hermes upgrades, and can be disabled/rolled back in one command.
+**Not [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud).** That project is a standalone TUI. This repo is a **user-level plugin** for the official `hermes dashboard` — it does not replace the Dashboard, does not modify the `~/.hermes/hermes-agent` core, survives Hermes upgrades, and uninstalls in one command.
 
 ![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
 
