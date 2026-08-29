@@ -16,7 +16,7 @@ everything into one window:
 
 ## Local-first & read-only
 
-- Everything on your machine, nothing sent out.
+- Desktop observability data stays local; the Desktop app sends no outbound telemetry.
 - Hermes core data is read-only.
 - The HUD page has zero native capability.
 
@@ -36,6 +36,15 @@ beyond any single agent.
 ---
 
 **Alpha** · Apple Silicon (arm64) only · requires Hermes Agent (HUD plugin
-≥ 1.1.0) · no auto updater yet · unsigned builds are for testing only.
+≥ 1.1.1 — the first official HUD release with API schema 1) · no auto
+updater yet.
+
+## Known limitation (Alpha)
+
+**Multi-user Macs:** the Dashboard listens on localhost, which is a
+machine-local boundary, not a per-macOS-user boundary. In this Alpha,
+another local account on the same Mac may be able to reach an
+already-running Dashboard. Do not treat untrusted local macOS accounts as
+isolated from HUD data.
 
 Install: see [docs/desktop/INSTALL_MACOS.md](../desktop/INSTALL_MACOS.md)

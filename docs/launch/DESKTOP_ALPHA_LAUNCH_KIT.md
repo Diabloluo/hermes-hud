@@ -1,8 +1,8 @@
 # Desktop Alpha Launch Kit — DR-3D
 
-Status: **prepared, nothing published** (docs/copy/plan only)
-Baseline: `5ee1a47f6afb6903d1e3bb8d91d973838b1eb01c`
-Apple path: PENDING_APPLE_ENROLLMENT
+Status: **PUBLISHED (2026-08-29)** — Desktop Alpha 0.1.0 released (`desktop-v0.1.0-alpha`). Day-0/2/7 posts per section 3 tracking.
+Baseline: `0e0c8e0d9d9e4922dafff2cd0977f0a29d416dd2`
+Apple path: COMPLETE (signing + notarization + stapling done)
 
 Everything below is launch-day copy. No public post, tag, or release has
 been made. GitHub URL placeholders (`<RELEASE_URL>`) are filled at publish.
@@ -19,7 +19,8 @@ A native macOS window into your Hermes Agent — your agent's timeline,
 skill health, and honest cost picture, all on your desktop.
 
 - **Native macOS app** (Apple Silicon)
-- **Local-first, read-only** — nothing leaves your machine
+- **Local-first, read-only** — Desktop observability data stays local; the
+  Desktop app sends no outbound telemetry
 - **Zero outbound telemetry** — HUD never phones home
 - **📍 Agent Timeline** — what your agent did, in order
 - **📊 Skill Analytics** — which skills actually ran, and how they fared
@@ -31,7 +32,7 @@ skill health, and honest cost picture, all on your desktop.
 - **Observer Core** — the observability mark for a multi-agent future
 
 **This is an Alpha:**
-- requires **Hermes Agent** (HUD plugin ≥ 1.1.0) — the app is a window
+- requires **Hermes Agent** (HUD plugin ≥ 1.1.1) — the app is a window
   into your existing Hermes setup, not an installer for it
 - **Apple Silicon (arm64) only**
 - **no auto-updater** yet
@@ -59,7 +60,7 @@ Agent Timeline, Skill Analytics, Cost Intelligence, health, sessions, cron.
 - **Local-first · read-only · zero outbound telemetry**
 - Automatically discovers Hermes; connects to a running Dashboard or can
   safely start it for you
-- Alpha: requires Hermes Agent (HUD plugin ≥ 1.1.0), arm64 only, no
+- Alpha: requires Hermes Agent (HUD plugin ≥ 1.1.1), arm64 only, no
   auto-updater; Web HUD remains fully supported
 
 [Install](docs/desktop/INSTALL_MACOS.md) · [Security](docs/desktop/SECURITY.md)

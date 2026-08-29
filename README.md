@@ -28,6 +28,17 @@ hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 > 仓库自带预构建前端，无需重新构建 Hermes Web UI。
 > 完整安装/卸载/故障排查见 **[📦 INSTALL.md](INSTALL.md)**；首次上手见 **[⏱ FIRST_5_MINUTES.md](FIRST_5_MINUTES.md)**。
 
+## 🖥 Desktop Alpha for macOS
+
+原生 macOS 应用（Apple Silicon）—— 把 Hermes 放到你的桌面：Agent 时间线、技能分析、费用智能、健康/会话/定时任务一览。
+
+- **Local-first · 只读 · 无出站遥测**（Desktop observability data stays local; the Desktop app sends no outbound telemetry）
+- 自动发现 Hermes，连接已运行的 Dashboard，或安全地为你启动本地 Dashboard
+- **已签名（Developer ID）+ Apple 公证（notarized）**，Gatekeeper 正常放行，无需右键绕过
+- Alpha 要求：**Hermes Agent ≥ 0.19.0 + HUD plugin ≥ 1.1.1**（API schema 1），arm64 only，暂无自动更新；Web HUD 不受影响、继续完整支持
+
+[下载 Desktop Alpha](https://github.com/Diabloluo/hermes-hud/releases/tag/desktop-v0.1.0-alpha) · [安装](docs/desktop/INSTALL_MACOS.md) · [安全](docs/desktop/SECURITY.md)
+
 ## 🎬 演示（19.5 秒 · 脱敏演示数据）
 
 ![Hermes HUD 演示](assets/demo.gif)
