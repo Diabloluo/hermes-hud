@@ -1,9 +1,5 @@
 # Install — Hermes HUD Desktop (macOS, Apple Silicon)
 
-> Public distribution is pending signing + notarization. Until then this
-> document describes the intended user path; local/internal installs use the
-> unsigned build from the release kit rehearsal.
-
 ## Normal user path (no Terminal required)
 
 1. **Download** `Hermes-HUD-Desktop-0.1.0-macOS-arm64.dmg` from the GitHub

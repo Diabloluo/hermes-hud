@@ -15,6 +15,16 @@ In plain language, this is what the Desktop app does and does not do.
   your machine only. No internet connection is needed or used for
   observability.
 
+## Known limitation (Alpha): multi-user Macs
+
+- The Dashboard listens on **localhost**, which is a **machine-local**
+  boundary, **not** a per-macOS-user boundary. In this Alpha, another
+  local account on the same Mac may be able to reach an already-running
+  Dashboard (e.g. via the browser or the Desktop app).
+- **Do not treat untrusted local macOS accounts as isolated from HUD
+  data.** This is an Alpha disclosure; a per-user auth boundary is not
+  implemented in 0.1.0.
+
 ## Hermes core data is read-only
 
 - Hermes `state.db` and core stores are opened **read-only**. HUD never
