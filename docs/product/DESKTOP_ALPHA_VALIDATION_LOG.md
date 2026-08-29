@@ -12,7 +12,9 @@
   users" is assessed separately from qualitative signals (Issues / PRs /
   Discussions / direct contact).
 - Threshold reference: [DESKTOP_ALPHA_90_DAY_VALIDATION.md](../product/DESKTOP_ALPHA_90_DAY_VALIDATION.md)
-  (min ≥25 stars / 5 forks / 3 external Issues · strong ≥100 / 15 / 5).
+  - **Minimum signal**: ≥25 Desktop downloads · ≥5 external users with meaningful interaction · ≥3 substantive Issue/Discussion threads
+  - **Strong signal**: ≥100 Desktop downloads · ≥15 meaningful external users · ≥5 feature/compatibility requests
+  - **Platform signal**: repeated requests for ≥1 non-Hermes agent collector
 
 ## Metrics
 
