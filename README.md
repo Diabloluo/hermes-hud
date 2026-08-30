@@ -4,7 +4,7 @@
 
 > 本地实时监控指挥中心 —— 把 Hermes Agent 的运行状态、Token/费用、模型、记忆、会话、定时任务、渠道、错误和机器健康完整摊开，异常发生时立即看见。
 
-一个**用户级 Hermes Dashboard 插件**：不修改 `~/.hermes/hermes-agent` 核心代码，Hermes 升级不覆盖，可一键禁用/回滚。
+**不是 [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud)。** 那个是独立 TUI。本仓库是官方 `hermes dashboard` 的**用户级插件**：不替换 Dashboard、不改 `~/.hermes/hermes-agent` 核心、Hermes 升级不覆盖、一条命令卸载。
 
 ![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
 
