@@ -3,6 +3,19 @@
 本文件记录 Hermes HUD 的可见变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.2] - 2026-09-01
+
+### Fixed
+- **Hermes v0.21 compatibility（cron collection）** — `model_snapshot` / `provider_snapshot`
+  兼容 dict（旧数据）与 str（v0.21 写法）；可选模型元数据解析失败**不再静默丢弃任务**
+  （MODEL METADATA FAILURE ≠ DROP TASK）：任务保留、`model` 回退 unknown、新增
+  `summary.parse_warnings` 诊断计数（不含任何 secret/prompt/token）
+- **One Cost Truth（指挥中心口径统一）** — 顶部「今日估算」与 Token·费用 canonical
+  统一为 `session_model_usage` 单源（provenance 过滤：`cost_status='estimated'` +
+  来源非空）；`cost_status=NULL` 的 unpriced 辅助调用不再计入估算，以
+  `pricing_unknown_rows` 保留可见、不丢失；预算行同步只读 canonical estimated
+- API schema 保持 `1`；Desktop Alpha 0.1.0 契约不变（HUD_MIN_PLUGIN_VERSION 不变）
+
 ## [1.1.1] - 2026-08-28
 
 ### Fixed

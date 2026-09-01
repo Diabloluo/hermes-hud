@@ -299,24 +299,31 @@ def collect_db() -> dict:
             "api_calls": row[0], "input_tokens": row[1], "output_tokens": row[2],
             "cache_read_tokens": row[3], "estimated_cost_usd": row[4],
         }
-        # 今日（HUD statistics timezone / configured local timezone）主会话 + 会话内 usage
+        # 今日（HUD statistics timezone / configured local timezone）
         tz = get_hud_timezone()
         now_local = datetime.now(tz)
         day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
         day_start_epoch = day_start.astimezone(timezone.utc).timestamp()
-        cur.execute(
-            "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),"
-            " COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(estimated_cost_usd),0),"
-            " COUNT(*)"
-            " FROM sessions WHERE started_at >= ?",
-            (day_start_epoch,),
-        )
-        row = cur.fetchone()
+        # C-1: header 的 cost/token 一律来自 canonical Cost Truth summary
+        # （session_model_usage 单源 + pricing provenance）——禁止第二套 estimated
+        # aggregation；unpriced/pricing_unknown 绝不并入估算。
+        # 延迟导入：cost.py 顶层 from .collectors import get_hud_timezone，
+        # 顶层 import 会形成循环依赖；函数内导入时模块已完整加载。
+        from . import cost as _cost
+        cost_summary = _cost.compute_summary(HERMES_HOME, "today")
+        cov = cost_summary.get("coverage") or {}
+        # session count 属 operational metric → 仍从 sessions 表取
+        cur.execute("SELECT COUNT(*) FROM sessions WHERE started_at >= ?",
+                    (day_start_epoch,))
         out["today_sessions"] = {
-            "input_tokens": row[0], "output_tokens": row[1],
-            "cache_read_tokens": row[2], "estimated_cost_usd": row[3],
-            "count": row[4],
+            "input_tokens": cost_summary.get("input_tokens"),
+            "output_tokens": cost_summary.get("output_tokens"),
+            "cache_read_tokens": cost_summary.get("cache_read_tokens"),
+            "estimated_cost_usd": cost_summary.get("estimated_cost_usd"),
+            "pricing_unknown_rows": cov.get("pricing_unknown_rows"),
+            "count": cur.fetchone()[0],
         }
+        # aux（task != ''）独立观测：仅供 telemetry/辅助分析，绝不参与 header 估算
         cur.execute(
             "SELECT COALESCE(SUM(estimated_cost_usd),0), COALESCE(SUM(actual_cost_usd),0),"
             " COUNT(DISTINCT session_id) FROM session_model_usage WHERE last_seen >= ?"
@@ -485,6 +492,36 @@ def collect_session_detail(session_id: str) -> Optional[dict]:
 # 4. Cron
 # ---------------------------------------------------------------------------
 
+def _job_model(job: dict) -> Optional[str]:
+    """任务 model 归一化：顶层 model > model_snapshot（dict{model} | str | None）。
+
+    Hermes v0.21 起 model_snapshot 可能写为 str（'deepseek-v4-flash'），旧数据是
+    dict。可选元数据解析失败一律安全回退 None——绝不因此丢任务。
+    """
+    top = job.get("model")
+    if top:
+        return str(top)
+    snap = job.get("model_snapshot")
+    if isinstance(snap, dict):
+        return snap.get("model") or snap.get("name") or None
+    if isinstance(snap, str):
+        return snap.strip() or None
+    return None
+
+
+def _job_provider(job: dict) -> Optional[str]:
+    """任务 provider 归一化（同 _job_model：dict{provider} | str | None）。"""
+    top = job.get("provider")
+    if top:
+        return str(top)
+    snap = job.get("provider_snapshot")
+    if isinstance(snap, dict):
+        return snap.get("provider") or None
+    if isinstance(snap, str):
+        return snap.strip() or None
+    return None
+
+
 def collect_cron_jobs() -> dict:
     """jobs.json 任务列表 + 汇总。"""
     data = _read_json(HERMES_HOME / "cron" / "jobs.json")
@@ -492,6 +529,7 @@ def collect_cron_jobs() -> dict:
         return {"error": "cron/jobs.json 不可读", "jobs": [], "summary": {}}
     jobs = data.get("jobs", [])
     out_jobs = []
+    parse_warnings = 0
     for j in jobs:
         try:
             sched = j.get("schedule") or {}
@@ -514,8 +552,8 @@ def collect_cron_jobs() -> dict:
                 "last_delivery_error": redact_line(str(j.get("last_delivery_error") or ""))[:200] or None,
                 "failure_streak": j.get("failure_streak", 0),
                 "deliver": redact_line(str(j.get("deliver") or ""))[:200] or None,
-                "model": j.get("model") or (j.get("model_snapshot") or {}).get("model"),
-                "provider": j.get("provider") or (j.get("provider_snapshot") or {}).get("provider"),
+                "model": _job_model(j),
+                "provider": _job_provider(j),
                 "script": sanitize_path(str(j.get("script") or "")) or None,
                 "no_agent": bool(j.get("no_agent")),
                 "created_at": _parse_ts(j.get("created_at")),
@@ -523,7 +561,25 @@ def collect_cron_jobs() -> dict:
                 "paused_reason": j.get("paused_reason"),
             })
         except Exception:
-            continue
+            # MODEL METADATA FAILURE ≠ DROP TASK：任何元数据解析失败都保留任务
+            # （最小可展示字段），仅计数诊断；warning 不含 secret/prompt/token。
+            parse_warnings += 1
+            sched = j.get("schedule") or {}
+            out_jobs.append({
+                "id": j.get("id"),
+                "name": j.get("name"),
+                "enabled": bool(j.get("enabled")),
+                "state": j.get("state"),
+                "schedule": (sched.get("display") if isinstance(sched, dict) else str(sched)),
+                "schedule_kind": (sched.get("kind", "cron") if isinstance(sched, dict) else "cron"),
+                "next_run_at": None, "last_run_at": None,
+                "last_status": j.get("last_status"),
+                "last_error": None, "last_delivery_error": None,
+                "failure_streak": j.get("failure_streak", 0),
+                "deliver": None, "model": None, "provider": None,
+                "script": None, "no_agent": bool(j.get("no_agent")),
+                "created_at": None, "paused_at": None, "paused_reason": None,
+            })
     summary = {
         "total": len(out_jobs),
         "enabled": sum(1 for j in out_jobs if j["enabled"]),
@@ -531,6 +587,7 @@ def collect_cron_jobs() -> dict:
         "disabled": sum(1 for j in out_jobs if not j["enabled"] and not j["paused_at"]),
         "failing": sum(1 for j in out_jobs if (j["failure_streak"] or 0) >= 1),
         "running_state": sum(1 for j in out_jobs if j["state"] in ("running", "claimed", "firing")),
+        "parse_warnings": parse_warnings,
     }
     return {"jobs": out_jobs, "summary": summary}
 

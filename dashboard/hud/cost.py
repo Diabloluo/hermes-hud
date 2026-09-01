@@ -149,12 +149,13 @@ def compute_summary(home: Path, time_range: str = "7d",
     cutoff, today_start = _cutoff(time_range, now)
     rows, source_ok = _rows(home, cutoff, today_start)
     usage_rows = len(rows)
-    input_tok = output_tok = 0
+    input_tok = output_tok = cache_tok = 0
     cost_total = 0.0
     pricing_known = 0
     for r in rows:
         input_tok += (r[2] or 0)
         output_tok += (r[3] or 0)
+        cache_tok += (r[4] or 0)
         if _pricing_known(r[9], r[10]):
             pricing_known += 1
             cost_total += float(r[7] or 0)
@@ -167,7 +168,7 @@ def compute_summary(home: Path, time_range: str = "7d",
     cost_complete = bool(source_ok and (usage_rows == 0 or pricing_known == usage_rows))
     ratio = (pricing_known / usage_rows) if usage_rows else (1.0 if source_ok else None)
     if not source_ok:
-        cost_total = input_tok = output_tok = total_tokens = None
+        cost_total = input_tok = output_tok = total_tokens = cache_tok = None
         pricing_known = usage_rows = None
         ratio = None
     elif usage_rows == 0:
@@ -191,6 +192,7 @@ def compute_summary(home: Path, time_range: str = "7d",
         "estimated_cost_usd": cost_total,
         "input_tokens": input_tok,
         "output_tokens": output_tok,
+        "cache_read_tokens": cache_tok,
         "total_tokens": total_tokens,
         "sessions": sessions,
         "avg_cost_per_session_usd": avg_cost,
