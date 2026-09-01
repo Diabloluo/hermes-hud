@@ -202,7 +202,8 @@
     const mem = sys.memory || {};
     const platforms = gw.platforms || {};
 
-    const totalCost = (today.estimated_cost_usd || 0) + (today.aux_est_cost || 0);
+    // C-1: 今日估算 = canonical estimated（unpriced aux 不得计入估算）
+    const totalCost = today.estimated_cost_usd || 0;
     const checks = (health && health.checks) || [];
     const incidents = (health && health.incidents) || [];
 

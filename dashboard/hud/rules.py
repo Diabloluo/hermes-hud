@@ -228,7 +228,7 @@ def evaluate_snapshot(snap: dict) -> dict:
 
     # ---- warning: 预算 ----
     today = (snap.get("db") or {}).get("today_sessions") or {}
-    today_cost = (today.get("estimated_cost_usd") or 0) + (today.get("aux_est_cost") or 0)
+    today_cost = today.get("estimated_cost_usd") or 0  # C-1: 仅 canonical estimated，unpriced 不进入
     if DAILY_BUDGET_USD > 0 and today_cost > DAILY_BUDGET_USD * BUDGET_WARN_RATIO:
         checks.append({"key": "budget", "status": "warning", "severity": "warning",
                        "message": "今日估算费用 $%.2f 超过日预算 $%.2f 的 %.0f%%"
