@@ -217,6 +217,10 @@ jobs:
           python-version: '3.13'
       - name: Install minimum supported Hermes and browser test dependencies
         run: pip install 'hermes-agent==0.19.0' pytest websockets
+      - name: Install Chinese and Arabic screenshot fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk fonts-noto-core
       - name: Setup Chrome
         id: chrome
         uses: browser-actions/setup-chrome@v1

@@ -871,7 +871,7 @@
               h(Badge, { variant: "secondary" }, tt("估算"))))),
         card(tt("Cron / 会话"),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
-            kv(tt("任务"), cron.summary ? (cron.summary.enabled + tt(" 启用 / ") + cron.summary.total + tt(" 总")) : "-"),
+            kv(tt("任务"), cron.summary && cron.summary.enabled != null && cron.summary.total != null ? (cron.summary.enabled + tt(" 启用 / ") + cron.summary.total + tt(" 总")) : "-"),
             kv(tt("执行中"), String((cron.summary && cron.summary.running_state) || 0)),
             kv(tt("失败中"), String((cron.summary && cron.summary.failing) || 0)),
             kv(tt("活跃会话"), String((snap.active_sessions || []).length))))),

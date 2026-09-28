@@ -49,6 +49,7 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
         text = cdp.eval("document.querySelector('.hud-root').innerText") or ""
         assert len(text) > 60
         assert "TypeError" not in text and "Internal Server Error" not in text
+        assert "undefined" not in text and "NaN" not in text
         if locale != "zh":
             # Do not confuse canonical persisted incidents, raw logs and
             # observed timeline summaries with untranslated UI chrome.

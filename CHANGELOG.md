@@ -20,6 +20,8 @@
   same two-second snapshot TTL instead of serving indefinitely stale health.
 - Incident storage, fingerprints and alert/state-change semantics remain
   canonical; translated text is emitted separately as display fields.
+- Complete three missing UI dictionary keys; an unavailable Cron summary now
+  displays a dash rather than `undefined` on the overview.
 
 ### Compatibility
 - API schema remains **1**; Desktop Alpha **0.1.0** is unchanged. This is a HUD
