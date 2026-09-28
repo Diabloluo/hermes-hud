@@ -63,8 +63,8 @@
 .hud-grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .hud-grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 
-/* 状态点 */
-.hud-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+/* 状态点（margin-inline-end 而非 margin-right：RTL 语言下自动跟随阅读方向） */
+.hud-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-inline-end: 6px; }
 .hud-dot-ok { background: #4ade80; }
 .hud-dot-warn { background: #facc15; }
 .hud-dot-bad { background: #f87171; }
@@ -73,7 +73,7 @@
 /* 表格 */
 .hud-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .hud-table th {
-  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  text-align: start; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
   opacity: 0.6; padding: 6px 8px; border-bottom: 1px solid var(--border, rgba(128,128,128,0.2));
   white-space: nowrap;
 }
@@ -104,8 +104,8 @@
 .hud-logline.warn { color: #facc15; }
 .hud-logline.info { color: var(--muted-foreground, #999); }
 
-/* 事故卡 */
-.hud-incident { border-left: 3px solid; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px;
+/* 事故卡（border-inline-start 而非 border-left：RTL 语言下自动跟随阅读方向） */
+.hud-incident { border-inline-start: 3px solid; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px;
   background: rgba(128,128,128,0.05); }
 .hud-incident.critical { border-color: #f87171; }
 .hud-incident.warning { border-color: #facc15; }

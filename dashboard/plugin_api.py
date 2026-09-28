@@ -29,6 +29,7 @@ if str(_HUD_DIR) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(_HUD_DIR))
 
 from hud import collectors, rules, storage  # noqa: E402
+from hud.i18n import resolve_locale  # noqa: E402
 from hud.redaction import redact_line  # noqa: E402
 
 log = logging.getLogger(__name__)
@@ -42,13 +43,17 @@ store = storage.TelemetryStore()
 # ---------------------------------------------------------------------------
 
 _last_snapshot: Optional[dict] = None
-_last_health: Optional[dict] = None
+# overall 是 normal/warning/critical 代码（与语言无关），事件对比用它，
+# 不依赖按语言分桶的快照缓存。
+_last_overall: Optional[str] = None
 _last_event_emit: float = 0.0
 
 # P1-1：共享 snapshot 缓存 + 单飞锁（REST / WebSocket 不各自重复跑 collector）
 _SNAPSHOT_TTL = 2.0
 _snapshot_lock = asyncio.Lock()
-_snapshot_cache: dict = {"data": None, "ts": 0.0}
+# locale -> {"data": snap, "ts": float}：TTL 与单飞锁保持不变，只是按语言分桶，
+# 两个不同语言的标签页不再互相污染。
+_snapshot_cache: dict[str, dict] = {}
 # P1-1：telemetry 落盘限频（最大每 60 秒一次，2 秒轮询不写库）
 _TELEMETRY_INTERVAL = 60.0
 _last_telemetry_ts: float = 0.0
@@ -93,13 +98,12 @@ def _detect_events(snap: dict, prev: dict) -> list[dict]:
     for sid in sess_old - sess_new:
         events.append({"type": "session", "sub": sid, "event": "end", "ts": now})
 
-    # 健康等级变化
-    if _last_health and snap.get("_health"):
-        old_lvl = _last_health.get("overall")
+    # 健康等级变化（overall 与语言无关，用全局 _last_overall 比对）
+    if _last_overall is not None and snap.get("_health"):
         new_lvl = snap["_health"].get("overall")
-        if old_lvl != new_lvl:
+        if _last_overall != new_lvl:
             events.append({"type": "health", "sub": "overall", "event": "change",
-                           "from": old_lvl, "to": new_lvl, "ts": now})
+                           "from": _last_overall, "to": new_lvl, "ts": now})
 
     # gateway 存活变化
     old_alive = bool((prev or {}).get("gateway", {}).get("alive"))
@@ -164,15 +168,20 @@ def _maybe_telemetry(snap: dict, health: dict) -> None:
         pass
 
 
-async def _get_snapshot() -> dict:
-    """共享快照：2 秒内复用 + 单飞锁。
+async def _get_snapshot(locale: str = "zh") -> dict:
+    """共享快照：2 秒内复用 + 单飞锁，按 locale 分桶。
 
     REST /snapshot 与 WebSocket /events 共用同一份快照，
     同一时间不会并发重复跑完整 collector，telemetry 落盘也由
     限频统一控制 —— 前端 2 秒级实时体验不变。
+
+    缓存按 resolve_locale() 归一化后的语言分桶：两个标签页开不同语言时
+    各取各的那份，不再互相污染（单飞锁仍是全局一把，TTL 仍是 2 秒）。
+    落盘走 incidents[].title/detail（恒 zh，见 rules._inc_text），与触发
+    本次刷新的语言无关。
     """
-    global _last_snapshot, _last_health
-    cache = _snapshot_cache
+    global _last_snapshot, _last_overall
+    cache = _snapshot_cache.setdefault(locale, {"data": None, "ts": 0.0})
     now = time.time()
     if cache["data"] is not None and now - cache["ts"] < _SNAPSHOT_TTL:
         return cache["data"]
@@ -180,14 +189,14 @@ async def _get_snapshot() -> dict:
         # 双检：等待锁期间可能已被其他协程填充
         if cache["data"] is not None and time.time() - cache["ts"] < _SNAPSHOT_TTL:
             return cache["data"]
-        snap = await asyncio.to_thread(collectors.build_snapshot)
-        health = rules.evaluate_snapshot(snap)
+        snap = await asyncio.to_thread(collectors.build_snapshot, locale)
+        health = rules.evaluate_snapshot(snap, locale)
         events = _detect_events(snap, _last_snapshot)
         snap["_health"] = health
         snap["_events"] = events
         _maybe_telemetry(snap, health)
         _last_snapshot = snap
-        _last_health = health
+        _last_overall = health.get("overall")
         cache["data"] = snap
         cache["ts"] = time.time()
         return snap
@@ -198,9 +207,9 @@ async def _get_snapshot() -> dict:
 # ---------------------------------------------------------------------------
 
 @router.get("/snapshot")
-async def get_snapshot() -> dict:
+async def get_snapshot(locale: str = "zh") -> dict:
     """全量快照（约 2 秒刷新频率由前端控制，共享缓存 + 单飞）。"""
-    return await _get_snapshot()
+    return await _get_snapshot(resolve_locale(locale))
 
 
 @router.get("/timeline")
@@ -238,23 +247,23 @@ async def get_timeline_stats() -> dict:
 
 
 @router.get("/health")
-async def get_health() -> dict:
-    """只跑健康评估（轻量，不重算快照）+ API 版本契约（Desktop 协商用）。"""
+async def get_health(locale: str = "zh") -> dict:
+    """健康评估 + API 版本契约（Desktop 协商用）。
+
+    直接取该 locale 的快照缓存（同一把单飞锁 + 2s TTL）：过期即重算，
+    不会因为只有别的语言在轮询 /snapshot 而一直返回旧状态。
+    """
     from hud import version
-    if _last_health is not None:
-        out = dict(_last_health)
-        out.update(version.api_version_payload())
-        return out
-    snap = await _get_snapshot()
+    snap = await _get_snapshot(resolve_locale(locale))
     out = dict(snap["_health"])
     out.update(version.api_version_payload())
     return out
 
 
 @router.get("/data-quality")
-async def get_data_quality() -> dict:
+async def get_data_quality(locale: str = "zh") -> dict:
     """数据新鲜度与采集器健康状态。"""
-    snap = await _get_snapshot()
+    snap = await _get_snapshot(resolve_locale(locale))
     sections = {
         "gateway": snap.get("gateway", {}).get("error"),
         "system": snap.get("system", {}).get("error"),
@@ -330,9 +339,9 @@ async def get_tool_events(limit: int = Query(60, ge=1, le=300)) -> list[dict]:
 
 
 @router.get("/skills")
-async def get_skills() -> dict:
+async def get_skills(locale: str = "zh") -> dict:
     """技能目录统计（~/.hermes/skills 元数据，只读）。"""
-    return await asyncio.to_thread(collectors.collect_skills)
+    return await asyncio.to_thread(collectors.collect_skills, resolve_locale(locale))
 
 
 @router.get("/skills/analytics")
@@ -489,15 +498,22 @@ async def stream_events(ws: WebSocket):
 
     鉴权委托给 dashboard 的标准 WS 门（_ws_auth_ok），兼容 loopback
     token / gated ticket / internal 三种模式。
+
+    locale：WS 推送内容本身不含翻译文案（health 只带 overall/counts 两个状态
+    码，文案由前端 tt() 渲染），但 WS 和 REST /snapshot 共用同一份
+    _get_snapshot() 缓存 + _maybe_telemetry() 落盘。不传 locale 会导致落盘的
+    incident title/detail 用默认 zh 渲染，即使浏览器语言是别的——所以这里仍
+    要从 query string 读 locale 并往下传，即便 WS 自己用不上翻译后的文本。
     """
     from hermes_cli.web_server import _ws_auth_ok
     if not _ws_auth_ok(ws):
         await ws.close(code=http_status.WS_1008_POLICY_VIOLATION)
         return
     await ws.accept()
+    locale = resolve_locale(ws.query_params.get("locale"))
     try:
         while True:
-            snap = await _get_snapshot()
+            snap = await _get_snapshot(locale)
             health = snap["_health"]
             events = snap.get("_events", [])
             try:

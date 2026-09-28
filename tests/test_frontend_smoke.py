@@ -172,7 +172,17 @@ def hud_env():
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     assert _wait_cdp(cport), "Chrome CDP not ready"
     time.sleep(4)
-    yield {"port": port, "cdp": CDP(cport), "chrome": chrome}
+    cdp = CDP(cport)
+    # 这批 smoke 断言硬编码中文文案 / Tab 名。HUD 现在跟随 Dashboard 的
+    # useI18n() locale（此前固定中文，忽略 Dashboard 语言设置）；全新浏览器
+    # profile 下 host 的默认语言本来就是 en（getInitialLocale() 无
+    # localStorage 时回退 en，这在本次改动之前就是 host 的既有行为），不显式
+    # 钉住 zh 的话，下面这些中文断言会在真实 macOS+Chrome 环境下全部失败，
+    # 且与插件本身是否正确无关——钉住后测的仍是原来这批用例一直在测的东西。
+    cdp.eval("try { localStorage.setItem('hermes-locale', 'zh'); } catch (e) {}")
+    cdp.cmd("Page.navigate", {"url": f"http://127.0.0.1:{port}/hud"})
+    time.sleep(4)
+    yield {"port": port, "cdp": cdp, "chrome": chrome}
     # cleanup：owned 进程精确回收
     for p in (chrome, proc):
         if p.poll() is None:

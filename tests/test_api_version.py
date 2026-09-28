@@ -42,7 +42,7 @@ def test_manifest_unknown_safe(tmp_path, monkeypatch) -> None:
 
 def test_health_backward_compat_fields() -> None:
     """/health 的旧字段（overall/counts/checks）与版本字段并存。"""
-    # plugin_api.get_health 逻辑：dict(_last_health) + api_version_payload()
+    # plugin_api.get_health 逻辑：dict(snap["_health"]) + api_version_payload()
     base = {"overall": "ok", "counts": {"critical": 0, "warning": 0}, "checks": []}
     out = dict(base)
     out.update(version.api_version_payload())
