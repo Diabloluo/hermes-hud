@@ -3,6 +3,28 @@
 本文件记录 Hermes HUD 的可见变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-09-28
+
+### Added
+- **Multilingual HUD** — frontend and backend display text in Chinese, English,
+  French and Arabic, following the Dashboard language setting. Arabic uses the
+  host's RTL direction and logical CSS properties. Thanks to **@Manaf-Alkadi**
+  for PR #26 and the follow-up fixes and tests.
+- Locale aliases such as `zh-CN`, `fr-FR` and `ar-SA` normalize to the supported
+  base language; unknown API locales fall back to English. Requests without a
+  locale preserve the previous Chinese API default.
+
+### Fixed
+- Snapshot caches are isolated by locale. Health responses refresh through the
+  same two-second snapshot TTL instead of serving indefinitely stale health.
+- Incident storage, fingerprints and alert/state-change semantics remain
+  canonical; translated text is emitted separately as display fields.
+
+### Compatibility
+- API schema remains **1**; Desktop Alpha **0.1.0** is unchanged. This is a HUD
+  plugin release, not a new Desktop binary. The existing performance, privacy
+  and cost-semantics audit backlog is not claimed resolved by this release.
+
 ## [1.1.2] - 2026-09-01
 
 ### Fixed

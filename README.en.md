@@ -11,6 +11,7 @@
 ## ✨ Highlights
 
 - 🖥 **One screen, many tabs**: Overview, Live, Token & Cost (Cost Intelligence), Sessions, Timeline, Memory, Skills, Skill Analytics, Cron, Channels, Errors & Incidents, System & Storage, Settings
+- 🌐 **Four HUD languages**: Chinese, English, French and Arabic (RTL), following the Dashboard language setting. Thanks to [@Manaf-Alkadi](https://github.com/Manaf-Alkadi) for [PR #26](https://github.com/Diabloluo/hermes-hud/pull/26).
 - ⚡ **2-second realtime**: shared snapshot cache + WebSocket incremental event stream; REST and WS never duplicate collection
 - 🔒 **Strict read-only boundary**: Hermes core data is always read-only (`mode=ro`, never locks the Gateway); logs/paths redacted first, fingerprints generated after redaction — raw secrets never leave
 - 📊 **Trustworthy cost accounting**: estimated-cost semantics with pricing-provenance coverage (known vs unknown pricing rows) and attribution-aware time windows — never presented as provider invoices
