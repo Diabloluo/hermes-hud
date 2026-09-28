@@ -26,7 +26,7 @@ def test_plugin_version_reads_manifest() -> None:
     manifest = Path(__file__).resolve().parents[1] / "dashboard" / "manifest.json"
     import json
     assert version.get_plugin_version() == json.loads(manifest.read_text())["version"]
-    assert version.get_plugin_version().startswith("1.1")
+    assert version.get_plugin_version() == "1.2.0"
 
 
 def test_api_version_payload_shape() -> None:
@@ -49,7 +49,7 @@ def test_health_backward_compat_fields() -> None:
     assert out["overall"] == "ok"
     assert out["counts"]["critical"] == 0
     assert out["api_schema_version"] == 1
-    assert out["plugin_version"].startswith("1.1")
+    assert out["plugin_version"] == version.get_plugin_version()
 
 
 def test_ws_envelope_schema_version() -> None:
