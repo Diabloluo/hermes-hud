@@ -50,26 +50,21 @@ class CDP:
     """极简 CDP 客户端（websockets）。"""
 
     def __init__(self, port: int):
+        from websockets.sync.client import connect
         pages = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/json"))
         self.ws = next(p["webSocketDebuggerUrl"] for p in pages if p["type"] == "page")
         self._mid = 0
+        self.connection = connect(self.ws, proxy=None, max_size=8 * 1024 * 1024)
 
     def cmd(self, method: str, params: dict | None = None) -> dict:
-        import asyncio
-        import websockets
-
         self._mid += 1
         mid = self._mid
-
-        async def run():
-            async with websockets.connect(self.ws) as conn:
-                await conn.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
-                while True:
-                    msg = json.loads(await asyncio.wait_for(conn.recv(), 20))
-                    if msg.get("id") == mid:
-                        return msg
-
-        return asyncio.run(run())
+        self.connection.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
+        while True:
+            msg = json.loads(self.connection.recv(timeout=20))
+            if msg.get("id") == mid:
+                assert "error" not in msg, (method, msg)
+                return msg
 
     def eval(self, expr: str) -> str:
         r = self.cmd("Runtime.evaluate", {"expression": expr, "returnByValue": True})
@@ -174,7 +169,7 @@ def hud_env():
     chrome = subprocess.Popen(
         [CHROME, "--headless=new", "--disable-gpu",
          f"--user-data-dir={profile}", f"--remote-debugging-port={cport}",
-         "--no-first-run", "--no-default-browser-check", f"http://127.0.0.1:{port}/hud"],
+         "--no-first-run", "--no-default-browser-check", "about:blank"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     assert _wait_cdp(cport), "Chrome CDP not ready"
     time.sleep(4)
@@ -185,11 +180,17 @@ def hud_env():
     # localStorage 时回退 en，这在本次改动之前就是 host 的既有行为），不显式
     # 钉住 zh 的话，下面这些中文断言会在真实 macOS+Chrome 环境下全部失败，
     # 且与插件本身是否正确无关——钉住后测的仍是原来这批用例一直在测的东西。
-    cdp.eval("try { localStorage.setItem('hermes-locale', 'zh'); } catch (e) {}")
+    cdp.cmd("Page.enable")
+    cdp.cmd("Runtime.enable")
+    assert cdp.eval("1 + 1") == 2, "Chrome renderer sanity check failed"
+    init_script = cdp.cmd("Page.addScriptToEvaluateOnNewDocument", {"source":
+        "try { localStorage.setItem('hermes-locale', 'zh'); } catch (e) {}"})
     cdp.cmd("Page.navigate", {"url": f"http://127.0.0.1:{port}/hud"})
     time.sleep(4)
+    cdp.cmd("Page.removeScriptToEvaluateOnNewDocument", {"identifier": init_script["result"]["identifier"]})
     yield {"port": port, "cdp": cdp, "chrome": chrome}
     # cleanup：owned 进程精确回收
+    cdp.connection.close()
     for p in (chrome, proc):
         if p.poll() is None:
             p.terminate()
