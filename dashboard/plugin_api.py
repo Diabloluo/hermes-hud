@@ -505,8 +505,8 @@ async def stream_events(ws: WebSocket):
     incident title/detail 用默认 zh 渲染，即使浏览器语言是别的——所以这里仍
     要从 query string 读 locale 并往下传，即便 WS 自己用不上翻译后的文本。
     """
-    from hermes_cli.web_server import _ws_auth_ok
-    if not _ws_auth_ok(ws):
+    from hud.ws_auth import dashboard_ws_allowed
+    if not dashboard_ws_allowed(ws):
         await ws.close(code=http_status.WS_1008_POLICY_VIOLATION)
         return
     await ws.accept()
@@ -544,4 +544,3 @@ async def stream_events(ws: WebSocket):
         pass
     except Exception:
         pass
-
