@@ -1311,6 +1311,9 @@
     if (!snap) return empty(tt("加载中…"));
     const cron = snap.cron || {};
     const jobs = cron.jobs || [];
+    const summary = cron.summary || {};
+    const summaryCount = function (key) { return summary[key] == null ? "—" : String(summary[key]); };
+    const pausedCount = summary.paused == null || summary.disabled == null ? "—" : String(summary.paused + summary.disabled);
     const exec = snap.executions || {};
     const runs = exec.executions || [];
     const stats = exec.summary || {};
@@ -1320,10 +1323,10 @@
 
     return h(React.Fragment, null,
       h("div", { className: "hud-grid hud-grid-4" },
-        card(tt("任务总数"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, String(cron.summary ? cron.summary.total : jobs.length))),
-        card(tt("启用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "#4ade80" } }, String(cron.summary ? cron.summary.enabled : 0))),
-        card(tt("暂停/禁用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "#facc15" } }, String((cron.summary ? cron.summary.paused + cron.summary.disabled : 0)))),
-        card(tt("失败中"), h("div", { style: { fontSize: 20, fontWeight: 700, color: (cron.summary && cron.summary.failing) ? "#f87171" : undefined } }, String(cron.summary ? cron.summary.failing : 0)))),
+        card(tt("任务总数"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, summaryCount("total"))),
+        card(tt("启用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "#4ade80" } }, summaryCount("enabled"))),
+        card(tt("暂停/禁用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "#facc15" } }, pausedCount)),
+        card(tt("失败中"), h("div", { style: { fontSize: 20, fontWeight: 700, color: summary.failing ? "#f87171" : undefined } }, summaryCount("failing")))),
 
       h("div", { className: "hud-grid hud-grid-2" },
         card(tt("任务列表 (") + jobs.length + ")",
