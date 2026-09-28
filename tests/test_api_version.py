@@ -26,7 +26,7 @@ def test_plugin_version_reads_manifest() -> None:
     manifest = Path(__file__).resolve().parents[1] / "dashboard" / "manifest.json"
     import json
     assert version.get_plugin_version() == json.loads(manifest.read_text())["version"]
-    assert version.get_plugin_version() == "1.2.0"
+    assert version.get_plugin_version() == "1.2.1"
 
 
 def test_api_version_payload_shape() -> None:
