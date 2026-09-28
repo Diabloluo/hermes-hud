@@ -56,7 +56,9 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
                 "root.querySelectorAll('.hud-incident,.hud-tl-row,.hud-logline').forEach(e=>e.remove());"
                 "return root.textContent; })()") or ""
             ui_text = ui_text.replace("简体中文", "")  # picker endonym
-            assert not re.search(r"[\u4e00-\u9fff]", ui_text), (locale, index, ui_text)
+            leak = re.search(r"[\u4e00-\u9fff]", ui_text)
+            assert not leak, (locale, index,
+                ui_text[max(0, leak.start()-50):leak.end()+70] if leak else "")
     assert cdp.eval("window.__hudErrors") == []
     # Persisted setting + live language selection (without a page reload).
     next_locale = {"zh": "en", "en": "fr", "fr": "ar", "ar": "zh"}[locale]

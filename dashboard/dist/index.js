@@ -37,6 +37,8 @@
 
   // English. Source of truth for fallback when a locale is missing a key.
   const EN = {
+    "事故时间线 (最近 ": "Incident Timeline (latest ",
+    "运行": "Runs", "观测运行": "Observed runs",
     "故障": "Critical", "警告": "Warning", "正常": "Normal",
     "已连接": "Connected", "已断开": "Disconnected", "连接中": "Connecting",
     "重连中": "Reconnecting", "错误": "Error", "未知": "Unknown",
@@ -240,6 +242,8 @@
 
   // French
   const FR = {
+    "事故时间线 (最近 ": "Chronologie des incidents (derniers ",
+    "运行": "Exécutions", "观测运行": "Exécutions observées",
     "故障": "Critique", "警告": "Avertissement", "正常": "Normal",
     "已连接": "Connecté", "已断开": "Déconnecté", "连接中": "Connexion…",
     "重连中": "Reconnexion…", "错误": "Erreur", "未知": "Inconnu",
@@ -425,8 +429,10 @@
     "th_runtime": "Durée", "th_runs": "Exécutions", "th_task": "Tâche",
   };
 
-  // Arabic (RTL — the host flips document.dir automatically for "ar", see setLocale)
+  // Arabic: HUD root provides RTL even when the minimum host has no Arabic UI.
   const AR = {
+    "事故时间线 (最近 ": "الجدول الزمني للحوادث (الأحدث ",
+    "运行": "عمليات التشغيل", "观测运行": "عمليات التشغيل المرصودة",
     "故障": "حرج", "警告": "تحذير", "正常": "طبيعي",
     "已连接": "متصل", "已断开": "غير متصل", "连接中": "جارٍ الاتصال",
     "重连中": "جارٍ إعادة الاتصال", "错误": "خطأ", "未知": "غير معروف",

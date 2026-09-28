@@ -13,10 +13,9 @@ missing from it) falls back to ``en``, then to the raw key.
 Known limitation: health checks/incidents are recomputed fresh on every
 ``/snapshot`` poll (~2s), so they follow whichever ``locale`` query param the
 browser sent on that request — genuinely live. Incidents *persisted* to
-``telemetry.db`` (see ``plugin_api._update_telemetry``) keep whatever
-language was active on the server the moment they were written; switching
-the Dashboard's language later does not retranslate already-stored incident
-text. That would need incident storage to move from pre-rendered strings to
+``telemetry.db`` (see ``plugin_api._update_telemetry``) keep canonical Chinese,
+independent of the display locale; switching language does not retranslate
+already-stored incident text. That would need incident storage to move from pre-rendered strings to
 structured (key + args), which is a larger change than this patch makes.
 """
 
