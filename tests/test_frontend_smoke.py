@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME = os.environ.get("HUD_CHROME_PATH", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -80,10 +80,14 @@ class CDP:
 def hud_env():
     """隔离 dashboard：tmp home + 当前仓库插件 + enable + 起服务 + Chrome 页面。"""
     if not Path(CHROME).exists():
+        if os.environ.get("HUD_REQUIRE_BROWSER_ACCEPTANCE") == "1":
+            pytest.fail("release acceptance requires Chrome")
         pytest.skip("macOS Chrome not available")
     hermes_bin = shutil.which("hermes") or str(
         Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes")
     if not Path(hermes_bin).exists():
+        if os.environ.get("HUD_REQUIRE_BROWSER_ACCEPTANCE") == "1":
+            pytest.fail("release acceptance requires Hermes CLI")
         pytest.skip("hermes CLI not available")
     home = Path(tempfile.mkdtemp(prefix="hud-smoke-"))
     (home / "plugins").mkdir(parents=True)
@@ -160,6 +164,8 @@ def hud_env():
     if not ok:
         proc.terminate()
         tail = dbg_log.read_text(encoding="utf-8", errors="replace")[-1200:]
+        if os.environ.get("HUD_REQUIRE_BROWSER_ACCEPTANCE") == "1":
+            pytest.fail(f"release dashboard did not become ready: {tail}")
         pytest.skip(f"dashboard did not become ready (port {port}): {tail}")
 
     # headless Chrome 页面

@@ -172,6 +172,29 @@ jobs:
           cat /tmp/dashboard.log /tmp/snapshot.json > /tmp/cst-check.txt
           python scripts/fresh_install_check.py check-no-cst /tmp/cst-check.txt
 
+      - name: Setup Chrome for real multilingual acceptance
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Real Dashboard browser acceptance — four locales and RTL
+        env:
+          HUD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          HUD_REQUIRE_BROWSER_ACCEPTANCE: '1'
+          HUD_ACCEPTANCE_ARTIFACT_DIR: /tmp/hud-browser-acceptance
+        run: |
+          pip install pytest websockets
+          python -m pytest tests/test_frontend_smoke.py tests/test_release_i18n_smoke.py -q -rs
+
+      - name: Upload synthetic browser acceptance screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hud-browser-acceptance
+          path: /tmp/hud-browser-acceptance
+          if-no-files-found: ignore
+
       - name: Clean shutdown (owned PID only)
         if: always()
         run: |
