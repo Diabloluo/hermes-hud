@@ -191,7 +191,8 @@
     "• telemetry.db 只存聚合、指纹与短摘要": "• telemetry.db stores only aggregates, fingerprints, and short summaries",
     "• 无 outbound 遥测，不自动查询外部账单": "• No outbound telemetry; never queries external billing automatically",
     "• HUD 纯观察；操作跳转现有 Dashboard 受保护页面": "• HUD is observe-only; actions redirect to the existing protected Dashboard pages",
-    "Dashboard 界面语言": "Dashboard UI Language", "当前：": "Current: ",
+    "Dashboard 界面语言": "HUD UI Language", "当前：": "Current: ",
+    "跟随 Dashboard": "Follow Dashboard",
     "此处切换会立即应用到整个 Dashboard（含本插件），并保存在浏览器 localStorage，与系统重启无关。更多语言可在 Dashboard 顶部的语言切换器中选择。":
       "Switching here applies immediately across the whole Dashboard (including this plugin) and is saved to browser localStorage — it survives restarts. More languages are available from the language switcher at the top of the Dashboard.",
     "刷新频率：snapshot 2s / usage·metrics 30s / settings·quality 30-60s；阈值可用 HUD_* 环境变量覆盖（见后端 rules.py）。":
@@ -382,7 +383,8 @@
     "• telemetry.db 只存聚合、指纹与短摘要": "• telemetry.db ne stocke que des agrégats, empreintes et résumés courts",
     "• 无 outbound 遥测，不自动查询外部账单": "• Aucune télémétrie sortante ; n'interroge jamais automatiquement la facturation externe",
     "• HUD 纯观察；操作跳转现有 Dashboard 受保护页面": "• Le HUD est en lecture seule ; les actions redirigent vers les pages protégées existantes du Dashboard",
-    "Dashboard 界面语言": "Langue de l'interface Dashboard", "当前：": "Actuel : ",
+    "Dashboard 界面语言": "Langue de l'interface HUD", "当前：": "Actuel : ",
+    "跟随 Dashboard": "Suivre Dashboard",
     "此处切换会立即应用到整个 Dashboard（含本插件），并保存在浏览器 localStorage，与系统重启无关。更多语言可在 Dashboard 顶部的语言切换器中选择。":
       "Changer ici s'applique immédiatement à tout le Dashboard (y compris ce plugin) et est enregistré dans le localStorage du navigateur — cela survit aux redémarrages. D'autres langues sont disponibles depuis le sélecteur de langue en haut du Dashboard.",
     "刷新频率：snapshot 2s / usage·metrics 30s / settings·quality 30-60s；阈值可用 HUD_* 环境变量覆盖（见后端 rules.py）。":
@@ -568,7 +570,8 @@
     "• telemetry.db 只存聚合、指纹与短摘要": "• يخزّن telemetry.db فقط التجميعات والبصمات والملخصات القصيرة",
     "• 无 outbound 遥测，不自动查询外部账单": "• لا توجد قياسات صادرة؛ لا يستعلم تلقائيًا عن الفوترة الخارجية",
     "• HUD 纯观察；操作跳转现有 Dashboard 受保护页面": "• HUD للمراقبة فقط؛ الإجراءات تُوجَّه إلى صفحات Dashboard المحمية الحالية",
-    "Dashboard 界面语言": "لغة واجهة Dashboard", "当前：": "الحالي: ",
+    "Dashboard 界面语言": "لغة واجهة HUD", "当前：": "الحالي: ",
+    "跟随 Dashboard": "اتباع Dashboard",
     "此处切换会立即应用到整个 Dashboard（含本插件），并保存在浏览器 localStorage，与系统重启无关。更多语言可在 Dashboard 顶部的语言切换器中选择。":
       "يُطبَّق التبديل هنا فورًا على كامل Dashboard (بما في ذلك هذه الإضافة) ويُحفظ في localStorage للمتصفح — يبقى بعد إعادة التشغيل. تتوفر لغات إضافية من محوّل اللغة أعلى Dashboard.",
     "刷新频率：snapshot 2s / usage·metrics 30s / settings·quality 30-60s；阈值可用 HUD_* 环境变量覆盖（见后端 rules.py）。":
@@ -1639,11 +1642,11 @@
     { code: "ar", name: "العربية" },
   ];
 
-  function SettingsTab() {
+  function SettingsTab(props) {
     const { data: settings } = usePoll(API + "/settings", 60000);
     const { data: quality } = usePoll(API + "/data-quality", 30000);
-    // Dashboard 菜单语言：直接用 host 的 useI18n()（实时生效，无需刷新页面）
-    const { locale, setLocale } = useI18n();
+    // HUD override never sets an unsupported locale on an older host.
+    const { locale, setLocale } = props;
     const currentOpt = HUD_LOCALE_OPTIONS.find(function (o) { return o.code === locale; });
 
     return h(React.Fragment, null,
@@ -1700,21 +1703,25 @@
             h("div", null, tt("• 无 outbound 遥测，不自动查询外部账单")),
             h("div", null, tt("• HUD 纯观察；操作跳转现有 Dashboard 受保护页面"))))),
       h("div", { className: "hud-grid hud-grid-2" },
-        card(tt("Dashboard 界面语言"),
+        card(CURRENT_LOCALE === "zh" ? "HUD 界面语言" : tt("Dashboard 界面语言"),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
             h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
               h("span", { className: "hud-dot hud-dot-ok" }),
               h("span", { style: { fontWeight: 700 } }, tt("当前：") + (currentOpt ? currentOpt.name : locale)),
-              h("span", { className: "mono", style: { fontSize: 10.5, opacity: 0.6 } }, "hermes-locale=" + locale)),
+              h("span", { className: "mono", style: { fontSize: 10.5, opacity: 0.6 } }, "hermes-hud-locale=" + locale)),
             h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
               HUD_LOCALE_OPTIONS.map(function (o) {
                 return h(Button, {
                   key: o.code, size: "sm", variant: locale === o.code ? "default" : "outline",
                   onClick: function () { setLocale(o.code); },
                 }, o.name);
-              })),
+              }),
+              h(Button, { size: "sm", variant: "outline", onClick: function () { setLocale(null); } }, tt("跟随 Dashboard"))),
             h("div", { style: { fontSize: 11.5, opacity: 0.65, lineHeight: 1.5 } },
-              tt("此处切换会立即应用到整个 Dashboard（含本插件），并保存在浏览器 localStorage，与系统重启无关。更多语言可在 Dashboard 顶部的语言切换器中选择。"))))),
+              CURRENT_LOCALE === "zh" ? "默认跟随 Dashboard。此处仅切换 HUD，并保存在浏览器 localStorage；不会向旧版宿主设置不支持的语言。" :
+              CURRENT_LOCALE === "fr" ? "Par défaut, suit Dashboard. Ce choix ne change que HUD et est enregistré dans localStorage ; il ne modifie pas la langue de l'hôte." :
+              CURRENT_LOCALE === "ar" ? "يتبع Dashboard افتراضياً. يغيّر هذا الاختيار لغة HUD فقط ويحفظها في localStorage دون تغيير لغة المضيف." :
+              "Follows Dashboard by default. This selection changes only HUD and persists in localStorage, without setting an unsupported host language."))))),
       h("div", { className: "hud-footnote" },
         tt("刷新频率：snapshot 2s / usage·metrics 30s / settings·quality 30-60s；阈值可用 HUD_* 环境变量覆盖（见后端 rules.py）。"))));
   }
@@ -2092,6 +2099,19 @@
   }
 
   function HudApp() {
+    const hostI18n = useI18n();
+    const [localeOverride, setLocaleOverride] = useState(function () {
+      try { return localStorage.getItem("hermes-hud-locale"); } catch (e) { return null; }
+    });
+    const locale = localeOverride || (hostI18n && hostI18n.locale) || "zh";
+    CURRENT_LOCALE = locale;
+    const setHudLocale = function (value) {
+      setLocaleOverride(value);
+      try {
+        if (value) localStorage.setItem("hermes-hud-locale", value);
+        else localStorage.removeItem("hermes-hud-locale");
+      } catch (e) { /* privacy mode: in-memory selection still works */ }
+    };
     const [tab, setTab] = useState("overview");
     const { data: snap } = usePoll(API + "/snapshot", 2000);
     const [events, setEvents] = useState([]);
@@ -2101,8 +2121,6 @@
     snapRef.current = snap;
 
     // 语言：跟随 Dashboard 的 useI18n()；写入模块级 CURRENT_LOCALE 供 tt()/dtLocale() 同步读取
-    const hostI18n = useI18n();
-    CURRENT_LOCALE = (hostI18n && hostI18n.locale) || CURRENT_LOCALE;
 
     const health = snap ? snap._health : null;
 
@@ -2157,7 +2175,7 @@
       return function () { alive = false; if (ws) { try { ws.close(); } catch (e) {} } };
       // hostI18n.locale 依赖：语言切换时断开重连，WS 带上新语言（否则要等
       // 断线重试或刷新页面才会用上新 locale，见下方 stream_events 的说明）。
-    }, [hostI18n.locale]);
+    }, [locale]);
 
     // 轮询事件也合并（WS 不可用时仍能看到增量）
     useEffect(function () {
@@ -2180,7 +2198,7 @@
     const gw = (snap && snap.gateway) || {};
     const cronSum = (snap && snap.cron && snap.cron.summary) || {};
 
-    return h("div", { className: "hud-root" },
+    return h("div", { className: "hud-root", lang: locale, dir: locale === "ar" ? "rtl" : "ltr" },
       // 顶部状态条
       h("div", { className: "hud-header" },
         h("span", { className: "hud-health-badge " + (health ? healthClass(health.overall) : "") },
@@ -2214,7 +2232,7 @@
       tab === "channels" ? h(ChannelsTab, { snap: snap }) :
       tab === "incidents" ? h(IncidentsTab, { snap: snap }) :
       tab === "system" ? h(SystemTab, { snap: snap }) :
-      h(SettingsTab, null));
+      h(SettingsTab, { locale: locale, setLocale: setHudLocale }));
   }
 
   // -------------------------------------------------------------------------

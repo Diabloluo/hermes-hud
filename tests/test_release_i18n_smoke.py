@@ -31,13 +31,13 @@ def wait_for(cdp, expression, timeout=20):
 def test_four_locale_real_dashboard(hud_env, locale, direction):
     cdp = hud_env["cdp"]
     url = f"http://127.0.0.1:{hud_env['port']}/hud"
-    cdp.eval(f"localStorage.setItem('hermes-locale', {json.dumps(locale)})")
+    cdp.eval(f"localStorage.setItem('hermes-hud-locale', {json.dumps(locale)})")
     cdp.cmd("Page.navigate", {"url": url})
     wait_for(cdp, "document.querySelectorAll('.hud-tab').length === 13")
     wait_for(cdp, "document.querySelector('.hud-health-badge') && "
              "!document.querySelector('.hud-health-badge').textContent.includes('加载中')")
-    assert cdp.eval("document.documentElement.dir") == direction
-    assert cdp.eval("document.documentElement.lang") == locale
+    assert cdp.eval("document.querySelector('.hud-root').dir") == direction
+    assert cdp.eval("document.querySelector('.hud-root').lang") == locale
     # Capture uncaught browser errors before traversing every HUD tab.
     cdp.eval("window.__hudErrors=[]; window.addEventListener('error', e=>"
              "window.__hudErrors.push(e.message)); window.addEventListener('unhandledrejection',"
@@ -60,14 +60,14 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
     assert cdp.eval("(() => { const b=[...document.querySelectorAll('.hud-root button')]"
                     f".find(b=>b.textContent==={json.dumps(endonym)}); if(!b)return false;"
                     "b.click();return true; })()")
-    wait_for(cdp, f"localStorage.getItem('hermes-locale') === {json.dumps(next_locale)}")
+    wait_for(cdp, f"localStorage.getItem('hermes-hud-locale') === {json.dumps(next_locale)}")
     expected_dir = "rtl" if next_locale == "ar" else "ltr"
-    wait_for(cdp, f"document.documentElement.dir === {json.dumps(expected_dir)}")
+    wait_for(cdp, f"document.querySelector('.hud-root').dir === {json.dumps(expected_dir)}")
     # Restore this test's locale through the same real picker for screenshots.
     endonym = {"zh": "简体中文", "en": "English", "fr": "Français", "ar": "العربية"}[locale]
     assert cdp.eval("(() => { const b=[...document.querySelectorAll('.hud-root button')]"
                     f".find(b=>b.textContent==={json.dumps(endonym)}); b.click();return true; }})()")
-    wait_for(cdp, f"document.documentElement.lang === {json.dumps(locale)}")
+    wait_for(cdp, f"document.querySelector('.hud-root').lang === {json.dumps(locale)}")
     cdp.eval("document.querySelector('.hud-tab').click()")
     time.sleep(2)
     artifact_dir = os.environ.get("HUD_ACCEPTANCE_ARTIFACT_DIR")
