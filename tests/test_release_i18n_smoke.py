@@ -50,9 +50,13 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
         assert len(text) > 60
         assert "TypeError" not in text and "Internal Server Error" not in text
         if locale != "zh":
-            # Locale-picker endonyms are intentionally not translated.
-            text = text.replace("简体中文", "")
-            assert not re.search(r"[\u4e00-\u9fff]", text), (locale, index, text)
+            # Do not confuse canonical persisted incidents, raw logs and
+            # observed timeline summaries with untranslated UI chrome.
+            ui_text = cdp.eval("(() => { const root=document.querySelector('.hud-root').cloneNode(true);"
+                "root.querySelectorAll('.hud-incident,.hud-tl-row,.hud-logline').forEach(e=>e.remove());"
+                "return root.textContent; })()") or ""
+            ui_text = ui_text.replace("简体中文", "")  # picker endonym
+            assert not re.search(r"[\u4e00-\u9fff]", ui_text), (locale, index, ui_text)
     assert cdp.eval("window.__hudErrors") == []
     # Persisted setting + live language selection (without a page reload).
     next_locale = {"zh": "en", "en": "fr", "fr": "ar", "ar": "zh"}[locale]

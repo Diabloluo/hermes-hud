@@ -25,6 +25,9 @@
 - API schema remains **1**; Desktop Alpha **0.1.0** is unchanged. This is a HUD
   plugin release, not a new Desktop binary. The existing performance, privacy
   and cost-semantics audit backlog is not claimed resolved by this release.
+- Stored incident history remains canonical Chinese; raw logs and observed
+  event/session content are not machine-translated. Fresh health-check display
+  text follows the selected locale. Full host UI translation depends on Hermes.
 
 ## [1.1.2] - 2026-09-01
 
