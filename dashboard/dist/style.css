@@ -50,10 +50,11 @@
   position: relative;
   z-index: 5;
 }
-.hud-tab:hover { background: rgba(128,128,128,0.12); color: var(--foreground, #eee); }
+.hud-tab:hover { background: rgba(128,128,128,0.12); color: inherit; }
 .hud-tab.active {
   background: rgba(99, 102, 241, 0.18);
-  color: var(--foreground, #fff);
+  /* Host --foreground can be a transparent overlay, not a text token. */
+  color: inherit;
   font-weight: 600;
 }
 

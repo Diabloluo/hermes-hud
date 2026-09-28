@@ -22,6 +22,8 @@
   canonical; translated text is emitted separately as display fields.
 - Complete three missing UI dictionary keys; an unavailable Cron summary now
   displays a dash rather than `undefined` on the overview.
+- Missing Cron summary fields also display a dash on the Cron page; selected
+  tab labels stay visible on hosts whose `--foreground` token is transparent.
 
 ### Compatibility
 - API schema remains **1**; Desktop Alpha **0.1.0** is unchanged. This is a HUD

@@ -46,6 +46,8 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
         assert cdp.eval(f"(() => {{ document.querySelectorAll('.hud-tab')[{index}].click();"
                         "return true; })()")
         time.sleep(1.5)
+        active_color = cdp.eval("getComputedStyle(document.querySelector('.hud-tab.active')).color")
+        assert active_color not in ("transparent", "rgba(0, 0, 0, 0)"), active_color
         text = cdp.eval("document.querySelector('.hud-root').innerText") or ""
         assert len(text) > 60
         assert "TypeError" not in text and "Internal Server Error" not in text
