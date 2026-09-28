@@ -26,6 +26,7 @@ except Exception:  # pragma: no cover
 
 import sys
 
+from .i18n import t
 from .redaction import redact_line, sanitize_cmdline, sanitize_path
 
 # ---------------------------------------------------------------------------
@@ -103,7 +104,7 @@ def _parse_ts(value: Any) -> Optional[float]:
 # 1. Gateway / 渠道
 # ---------------------------------------------------------------------------
 
-def collect_gateway() -> dict:
+def collect_gateway(locale: str = "zh") -> dict:
     """gateway_state.json + 进程存活检查。"""
     out: dict[str, Any] = {"error": None, "pid": None, "alive": False,
                            "state": None, "start_time": None, "updated_at": None,
@@ -111,7 +112,7 @@ def collect_gateway() -> dict:
                            "platforms": {}, "heartbeat_age": None}
     state = _read_json(HERMES_HOME / "gateway_state.json")
     if state is None:
-        out["error"] = "gateway_state.json 不可读"
+        out["error"] = t("err_gateway_state_unreadable", locale)
         return out
     pid = state.get("pid")
     out["pid"] = pid
@@ -179,11 +180,11 @@ def _gateway_proc() -> Optional[Any]:
 # 2. 系统指标
 # ---------------------------------------------------------------------------
 
-def collect_system() -> dict:
+def collect_system(locale: str = "zh") -> dict:
     """CPU / 内存 / 磁盘 / 进程 / 负载 / uptime。"""
     out: dict[str, Any] = {"error": None}
     if psutil is None:
-        out["error"] = "psutil 不可用"
+        out["error"] = t("err_psutil_unavailable", locale)
         return out
     try:
         out["cpu_percent"] = psutil.cpu_percent(interval=None)
@@ -243,12 +244,17 @@ def _db_sizes() -> dict:
     return out
 
 
-def collect_db() -> dict:
-    """state.db 只读统计：会话数、消息数、usage 汇总、文件体积。"""
+def collect_db(locale: str = "zh") -> dict:
+    """state.db 只读统计：会话数、消息数、usage 汇总、文件体积。
+
+    error 是按 locale 渲染的展示文案；error_key/error_args 与语言无关
+    （模板 key + 原始异常文本），rules 据此渲染恒 zh 的 canonical 事故 detail。
+    """
     out: dict[str, Any] = {"error": None, "sizes": _db_sizes()}
     conn = _ro_connect(HERMES_HOME / "state.db")
     if conn is None:
-        out["error"] = "state.db 只读连接失败"
+        out["error_key"], out["error_args"] = "err_statedb_conn_failed", {}
+        out["error"] = t(out["error_key"], locale)
         return out
     try:
         cur = conn.cursor()
@@ -334,7 +340,8 @@ def collect_db() -> dict:
         out["today_sessions"]["aux_est_cost"] = row[0]
         out["today_sessions"]["aux_actual_cost"] = row[1]
     except Exception as exc:
-        out["error"] = f"查询失败: {exc}"
+        out["error_key"], out["error_args"] = "err_query_failed", {"exc": str(exc)}
+        out["error"] = t(out["error_key"], locale, **out["error_args"])
     finally:
         try:
             conn.close()
@@ -522,11 +529,11 @@ def _job_provider(job: dict) -> Optional[str]:
     return None
 
 
-def collect_cron_jobs() -> dict:
+def collect_cron_jobs(locale: str = "zh") -> dict:
     """jobs.json 任务列表 + 汇总。"""
     data = _read_json(HERMES_HOME / "cron" / "jobs.json")
     if data is None:
-        return {"error": "cron/jobs.json 不可读", "jobs": [], "summary": {}}
+        return {"error": t("err_cron_jobs_unreadable", locale), "jobs": [], "summary": {}}
     jobs = data.get("jobs", [])
     out_jobs = []
     parse_warnings = 0
@@ -592,11 +599,11 @@ def collect_cron_jobs() -> dict:
     return {"jobs": out_jobs, "summary": summary}
 
 
-def collect_cron_executions(limit: int = 60) -> dict:
+def collect_cron_executions(limit: int = 60, locale: str = "zh") -> dict:
     """executions.db 执行历史。"""
     conn = _ro_connect(HERMES_HOME / "cron" / "executions.db")
     if conn is None:
-        return {"error": "executions.db 只读连接失败", "executions": [], "summary": {}}
+        return {"error": t("err_executions_conn_failed", locale), "executions": [], "summary": {}}
     try:
         cur = conn.cursor()
         cur.execute(
@@ -683,11 +690,11 @@ def collect_logs(lines_per_file: int = 60) -> dict:
     return out
 
 
-def collect_error_stats(minutes: int = 30) -> dict:
+def collect_error_stats(minutes: int = 30, locale: str = "zh") -> dict:
     """errors.log 近 N 分钟错误数 + 按指纹聚合。"""
     path = HERMES_HOME / "logs" / "errors.log"
     if not path.exists():
-        return {"error": "errors.log 不存在", "count_30m": 0, "incidents": []}
+        return {"error": t("err_errorslog_missing", locale), "count_30m": 0, "incidents": []}
     lines = _tail_lines(path, 800)
     cutoff = time.time() - minutes * 60
     recent = 0
@@ -783,7 +790,7 @@ def _count_md_sections(path: Path) -> int:
 # 7. 服务定义（launchd）一致性
 # ---------------------------------------------------------------------------
 
-def collect_launchd_check() -> dict:
+def collect_launchd_check(locale: str = "zh") -> dict:
     """检查 Gateway 是否由 launchd 托管。
 
     只做只读检查（launchctl print / plist 文件存在性），不修改任何东西。
@@ -793,7 +800,7 @@ def collect_launchd_check() -> dict:
     if sys.platform != "darwin":
         # 非 macOS：launchd 概念不适用，不产生告警
         out["status"] = "not_applicable"
-        out["note"] = "launchd 仅 macOS 适用"
+        out["note"] = t("note_launchd_macos_only", locale)
         return out
     candidates = [
         Path.home() / "Library/LaunchAgents/com.nousresearch.hermes.gateway.plist",
@@ -860,10 +867,10 @@ def _is_hermes_script_entrypoint(cmdline: list[str]) -> bool:
     return index < len(cmdline) and Path(cmdline[index]).name == "hermes"
 
 
-def collect_dashboard_procs() -> dict:
+def collect_dashboard_procs(locale: str = "zh") -> dict:
     """正在运行的 hermes web server（dashboard）进程。"""
     if psutil is None:
-        return {"error": "psutil 不可用", "procs": []}
+        return {"error": t("err_psutil_unavailable", locale), "procs": []}
     out = []
     try:
         for proc in psutil.process_iter(["pid", "name", "cmdline", "create_time", "memory_info"]):
@@ -1060,12 +1067,12 @@ def search_sessions(q: str, limit: int = 50) -> list[dict]:
             pass
 
 
-def collect_skills() -> dict:
+def collect_skills(locale: str = "zh") -> dict:
     """扫描 ~/.hermes/skills/ 下的 SKILL.md，解析元数据 + 统计。"""
     skills_root = HERMES_HOME / "skills"
     out: dict[str, Any] = {"error": None, "skills": [], "summary": {}}
     if not skills_root.is_dir():
-        out["error"] = "skills 目录不存在"
+        out["error"] = t("err_skills_dir_missing", locale)
         return out
     skills: list[dict] = []
     try:
@@ -1074,7 +1081,7 @@ def collect_skills() -> dict:
                 rel = md.relative_to(skills_root)
                 parts = list(rel.parts[:-1])  # 去掉 SKILL.md
                 name = parts[-1] if parts else md.parent.name
-                category = parts[-2] if len(parts) >= 2 else "未分类"
+                category = parts[-2] if len(parts) >= 2 else t("uncategorized", locale)
                 st = md.stat()
                 # 解析 frontmatter
                 meta: dict[str, str] = {}
@@ -1173,22 +1180,22 @@ def collect_tool_events(limit: int = 60) -> list[dict]:
 # 汇总快照
 # ---------------------------------------------------------------------------
 
-def build_snapshot() -> dict:
+def build_snapshot(locale: str = "zh") -> dict:
     """一次取齐所有采集器结果（各自容错）。"""
     collected_at = _now_epoch()
     return {
         "collected_at": collected_at,
         "generated_at_iso": datetime.now(get_hud_timezone()).isoformat(timespec="seconds"),
         "tz": hud_tz_name(),
-        "gateway": collect_gateway(),
-        "system": collect_system(),
-        "db": collect_db(),
+        "gateway": collect_gateway(locale),
+        "system": collect_system(locale),
+        "db": collect_db(locale),
         "active_sessions": collect_active_sessions(),
-        "cron": collect_cron_jobs(),
-        "executions": collect_cron_executions(),
+        "cron": collect_cron_jobs(locale),
+        "executions": collect_cron_executions(locale=locale),
         "logs": collect_logs(),
-        "errors": collect_error_stats(),
+        "errors": collect_error_stats(locale=locale),
         "memory": collect_memory(),
-        "launchd": collect_launchd_check(),
-        "dashboard": collect_dashboard_procs(),
+        "launchd": collect_launchd_check(locale),
+        "dashboard": collect_dashboard_procs(locale),
     }

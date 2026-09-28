@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest fastapi httpx
 
       - name: Compile / import check
         run: |
@@ -48,6 +48,7 @@ jobs:
       - name: Syntax check all Python
         run: |
           python -m compileall -q dashboard scripts tests
+          node --check dashboard/dist/index.js
       - name: Verify no secrets in tree
         run: |
           # 防止 .env / 数据库 / 凭据被误提交

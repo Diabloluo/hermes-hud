@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME = os.environ.get("HUD_CHROME_PATH", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -50,26 +50,21 @@ class CDP:
     """极简 CDP 客户端（websockets）。"""
 
     def __init__(self, port: int):
+        from websockets.sync.client import connect
         pages = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/json"))
         self.ws = next(p["webSocketDebuggerUrl"] for p in pages if p["type"] == "page")
         self._mid = 0
+        self.connection = connect(self.ws, proxy=None, max_size=8 * 1024 * 1024)
 
     def cmd(self, method: str, params: dict | None = None) -> dict:
-        import asyncio
-        import websockets
-
         self._mid += 1
         mid = self._mid
-
-        async def run():
-            async with websockets.connect(self.ws) as conn:
-                await conn.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
-                while True:
-                    msg = json.loads(await asyncio.wait_for(conn.recv(), 20))
-                    if msg.get("id") == mid:
-                        return msg
-
-        return asyncio.run(run())
+        self.connection.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
+        while True:
+            msg = json.loads(self.connection.recv(timeout=20))
+            if msg.get("id") == mid:
+                assert "error" not in msg, (method, msg)
+                return msg
 
     def eval(self, expr: str) -> str:
         r = self.cmd("Runtime.evaluate", {"expression": expr, "returnByValue": True})
@@ -80,10 +75,14 @@ class CDP:
 def hud_env():
     """隔离 dashboard：tmp home + 当前仓库插件 + enable + 起服务 + Chrome 页面。"""
     if not Path(CHROME).exists():
+        if os.environ.get("HUD_REQUIRE_BROWSER_ACCEPTANCE") == "1":
+            pytest.fail("release acceptance requires Chrome")
         pytest.skip("macOS Chrome not available")
     hermes_bin = shutil.which("hermes") or str(
         Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes")
     if not Path(hermes_bin).exists():
+        if os.environ.get("HUD_REQUIRE_BROWSER_ACCEPTANCE") == "1":
+            pytest.fail("release acceptance requires Hermes CLI")
         pytest.skip("hermes CLI not available")
     home = Path(tempfile.mkdtemp(prefix="hud-smoke-"))
     (home / "plugins").mkdir(parents=True)
@@ -160,20 +159,48 @@ def hud_env():
     if not ok:
         proc.terminate()
         tail = dbg_log.read_text(encoding="utf-8", errors="replace")[-1200:]
+        if os.environ.get("HUD_REQUIRE_BROWSER_ACCEPTANCE") == "1":
+            pytest.fail(f"release dashboard did not become ready: {tail}")
         pytest.skip(f"dashboard did not become ready (port {port}): {tail}")
 
     # headless Chrome 页面
     profile = tempfile.mkdtemp(prefix="hud-smoke-chrome-")
     cport = _free_port()
+    chrome_args = [CHROME, "--headless=new", "--disable-gpu",
+                   f"--user-data-dir={profile}", f"--remote-debugging-port={cport}",
+                   "--no-first-run", "--no-default-browser-check", "about:blank"]
+    if os.environ.get("CI") == "true":
+        # GitHub's ephemeral Ubuntu runner may deny Chrome user namespaces.
+        # Only synthetic localhost fixtures are opened in this CI profile.
+        chrome_args += ["--no-sandbox", "--disable-dev-shm-usage"]
     chrome = subprocess.Popen(
-        [CHROME, "--headless=new", "--disable-gpu",
-         f"--user-data-dir={profile}", f"--remote-debugging-port={cport}",
-         "--no-first-run", "--no-default-browser-check", f"http://127.0.0.1:{port}/hud"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    assert _wait_cdp(cport), "Chrome CDP not ready"
+        chrome_args,
+        stdout=subprocess.DEVNULL, stderr=open(dbg_log.parent / "chrome.log", "w"), start_new_session=True)
+    if not _wait_cdp(cport):
+        diagnostic = (dbg_log.parent / "chrome.log").read_text(errors="replace")[-3000:]
+        for p in (chrome, proc):
+            if p.poll() is None:
+                p.terminate()
+        pytest.fail(f"Chrome CDP not ready; exit={chrome.poll()}; {diagnostic}")
     time.sleep(4)
-    yield {"port": port, "cdp": CDP(cport), "chrome": chrome}
+    cdp = CDP(cport)
+    # 这批 smoke 断言硬编码中文文案 / Tab 名。HUD 现在跟随 Dashboard 的
+    # useI18n() locale（此前固定中文，忽略 Dashboard 语言设置）；全新浏览器
+    # profile 下 host 的默认语言本来就是 en（getInitialLocale() 无
+    # localStorage 时回退 en，这在本次改动之前就是 host 的既有行为），不显式
+    # 钉住 zh 的话，下面这些中文断言会在真实 macOS+Chrome 环境下全部失败，
+    # 且与插件本身是否正确无关——钉住后测的仍是原来这批用例一直在测的东西。
+    cdp.cmd("Page.enable")
+    cdp.cmd("Runtime.enable")
+    assert cdp.eval("1 + 1") == 2, "Chrome renderer sanity check failed"
+    init_script = cdp.cmd("Page.addScriptToEvaluateOnNewDocument", {"source":
+        "try { localStorage.setItem('hermes-locale', 'zh'); } catch (e) {}"})
+    cdp.cmd("Page.navigate", {"url": f"http://127.0.0.1:{port}/hud"})
+    time.sleep(4)
+    cdp.cmd("Page.removeScriptToEvaluateOnNewDocument", {"identifier": init_script["result"]["identifier"]})
+    yield {"port": port, "cdp": cdp, "chrome": chrome}
     # cleanup：owned 进程精确回收
+    cdp.connection.close()
     for p in (chrome, proc):
         if p.poll() is None:
             p.terminate()

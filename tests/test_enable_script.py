@@ -108,6 +108,14 @@ def _enabled_via_cli(tmp_home: Path) -> list:
     r = subprocess.run(["hermes", "config", "get", "--json", "plugins.enabled"],
                        capture_output=True, text=True, env=env, timeout=60)
     if r.returncode != 0:
+        if "invalid choice" in r.stderr:
+            # Minimum supported Hermes 0.19.0 lacks config get. Read through
+            # its official API in a fresh process so HERMES_HOME stays isolated.
+            r = subprocess.run([sys.executable, "-c",
+                "import json; from hermes_cli.config import load_config; "
+                "print(json.dumps((load_config().get('plugins') or {}).get('enabled') or []))"],
+                capture_output=True, text=True, env=env, timeout=60, check=True)
+            return json.loads(r.stdout.strip())
         return []
     return json.loads(r.stdout.strip())
 

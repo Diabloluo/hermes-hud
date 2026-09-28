@@ -57,7 +57,7 @@ def poisoned(monkeypatch, tmp_path):
     """每个采集器输出都注入测试 secret 的原始数据。"""
     secret = TEST_SECRETS[0]
 
-    def _gateway():
+    def _gateway(*args, **kwargs):
         return {"error": None, "pid": 1, "alive": True, "state": "running",
                 "start_time": time.time() - 100, "updated_at": time.time() - 10,
                 "active_agents": 0, "code_version": "v",
@@ -67,13 +67,13 @@ def poisoned(monkeypatch, tmp_path):
                     "error_code": "x", "error_message": redact_line(f"token={secret}"),
                     "updated_at": time.time() - 100, "heartbeat_age": 100}}}
 
-    def _system():
+    def _system(*args, **kwargs):
         return {"error": None, "cpu_percent": 10.0, "load_avg": [1, 1, 1],
                 "memory": {"percent": 20.0, "used": 1, "total": 8},
                 "disk_free_percent": 50.0, "disk_free_gb": 100.0, "disk_total_gb": 200.0,
                 "uptime_days": 1}
 
-    def _db():
+    def _db(*args, **kwargs):
         return {"error": None, "db_size_bytes": 100, "wal_bytes": 10,
                 "today_sessions": {"input_tokens": 1, "estimated_cost_usd": 0.1,
                                    "aux_est_cost": 0.0, "aux_actual_cost": 0.0}}
@@ -85,7 +85,7 @@ def poisoned(monkeypatch, tmp_path):
                  "cwd": sanitize_path(f"/Users/me/{secret}"),
                  "idle_seconds": 1, "running_seconds": 1}]
 
-    def _cron():
+    def _cron(*args, **kwargs):
         return {"error": None, "jobs": [{
             "id": "j1", "name": "任务", "enabled": True, "state": "scheduled",
             "schedule": "* * * * *", "schedule_kind": "cron",
@@ -96,7 +96,7 @@ def poisoned(monkeypatch, tmp_path):
             "summary": {"total": 1, "enabled": 1, "paused": 0, "disabled": 0,
                         "failing": 0, "running_state": 0}}
 
-    def _executions():
+    def _executions(*args, **kwargs):
         return {"error": None, "executions": [{
             "id": 1, "job_id": "j1", "source": "cron", "status": "completed",
             "claimed_at": time.time(), "started_at": time.time(),
@@ -107,7 +107,7 @@ def poisoned(monkeypatch, tmp_path):
         return {"error": None, "files": {"agent.log": {
             "lines": [redact_line(f"ERROR token={secret}"), "INFO ok"]}}}
 
-    def _errors():
+    def _errors(*args, **kwargs):
         # 与真实实现一致：buckets 内存含 raw first/last，但输出只暴露脱敏 sample
         return {"error": None, "count_30m": 1, "incidents": [
             {"fingerprint": "fp", "count": 1,
@@ -116,12 +116,12 @@ def poisoned(monkeypatch, tmp_path):
     def _memory():
         return {"error": None, "mem_used": 1, "mem_total": 8}
 
-    def _launchd():
+    def _launchd(*args, **kwargs):
         return {"error": None, "managed": True, "label": "ai.hermes.gateway",
                 "plist_exists": True, "status": "managed",
                 "note": sanitize_cmdline(f"python -m x --key {secret}")}
 
-    def _dashboard():
+    def _dashboard(*args, **kwargs):
         return {"error": None, "procs": [{"pid": 1, "rss": 1, "started_at": time.time(),
                                           "cmdline": sanitize_cmdline(f"/Users/me/bin/x --token {secret}")}]}
 
