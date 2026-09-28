@@ -172,29 +172,6 @@ jobs:
           cat /tmp/dashboard.log /tmp/snapshot.json > /tmp/cst-check.txt
           python scripts/fresh_install_check.py check-no-cst /tmp/cst-check.txt
 
-      - name: Setup Chrome for real multilingual acceptance
-        id: chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
-      - name: Real Dashboard browser acceptance — four locales and RTL
-        env:
-          HUD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-          HUD_REQUIRE_BROWSER_ACCEPTANCE: '1'
-          HUD_ACCEPTANCE_ARTIFACT_DIR: /tmp/hud-browser-acceptance
-        run: |
-          pip install pytest websockets
-          python -m pytest tests/test_enable_script.py tests/test_frontend_smoke.py tests/test_release_i18n_smoke.py -q -rs
-
-      - name: Upload synthetic browser acceptance screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hud-browser-acceptance
-          path: /tmp/hud-browser-acceptance
-          if-no-files-found: ignore
-
       - name: Clean shutdown (owned PID only)
         if: always()
         run: |
@@ -227,3 +204,36 @@ jobs:
           python -c "import hermes_cli.config as c; print([(n, hasattr(c, n)) for n in ('load_config','save_config','cfg_get','get_config_value')])" 2>&1 | tee -a /tmp/versions.txt
           python scripts/fresh_install_check.py redact-config \
             "$HERMES_HOME/config.yaml" /tmp/config-redacted.yaml
+
+  browser-acceptance:
+    # Native macOS install remains the job above; use a Linux Chrome renderer
+    # for deterministic browser acceptance, with the same minimum host.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install minimum supported Hermes and browser test dependencies
+        run: pip install 'hermes-agent==0.19.0' pytest websockets
+      - name: Setup Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+          install-dependencies: true
+      - name: Real Dashboard acceptance — four locales, live switching and RTL
+        env:
+          HUD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          HUD_REQUIRE_BROWSER_ACCEPTANCE: '1'
+          HUD_ACCEPTANCE_ARTIFACT_DIR: /tmp/hud-browser-acceptance
+        run: |
+          python -m pytest tests/test_enable_script.py tests/test_frontend_smoke.py tests/test_release_i18n_smoke.py -q -rs -x
+      - name: Upload synthetic browser acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hud-browser-acceptance
+          path: /tmp/hud-browser-acceptance
+          if-no-files-found: ignore

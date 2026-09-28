@@ -170,7 +170,7 @@ def hud_env():
         [CHROME, "--headless=new", "--disable-gpu",
          f"--user-data-dir={profile}", f"--remote-debugging-port={cport}",
          "--no-first-run", "--no-default-browser-check", "about:blank"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        stdout=subprocess.DEVNULL, stderr=open(dbg_log.parent / "chrome.log", "w"), start_new_session=True)
     assert _wait_cdp(cport), "Chrome CDP not ready"
     time.sleep(4)
     cdp = CDP(cport)
