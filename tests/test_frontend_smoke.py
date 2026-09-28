@@ -166,12 +166,22 @@ def hud_env():
     # headless Chrome 页面
     profile = tempfile.mkdtemp(prefix="hud-smoke-chrome-")
     cport = _free_port()
+    chrome_args = [CHROME, "--headless=new", "--disable-gpu",
+                   f"--user-data-dir={profile}", f"--remote-debugging-port={cport}",
+                   "--no-first-run", "--no-default-browser-check", "about:blank"]
+    if os.environ.get("CI") == "true":
+        # GitHub's ephemeral Ubuntu runner may deny Chrome user namespaces.
+        # Only synthetic localhost fixtures are opened in this CI profile.
+        chrome_args += ["--no-sandbox", "--disable-dev-shm-usage"]
     chrome = subprocess.Popen(
-        [CHROME, "--headless=new", "--disable-gpu",
-         f"--user-data-dir={profile}", f"--remote-debugging-port={cport}",
-         "--no-first-run", "--no-default-browser-check", "about:blank"],
+        chrome_args,
         stdout=subprocess.DEVNULL, stderr=open(dbg_log.parent / "chrome.log", "w"), start_new_session=True)
-    assert _wait_cdp(cport), "Chrome CDP not ready"
+    if not _wait_cdp(cport):
+        diagnostic = (dbg_log.parent / "chrome.log").read_text(errors="replace")[-3000:]
+        for p in (chrome, proc):
+            if p.poll() is None:
+                p.terminate()
+        pytest.fail(f"Chrome CDP not ready; exit={chrome.poll()}; {diagnostic}")
     time.sleep(4)
     cdp = CDP(cport)
     # 这批 smoke 断言硬编码中文文案 / Tab 名。HUD 现在跟随 Dashboard 的
