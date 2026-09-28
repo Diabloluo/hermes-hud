@@ -11,7 +11,7 @@
 ## ✨ 核心亮点
 
 - 🖥 **多 Tab 一屏指挥**：健康总览、实时活动、Token/费用、对话、时间线、记忆、技能、技能分析、定时任务、渠道、错误事故、系统存储、设置
-- 🌐 **四语 HUD**：中文、英文、法文、阿拉伯文（RTL），跟随 Dashboard 语言设置。感谢 [@Manaf-Alkadi](https://github.com/Manaf-Alkadi) 提交 [PR #26](https://github.com/Diabloluo/hermes-hud/pull/26)。
+- 🌐 **四语 HUD**：中文、英文、法文、阿拉伯文（RTL）。默认跟随 Dashboard，也可在 HUD 设置页独立选择，兼容旧版宿主。感谢 [@Manaf-Alkadi](https://github.com/Manaf-Alkadi) 提交 [PR #26](https://github.com/Diabloluo/hermes-hud/pull/26)。
 - ⚡ **2 秒级实时**：共享快照缓存 + WebSocket 增量事件流，REST 与 WS 不重复采集
 - 🔒 **严格只读边界**：Hermes 核心数据全程只读（`mode=ro` + 不锁 Gateway）；日志/路径先脱敏、指纹在脱敏后生成，raw secret 零出口
 - 📊 **费用口径可信**：主/辅调用不重复计数、`api_call_count` 累计、估算/实际/未计价三类分开标注

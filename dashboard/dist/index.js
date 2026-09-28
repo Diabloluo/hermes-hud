@@ -1721,7 +1721,7 @@
               CURRENT_LOCALE === "zh" ? "默认跟随 Dashboard。此处仅切换 HUD，并保存在浏览器 localStorage；不会向旧版宿主设置不支持的语言。" :
               CURRENT_LOCALE === "fr" ? "Par défaut, suit Dashboard. Ce choix ne change que HUD et est enregistré dans localStorage ; il ne modifie pas la langue de l'hôte." :
               CURRENT_LOCALE === "ar" ? "يتبع Dashboard افتراضياً. يغيّر هذا الاختيار لغة HUD فقط ويحفظها في localStorage دون تغيير لغة المضيف." :
-              "Follows Dashboard by default. This selection changes only HUD and persists in localStorage, without setting an unsupported host language."))))),
+              "Follows Dashboard by default. This selection changes only HUD and persists in localStorage, without setting an unsupported host language.")))),
       h("div", { className: "hud-footnote" },
         tt("刷新频率：snapshot 2s / usage·metrics 30s / settings·quality 30-60s；阈值可用 HUD_* 环境变量覆盖（见后端 rules.py）。"))));
   }

@@ -185,7 +185,7 @@ jobs:
           HUD_ACCEPTANCE_ARTIFACT_DIR: /tmp/hud-browser-acceptance
         run: |
           pip install pytest websockets
-          python -m pytest tests/test_frontend_smoke.py tests/test_release_i18n_smoke.py -q -rs
+          python -m pytest tests/test_enable_script.py tests/test_frontend_smoke.py tests/test_release_i18n_smoke.py -q -rs
 
       - name: Upload synthetic browser acceptance screenshots
         if: always()

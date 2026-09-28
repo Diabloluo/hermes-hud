@@ -7,8 +7,9 @@
 
 ### Added
 - **Multilingual HUD** — frontend and backend display text in Chinese, English,
-  French and Arabic, following the Dashboard language setting. Arabic uses the
-  host's RTL direction and logical CSS properties. Thanks to **@Manaf-Alkadi**
+  French and Arabic, following the Dashboard language setting by default.
+  The HUD picker provides a persisted HUD-only override, including Arabic RTL,
+  without setting unsupported languages on older hosts. Thanks to **@Manaf-Alkadi**
   for PR #26 and the follow-up fixes and tests.
 - Locale aliases such as `zh-CN`, `fr-FR` and `ar-SA` normalize to the supported
   base language; unknown API locales fall back to English. Requests without a
