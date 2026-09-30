@@ -151,7 +151,7 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
         assert "undefined" not in text and "NaN" not in text
         skills = None
         if index == 6:
-            wait_for(cdp, "document.querySelector('.hud-table tbody tr')")
+            wait_for(cdp, "!!document.querySelector('.hud-table tbody tr')")
             skills = skill_api_contract(hud_env, locale)
             assert_skill_dom_contract(cdp, hud_env, locale, skills)
         if locale != "zh":
@@ -197,7 +197,7 @@ def test_skill_static_translation_negative_controls(hud_env, locale):
     cdp.cmd("Page.navigate", {"url": f"http://127.0.0.1:{hud_env['port']}/hud"})
     wait_for(cdp, "document.querySelectorAll('.hud-tab').length === 13")
     cdp.eval("document.querySelectorAll('.hud-tab')[6].click()")
-    wait_for(cdp, "document.querySelector('.hud-table tbody tr')")
+    wait_for(cdp, "!!document.querySelector('.hud-table tbody tr')")
     payload = skill_api_contract(hud_env, locale)
     assert_no_static_cjk(cdp, locale, 6, payload)
     for selector in (".hud-table thead th", ".hud-grid-2 button", ".hud-table tbody td"):
