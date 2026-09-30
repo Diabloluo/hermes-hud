@@ -3,6 +3,45 @@
 本文件记录 Hermes HUD 的可见变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Fixed
+- Batch timeline events and the scan-start watermark in one transaction. Wait
+  for timeline work before submitting an executor job, and drain an active job
+  on cancellation so waiting clients leave capacity for snapshot refreshes.
+- Skip timeline inputs that cannot be bound to SQLite, including object-valued
+  fingerprints and integers outside the signed 64-bit range. Count rejected
+  events and log fixed field/reason counts without source content; valid events
+  and later scans continue, while database/commit failures still roll back.
+- Use canonical `session_model_usage` pricing provenance in session, usage,
+  snapshot and timeline responses. Unknown pricing is not displayed as a free
+  session. `/usage` now marks activity without pricing records as incomplete,
+  including mixtures of priced sessions and sessions with no usage records.
+- Keep the last diagnostic observation during the 30-second background refresh;
+  samples at least 60 seconds old, failed samples and cold starts remain unknown.
+- Share database statistics and OS diagnostics across locales at a 30-second
+  cadence; move timeline SQLite work off the API event loop. Sanitize session
+  titles and detail paths, escape literal session searches, and respect log
+  timestamp offsets, producer timezone and ambiguous DST times.
+
+### Compatibility
+- Schema remains **1** and the plugin version remains **1.2.1** pending release.
+  Existing clients must handle the corrected nullable fields and coverage
+  metadata described in [HUD API data contract](docs/architecture/HUD_API_DATA_CONTRACT.md).
+- `estimated_cost_usd` and `/usage`'s `est_cost` alias represent the **known priced
+  subtotal**, not a complete bill: a readable source with entirely unknown
+  pricing returns numeric `0` with `cost_complete=false`; an unavailable pricing
+  source returns `null`. Timeline completion costs are `null` when incomplete.
+- `/usage` pricing objects add `sessions_without_usage`. Missing session records
+  do not inflate `usage_rows` or `pricing_unknown_rows`; their presence makes
+  `cost_complete=false`, even if all existing usage rows are priced.
+- `count_30m` may be `null` when log timestamps are unavailable, `managed` may be
+  `null` while launchd status is unknown, and cost aliases may be `null` when the
+  pricing source is unavailable. Clients must not coerce these values to zero,
+  false or a healthy state. Diagnostic sampling metadata includes `refreshing`.
+- Numeric `actual_cost` values are recorded, unverified values, not provider
+  invoices. Token and auxiliary API-call accounting is unchanged.
+
 ## [1.2.1] - 2026-09-28
 
 ### Fixed

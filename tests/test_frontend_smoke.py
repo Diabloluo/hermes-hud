@@ -28,6 +28,33 @@ import pytest
 CHROME = os.environ.get("HUD_CHROME_PATH", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 REPO = Path(__file__).resolve().parents[1]
 
+# Observed metadata is not UI chrome. Keep this fixture synthetic and include
+# CJK in every raw field, HTML-looking text, and a description beyond 60 chars.
+SYNTHETIC_SKILLS = [
+    {"id": "synthetic-zh", "name": "合成技能 <b>原文</b>", "category": "合成分类",
+     "version": "测试版-1.0", "description": ("信息图与可视化 <b>原文</b> " + "保留原文 abc " * 12).rstrip()},
+    {"id": "synthetic-en", "name": "Synthetic English 中文", "category": "Synthetic English 分类",
+     "version": "1.0", "description": ("Synthetic English description 信息图, 可视化; " + "raw text " * 12).rstrip()},
+    {"id": "synthetic-fr", "name": "Compétence synthétique 中文", "category": "Catégorie synthétique 分类",
+     "version": "1.0", "description": ("Description synthétique française 中文原文 " + "texte brut " * 12).rstrip()},
+    {"id": "synthetic-ar", "name": "مهارة اصطناعية 中文", "category": "فئة اصطناعية 分类",
+     "version": "1.0", "description": ("وصف اصطناعي بالعربية 中文原文 " + "نص أصلي " * 12).rstrip()},
+    {"id": "synthetic-uncategorized", "name": "Synthetic uncategorized",
+     "category": None, "version": "1.0", "description": "Synthetic fallback category"},
+]
+
+
+def seed_synthetic_skills(home):
+    for skill in SYNTHETIC_SKILLS:
+        directory = home / "skills"
+        if skill["category"] is not None:
+            directory /= skill["category"]
+        directory /= skill["id"]
+        directory.mkdir(parents=True)
+        metadata = "\n".join(f"{key}: {skill[key]}" for key in ("name", "version", "description"))
+        (directory / "SKILL.md").write_text("---\n" + metadata + "\n---\nSynthetic test only.\n",
+                                             encoding="utf-8")
+
 
 def _free_port() -> int:
     with socket.socket() as s:
@@ -86,6 +113,7 @@ def hud_env():
         pytest.skip("hermes CLI not available")
     home = Path(tempfile.mkdtemp(prefix="hud-smoke-"))
     (home / "plugins").mkdir(parents=True)
+    seed_synthetic_skills(home)
     shutil.copytree(str(REPO), str(home / "plugins" / "hermes-hud"),
                     ignore=shutil.ignore_patterns(".git", "__pycache__"))
     # enable 插件
@@ -97,6 +125,12 @@ def hud_env():
     for k in ("HERMES_WEB_DIST", "HERMES_DESKTOP", "HERMES_SERVE_HEADLESS"):
         env.pop(k, None)
     env["HERMES_HOME"] = str(home)
+    # Newer hosts support overriding their bundled skills source. Do not let
+    # host/library upgrades change this synthetic language fixture. Older hosts
+    # may still seed their own bundled examples into this isolated home.
+    bundled = home / "empty-bundled-skills"
+    bundled.mkdir()
+    env["HERMES_BUNDLED_SKILLS"] = str(bundled)
     # —— demo fixture：预填 3 条 skill.* timeline 事件（仅 smoke 用，明确非生产数据）——
     _now = int(time.time())
     try:
@@ -198,7 +232,8 @@ def hud_env():
     cdp.cmd("Page.navigate", {"url": f"http://127.0.0.1:{port}/hud"})
     time.sleep(4)
     cdp.cmd("Page.removeScriptToEvaluateOnNewDocument", {"identifier": init_script["result"]["identifier"]})
-    yield {"port": port, "cdp": cdp, "chrome": chrome}
+    yield {"port": port, "cdp": cdp, "chrome": chrome,
+           "synthetic_skills": SYNTHETIC_SKILLS}
     # cleanup：owned 进程精确回收
     cdp.connection.close()
     for p in (chrome, proc):

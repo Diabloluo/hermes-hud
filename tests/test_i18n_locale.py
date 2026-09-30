@@ -76,7 +76,7 @@ def _ensure_fastapi_stub() -> None:
 
 _ensure_fastapi_stub()
 
-from hud import rules, storage  # noqa: E402
+from hud import rules, sampling, storage  # noqa: E402
 from hud.i18n import resolve_locale, t  # noqa: E402
 
 import plugin_api  # noqa: E402
@@ -337,13 +337,23 @@ def real_api(tmp_path, monkeypatch):
     home.mkdir()
     clock = _Clock()
     monkeypatch.setattr(plugin_api.collectors, "HERMES_HOME", home)
+    sampler = sampling.BackgroundSamples(30)
+    monkeypatch.setattr(plugin_api.collectors, "_DIAGNOSTIC_SAMPLES", sampler)
+    monkeypatch.setattr(plugin_api.collectors, "collect_launchd_check", lambda locale="zh": {
+        "status": "not_applicable"})
+    monkeypatch.setattr(plugin_api.collectors, "collect_dashboard_procs", lambda locale="zh": {
+        "procs": [{"pid": 1}]})
+    plugin_api.collectors.collect_snapshot_diagnostics()
+    sampler.wait_idle()
     monkeypatch.setattr(plugin_api, "store", storage.TelemetryStore(db_path=tmp_path / "telemetry.db"))
     monkeypatch.setattr(plugin_api, "time", types.SimpleNamespace(time=clock.time))
     monkeypatch.setattr(plugin_api, "_snapshot_cache", {})
     monkeypatch.setattr(plugin_api, "_last_snapshot", None)
     monkeypatch.setattr(plugin_api, "_last_overall", None)
     monkeypatch.setattr(plugin_api, "_last_telemetry_ts", 0.0)
-    return plugin_api, home, clock
+    yield plugin_api, home, clock
+    sampler.wait_idle()
+    sampler._pool.shutdown()
 
 
 # --------------------------------------------------------------------------

@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import sqlite3
+from contextlib import closing
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -131,21 +132,25 @@ def collect_session_events(home: Path, after_ts: int = 0) -> list[dict]:
     duration_ms = (ended_at - started_at) × 1000（epoch 秒差换算毫秒）。
     """
     out = []
+    con = None
     try:
         con = _state_conn(home)
         rows = con.execute(
             "SELECT id, source, model, started_at, ended_at, title,"
             " (SELECT SUM(input_tokens+output_tokens) FROM session_model_usage"
             " WHERE session_id=sessions.id),"
-            " (SELECT SUM(estimated_cost_usd) FROM session_model_usage"
-            " WHERE session_id=sessions.id)"
+            " NULL"
             " FROM sessions WHERE started_at >= ? OR ended_at >= ?"
             " ORDER BY started_at",
             (after_ts, after_ts)).fetchall()
-        con.close()
+        from .cost import session_pricing
+        pricing = session_pricing(con, [r[0] for r in rows])
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: sessions unavailable: %s", exc)
         return out
+    finally:
+        if con is not None:
+            con.close()
     for sid, source, model, started_at, ended_at, title, tokens, cost in rows:
         started_at = int(started_at or 0)
         if started_at:
@@ -167,7 +172,8 @@ def collect_session_events(home: Path, after_ts: int = 0) -> list[dict]:
                 "correlation_id": f"session:{sid}",
                 "duration_ms": int((ended_at - started_at) * 1000),
                 "tokens": int(tokens) if tokens is not None else None,
-                "cost_usd": float(cost) if cost is not None else None,
+                "cost_usd": (pricing[sid]["estimated_cost_usd"]
+                             if pricing[sid]["cost_complete"] else None),
             }))
     return out
 
@@ -179,6 +185,7 @@ def collect_tool_events(home: Path, after_ts: int = 0) -> list[dict]:
     只取明确含 tool 调用的行；summary 只含 tool 名（无参数、无输出）。
     """
     out = []
+    con = None
     try:
         con = _state_conn(home)
         rows = con.execute(
@@ -186,10 +193,12 @@ def collect_tool_events(home: Path, after_ts: int = 0) -> list[dict]:
             " FROM messages WHERE timestamp >= ? AND"
             " (tool_name IS NOT NULL AND tool_name != '' OR role = 'tool')"
             " ORDER BY timestamp", (after_ts,)).fetchall()
-        con.close()
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: tools unavailable: %s", exc)
         return out
+    finally:
+        if con is not None:
+            con.close()
     for sid, tool_name, call_id, ts, finish_reason, role in rows:
         if not tool_name and role == "tool":
             continue  # 无工具名的 tool 消息（纯输出）不生成事件
@@ -224,8 +233,9 @@ def collect_incident_events(storage, after_ts: int = 0) -> list[dict]:
     当前 incidents 表无 resolved_at 列 → 常规路径只生成 incident.opened。
     """
     out = []
+    con = None
     try:
-        con = storage._connect().__enter__()
+        con = storage._connect()
         # 兼容未来 schema：若 incidents 表有 resolved_at 列则读取
         cols = [r[1] for r in con.execute("PRAGMA table_info(incidents)")]
         has_resolved_at = "resolved_at" in cols
@@ -242,6 +252,9 @@ def collect_incident_events(storage, after_ts: int = 0) -> list[dict]:
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: incidents unavailable: %s", exc)
         return out
+    finally:
+        if con is not None:
+            con.close()
     for row in rows:
         if has_resolved_at:
             iid, fp, severity, title, first_seen, last_seen, status, resolved_at = row
@@ -323,8 +336,37 @@ def collect_skill_events(home: Path, after_ts: int = 0) -> list[dict]:
     return out
 
 
+def _input_error(event: dict) -> Optional[str]:
+    """Reject only invalid input before SQL; never classify database/IO errors.
+
+    Check every bound value, including optional metadata: JSON containers cannot
+    be SQLite parameters, and Python integers must fit signed 64-bit SQLite.
+    Reasons use fixed field names only; no values or source identities are logged.
+    """
+    if not event.get("event_id") or not event.get("timestamp"):
+        return "missing_identity_or_time"
+    for field in ("event_id", "timestamp", "event_type", "status", "session_id",
+                  "skill", "tool", "tool_call_id", "duration_ms", "tokens",
+                  "cost_usd", "incident_id", "summary", "source",
+                  "correlation_id", "source_record_id"):
+        value = event.get(field)
+        if isinstance(value, int) and not -(1 << 63) <= value < (1 << 63):
+            return f"integer_range:{field}"
+        if value is not None and not isinstance(value, (str, int, float, bytes,
+                                                       bytearray, memoryview)):
+            return f"binding_type:{field}"
+        if isinstance(value, memoryview) and not value.c_contiguous:
+            return f"binding_type:{field}"
+        if isinstance(value, str):
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError:
+                return f"string_encoding:{field}"
+    return None
+
+
 def collect_timeline(home: Path, storage, force: bool = False) -> dict:
-    """增量采集全部事件源；返回 {written, skipped, sources}。
+    """增量采集全部事件源；返回写入/跳过及无效输入原因的聚合计数。
 
     last_scan 存于 telemetry meta（force=True 全量重采但 event_id 幂等去重）。
     Watermark race 防护：查询起点 = 上次 watermark - SAFETY_WINDOW_S 安全窗口
@@ -335,7 +377,7 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
     last_scan = 0
     if not force:
         try:
-            with storage._connect() as conn:
+            with closing(storage._connect()) as conn, conn:
                 row = conn.execute("SELECT value FROM meta WHERE key='timeline_last_scan'").fetchone()
             last_scan = int(row[0]) if row and row[0] else 0
         except Exception:  # noqa: BLE001
@@ -349,25 +391,52 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
     events += collect_tool_events(home, scan_start)
     events += collect_incident_events(storage, scan_start)
     events += collect_skill_events(home, scan_start)
-    written = skipped = 0
+    valid_events = []
+    invalid_reasons: dict[str, int] = {}
     for ev in events:
-        if not ev.get("event_id") or not ev.get("timestamp"):
-            skipped += 1
-            continue
-        if storage.record_timeline_event(ev):
-            written += 1
+        reason = _input_error(ev)
+        if reason is None:
+            valid_events.append(ev)
         else:
-            skipped += 1
-    # 3. watermark 提交点 = scan_started_at（禁止写 scan-end now）：
+            invalid_reasons[reason] = invalid_reasons.get(reason, 0) + 1
+    invalid = len(events) - len(valid_events)
+    if invalid:
+        log.warning("timeline: rejected input events: invalid=%d reasons=%s",
+                    invalid, dict(sorted(invalid_reasons.items())))
+    # 3. One transaction for events and watermark; no per-event connection/commit.
+    # watermark 提交点 = scan_started_at（禁止写 scan-end now）：
     #    scan 期间 source 写入的记录（ts ≥ scan_started_at - 5）下一轮必然被
     #    重新扫到——不漏；重复由幂等 event_id 去重。
-    try:
-        with storage._connect() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO meta(key, value) VALUES('timeline_last_scan', ?)",
-                (str(scan_started_at),))
-    except Exception as exc:  # noqa: BLE001
-        log.debug("timeline: last_scan write failed: %s", exc)
+    written = storage.bulk_record_timeline_events(valid_events, scan_started_at=scan_started_at)
+    skipped = len(events) - written  # invalid and duplicate events retain skipped semantics
     return {"written": written, "skipped": skipped,
+            "invalid": invalid, "invalid_reasons": invalid_reasons,
             "sources": ["sessions", "tools", "incidents", "skills"],
             "scan_started_at": scan_started_at}
+
+
+def refresh_session_event_costs(home: Path, events: list[dict]) -> list[dict]:
+    """Revalidate legacy persisted totals without changing telemetry or state.db."""
+    from .cost import session_pricing
+    ids = [e["session_id"] for e in events if e.get("event_type") == "session.completed"
+           and e.get("session_id")]
+    if not ids:
+        for event in events:
+            if event.get("event_type") == "session.completed":
+                event["cost_usd"] = None
+        return events
+    con = None
+    try:
+        con = _state_conn(home)
+        pricing = session_pricing(con, ids)
+    except sqlite3.Error:
+        pricing = {}
+    finally:
+        if con is not None:
+            con.close()
+    for event in events:
+        if event.get("event_type") == "session.completed":
+            value = pricing.get(event.get("session_id"), {})
+            event["cost_usd"] = (value.get("estimated_cost_usd")
+                                 if value.get("cost_complete") else None)
+    return events
