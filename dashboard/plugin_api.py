@@ -17,6 +17,7 @@ import logging
 import os
 import sys
 import time
+from threading import Lock
 from pathlib import Path
 from typing import Any, Optional
 
@@ -35,6 +36,7 @@ from hud.redaction import redact_line  # noqa: E402
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+_timeline_lock = Lock()
 
 store = storage.TelemetryStore()
 
@@ -149,7 +151,9 @@ def _update_telemetry(snap: dict, health: dict) -> None:
     active_incs = store.list_incidents(active_only=True)
     now_fps = {i["fingerprint"] for i in health.get("incidents", [])}
     for inc in active_incs:
-        if inc["fingerprint"] not in now_fps:
+        unknown = health.get("unknown_incident_prefixes", [])
+        if inc["fingerprint"] not in now_fps and not any(
+                inc["fingerprint"].startswith(prefix) for prefix in unknown):
             store.recover_incident(inc["fingerprint"])
 
 
@@ -224,17 +228,27 @@ async def get_timeline(limit: int = 100, before: int | None = None,
     先触发增量采集（幂等），再查询——新事件进入后前端可直接 prepend。
     """
     limit = max(1, min(limit, 100))
-    try:
+    home = Path(collectors.HERMES_HOME)
+    current_store = store
+
+    def collect_and_query_unlocked():
         from hud import timeline
-        home = Path(collectors.HERMES_HOME)
-        timeline.collect_timeline(home, store)
-    except Exception as exc:  # noqa: BLE001 采集失败不阻断查询（empty/partial 安全）
-        print(f"HUD timeline collect failed: {exc}", file=sys.stderr)
-    rows = store.query_timeline(
-        limit=limit + 1, before=before, before_id=before_id, after=after,
-        session_id=session_id, event_type=event_type, status=status, skill=skill)
-    has_more = len(rows) > limit
-    return {"events": rows[:limit], "has_more": has_more, "limit": limit}
+        try:
+            timeline.collect_timeline(home, current_store)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("HUD timeline collection unavailable: %s", exc)
+        rows = current_store.query_timeline(
+            limit=limit + 1, before=before, before_id=before_id, after=after,
+            session_id=session_id, event_type=event_type, status=status, skill=skill)
+        return timeline.refresh_session_event_costs(home, rows)
+
+    def collect_and_query():
+        # Preserve watermark ordering when several clients request a refresh.
+        with _timeline_lock:
+            return collect_and_query_unlocked()
+
+    rows = await asyncio.to_thread(collect_and_query)
+    return {"events": rows[:limit], "has_more": len(rows) > limit, "limit": limit}
 
 
 @router.get("/timeline/stats")

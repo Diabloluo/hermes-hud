@@ -161,6 +161,12 @@ Hermes 现有数据源（只读）
 - **主/辅不重复计数**：主会话读 `sessions`，辅助调用只读 `session_model_usage.task != ''`
   （`task=''` 是主会话重复记账，不计入），API calls 用数据库 `api_call_count` 累计
 - **统计时区**：`HUD_TIMEZONE`（如 `Asia/Shanghai`）> 系统本地时区 > UTC；DB 的 UTC epoch 仅查询时转换
+- **日志时区**：errors.log 有明确偏移时按偏移解析；无偏移时用生产进程本地时区。
+  若日志来自不同的进程时区，设置 `HUD_LOG_TIMEZONE`（IANA 名称）。DST 歧义/不存在时间需明确偏移；无法解析的计数显示未知或不完整，未来记录不计入。
+- **快照采样**：Gateway/活跃会话仍随 2 秒快照更新；全库统计、launchd/进程诊断每 30 秒共享采样，跨语言复用。
+  数据库替换/时区变更/跨午夜立即重采，WAL 内新数据最迟下一周期可见；诊断后台刷新，API 提供采样时间。
+  诊断 `ready` 为正常样本；30 秒到期后的 `refreshing` 沿用上次结果，不因正常刷新产生健康告警。
+  样本年龄达到 60 秒（`stale`）、首次待采集（`pending`）或采集失败（`unavailable`）才显示未知；刷新完成后下次读取使用新结果。
 - **state.db 全程只读**：`mode=ro` + 短超时 + `query_only`，不锁 Gateway
 - **事故计数**：`observations` 为观测次数、`state_changes` 为实质状态变化次数，
   不把 2 秒轮询的观测数当作"事故触发次数"
