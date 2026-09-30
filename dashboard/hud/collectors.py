@@ -1029,7 +1029,9 @@ def collect_usage(days: int = 30) -> dict:
         cur.execute(
             "SELECT started_at, input_tokens, output_tokens, cache_read_tokens,"
             " cache_write_tokens, reasoning_tokens, estimated_cost_usd, actual_cost_usd,"
-            " cost_status, title, model, billing_provider"
+            " cost_status, title, model, billing_provider,"
+            " EXISTS (SELECT 1 FROM session_model_usage AS u"
+            " WHERE u.session_id = sessions.id)"
             " FROM sessions WHERE started_at >= ?",
             (time.time() - days * 86400,),
         )
@@ -1129,6 +1131,12 @@ def collect_usage(days: int = 30) -> dict:
         from .cost import read_pricing_rows, pricing_summary
         pricing_rows, source_ok = read_pricing_rows(conn, cutoff=time.time() - days * 86400)
         cost_days, cost_models, cost_tasks = {}, {}, {}
+        missing_days, missing_models = {}, {}
+        for r in sessions_rows:
+            if not r[12]:
+                day, model = _cst_day(r[0]), r[10] or "unknown"
+                missing_days[day] = missing_days.get(day, 0) + 1
+                missing_models[model] = missing_models.get(model, 0) + 1
         for r in pricing_rows:
             cost_days.setdefault(_cst_day(r[3]), []).append(r[4:7])
             cost_models.setdefault(r[1] or "unknown", []).append(r[4:7])
@@ -1145,7 +1153,16 @@ def collect_usage(days: int = 30) -> dict:
         for collection, field, grouped in ((days_agg, "day", cost_days),
                 (by_model, "model", cost_models), (by_task, "task", cost_tasks)):
             for item in collection.values():
-                pricing = pricing_summary(grouped.get(item[field], []), source_ok)
+                activity = any(item.get(key, 0) for key in
+                    ("sessions", "api_calls", "input", "output", "cache_read",
+                     "cache_write", "reasoning"))
+                pricing = pricing_summary(grouped.get(item[field], []), source_ok,
+                                          empty_is_zero=not activity)
+                missing = (missing_days if field == "day" else
+                           missing_models if field == "model" else {}).get(item[field], 0)
+                pricing["sessions_without_usage"] = missing
+                if missing:
+                    pricing["cost_complete"] = False
                 item.update(pricing)
                 item["est_cost"] = pricing["estimated_cost_usd"]
                 item["window_attribution"] = "last_seen"
@@ -1153,7 +1170,11 @@ def collect_usage(days: int = 30) -> dict:
         by_day = [days_agg[k] for k in sorted(days_agg)]
         by_model_list = sorted(by_model.values(), key=lambda x: -(x["est_cost"] or 0))
         by_task_list = sorted(by_task.values(), key=lambda x: -(x["est_cost"] or 0))
-        total_pricing = pricing_summary([r[4:7] for r in pricing_rows], source_ok)
+        total_pricing = pricing_summary([r[4:7] for r in pricing_rows], source_ok,
+                                       empty_is_zero=not (sessions_rows or usage_rows))
+        total_pricing["sessions_without_usage"] = sum(missing_days.values())
+        if total_pricing["sessions_without_usage"]:
+            total_pricing["cost_complete"] = False
         return {
             "days": days, "window_attribution": "last_seen", "window_exact": False,
             "actual_cost_semantics": "recorded_unverified",

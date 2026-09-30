@@ -157,6 +157,7 @@ Hermes 现有数据源（只读）
 
 ## 📊 数据口径
 
+- API 字段的可空性、费用完整性与采样状态见 [HUD API 数据契约](docs/architecture/HUD_API_DATA_CONTRACT.md)；调用方不得把未知值转换成零费用或健康状态。
 - **费用三类分开**：`实际`（provider 账单）/ `估算`（按模型价表）/ `未计价`。无账单数据时一律标"本地估算"
 - **主/辅不重复计数**：主会话读 `sessions`，辅助调用只读 `session_model_usage.task != ''`
   （`task=''` 是主会话重复记账，不计入），API calls 用数据库 `api_call_count` 累计
