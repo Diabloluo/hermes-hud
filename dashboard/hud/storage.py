@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import sqlite3
+from contextlib import closing
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -109,7 +110,7 @@ class TelemetryStore:
 
     def _init_schema(self) -> None:
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 conn.executescript(_SCHEMA)
                 # 平滑迁移旧库（列已存在时忽略）
                 for sql in _MIGRATIONS:
@@ -124,7 +125,7 @@ class TelemetryStore:
 
     def record_metric(self, kind: str, name: str, value: float, meta: Optional[dict] = None) -> None:
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 conn.execute(
                     "INSERT INTO metrics(ts, kind, name, value, meta) VALUES(?,?,?,?,?)",
                     (int(time.time()), kind, name, float(value),
@@ -139,7 +140,7 @@ class TelemetryStore:
             return
         now = int(time.time())
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 conn.executemany(
                     "INSERT INTO metrics(ts, kind, name, value, meta) VALUES(?,?,?,?,?)",
                     [(now, kind, n, v, json.dumps(m)[:512] if m else None) for n, v, m in items],
@@ -158,7 +159,7 @@ class TelemetryStore:
         """
         now = now or int(time.time())
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 row = conn.execute(
                     "SELECT id, count, status, severity, title, detail FROM incidents WHERE fingerprint=?",
                     (fingerprint,),
@@ -186,7 +187,7 @@ class TelemetryStore:
     def recover_incident(self, fingerprint: str, now: Optional[int] = None) -> None:
         now = now or int(time.time())
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 conn.execute(
                     "UPDATE incidents SET status='recovered', last_seen=? WHERE fingerprint=? AND status IN ('active','pending_recovery')",
                     (now, fingerprint),
@@ -202,7 +203,7 @@ class TelemetryStore:
         """
         now = now or int(time.time())
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 conn.execute(
                     "UPDATE incidents SET status='pending_recovery', last_seen=? "
                     "WHERE fingerprint=? AND status='active'",
@@ -226,7 +227,7 @@ class TelemetryStore:
         q += " ORDER BY ts DESC LIMIT ?"
         args.append(limit)
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 rows = conn.execute(q, args).fetchall()
             out = []
             for ts, k, n, v, m in rows:
@@ -245,7 +246,7 @@ class TelemetryStore:
             q += " WHERE status IN ('active','pending_recovery')"
         q += " ORDER BY last_seen DESC LIMIT ?"
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 rows = conn.execute(q, (limit,)).fetchall()
             return [
                 {"id": r[0], "fingerprint": r[1], "severity": r[2], "title": r[3],
@@ -265,7 +266,7 @@ class TelemetryStore:
 
         返回 True=新写入，False=重复（已存在）。
         """
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 "INSERT OR IGNORE INTO timeline_events (event_id, ts, event_type, status,"
                 " session_id, skill, tool, tool_call_id, duration_ms, tokens, cost_usd,"
@@ -325,7 +326,7 @@ class TelemetryStore:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY ts DESC, event_id DESC LIMIT ?"
         params.append(limit)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(sql, params).fetchall()
         cols = ["event_id", "timestamp", "event_type", "status", "session_id", "skill",
                 "tool", "tool_call_id", "duration_ms", "tokens", "cost_usd",
@@ -353,7 +354,7 @@ class TelemetryStore:
                  MAX(ts) AS last_observed_at
                  FROM timeline_events WHERE {where}
                  GROUP BY skill ORDER BY skill"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(sql, params).fetchall()
         out: dict[str, dict] = {}
         for skill, failed, completed, observed, avg_dur, last_ts in rows:
@@ -383,7 +384,7 @@ class TelemetryStore:
         sql = "SELECT event_id, ts, event_type, status, skill, duration_ms, summary," \
               " source FROM timeline_events WHERE " + where + \
               " ORDER BY ts DESC, event_id DESC LIMIT ?"
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             rows = conn.execute(sql, params).fetchall()
         return [{"event_id": r[0], "timestamp": r[1], "event_type": r[2],
                  "status": r[3], "skill": r[4], "duration_ms": r[5],
@@ -403,7 +404,7 @@ class TelemetryStore:
         for ev in events:
             rows.append(tuple(ev.get(c) if c != "ts" else ev.get("timestamp")
                               for c in cols))
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.executemany(
                 f"INSERT OR IGNORE INTO timeline_events ({','.join(cols)})"
                 f" VALUES ({','.join('?' * len(cols))})", rows)
@@ -412,7 +413,7 @@ class TelemetryStore:
 
     def timeline_stats(self) -> dict:
         """Timeline 汇总（总量 + 类型分布 + 最近事件时间）。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             total = conn.execute("SELECT COUNT(*) FROM timeline_events").fetchone()[0]
             by_type = dict(conn.execute(
                 "SELECT event_type, COUNT(*) FROM timeline_events GROUP BY event_type").fetchall())
@@ -427,14 +428,14 @@ class TelemetryStore:
         """
         now = int(time.time())
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 row = conn.execute("SELECT value FROM meta WHERE key='last_prune'").fetchone()
             last = int(row[0]) if row and row[0] else 0
             if last and now - last < MAINTENANCE_INTERVAL_S:
                 return {"pruned": False, "next_in_s": int(MAINTENANCE_INTERVAL_S - (now - last))}
             result = self.prune()
             try:
-                with self._connect() as conn:
+                with closing(self._connect()) as conn, conn:
                     conn.execute(
                         "INSERT OR REPLACE INTO meta(key, value) VALUES('last_prune', ?)",
                         (str(now),),
@@ -455,7 +456,7 @@ class TelemetryStore:
         cut_incident = now - INCIDENT_RETENTION_DAYS * 86400
         cut_timeline = now - TIMELINE_RETENTION_DAYS * 86400
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 m = conn.execute("DELETE FROM metrics WHERE ts<?", (cut_metric,)).rowcount
                 i = conn.execute("DELETE FROM incidents WHERE last_seen<? AND status='recovered'",
                                  (cut_incident,)).rowcount
@@ -468,7 +469,7 @@ class TelemetryStore:
 
     def stats(self) -> dict:
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn, conn:
                 metrics = conn.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
                 incidents = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
                 active = conn.execute("SELECT COUNT(*) FROM incidents WHERE status='active'").fetchone()[0]

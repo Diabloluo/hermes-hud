@@ -670,6 +670,15 @@
     return (n / 1000000000).toFixed(2) + "B";
   }
 
+  function pricingCostCell(s) {
+    if (!s) return "—";
+    if (s.cost_complete) return fmtUSD(s.estimated_cost_usd);
+    if (s.pricing_known_rows > 0)
+      return tt("已知部分 $") + (s.estimated_cost_usd || 0).toFixed(4) +
+        " · " + Math.round((s.pricing_coverage_ratio || 0) * 100) + "%";
+    return tt("—（定价未知）");
+  }
+
   function fmtUSD(n) {
     if (n == null || isNaN(n)) return "-";
     return "$" + n.toFixed(n < 1 ? 4 : 2);
@@ -831,7 +840,6 @@
     const platforms = gw.platforms || {};
 
     // C-1: 今日估算 = canonical estimated（unpriced aux 不得计入估算）
-    const totalCost = today.estimated_cost_usd || 0;
     const checks = (health && health.checks) || [];
     const incidents = (health && health.incidents) || [];
 
@@ -867,8 +875,9 @@
             kv(tt("Cache 读"), fmtTokens(today.cache_read_tokens)),
             h("div", { style: { display: "flex", alignItems: "baseline", gap: 6 } },
               h("span", { className: "k" }, tt("估算费用")),
-              h("span", { className: "v", style: { fontSize: 16, fontWeight: 700 } }, fmtUSD(totalCost)),
-              h(Badge, { variant: "secondary" }, tt("估算"))))),
+              h("span", { className: "v", style: { fontSize: 16, fontWeight: 700 } }, pricingCostCell(today)),
+              h(Badge, { variant: "secondary" }, tt("估算"))),
+            db.sampled_at ? h("div", { className: "hud-footnote" }, tt("采集于 ") + fmtTime(db.sampled_at)) : null)),
         card(tt("Cron / 会话"),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
             kv(tt("任务"), cron.summary && cron.summary.enabled != null && cron.summary.total != null ? (cron.summary.enabled + tt(" 启用 / ") + cron.summary.total + tt(" 总")) : "-"),
@@ -1210,7 +1219,7 @@
                   kv(tt("消息"), String(detail.data.message_count || 0)),
                   kv(tt("工具调用"), String(detail.data.tool_call_count || 0)),
                   kv(tt("输入"), fmtTokens(detail.data.input_tokens)), kv(tt("输出"), fmtTokens(detail.data.output_tokens)),
-                  kv(tt("估算费用"), fmtUSD(detail.data.estimated_cost_usd)),
+                  kv(tt("估算费用"), pricingCostCell(detail.data)),
                   kv(tt("开始"), fmtTime(detail.data.started_at))),
                 h("div", { style: { fontSize: 12, fontWeight: 600, opacity: 0.7, margin: "8px 0 4px" } }, tt("消息预览（正文按需加载，已脱敏）")),
                 h("div", { className: "hud-scroll" },
@@ -1229,7 +1238,7 @@
                         h("td", null, u.model), h("td", null, u.task || tt("(主)")),
                         h("td", { className: "num" }, String(u.api_calls)),
                         h("td", { className: "num" }, fmtTokens(u.input_tokens)),
-                        h("td", { className: "num" }, fmtUSD(u.estimated_cost_usd)));
+                        h("td", { className: "num" }, pricingCostCell(u)));
                     }))))
                 : null)
             : detail && detail.loading
@@ -1255,7 +1264,7 @@
                         h("td", null, s.model || "-"),
                         h("td", { className: "num" }, String(s.message_count || 0)),
                         h("td", { className: "num" }, fmtTokens(s.input_tokens)),
-                        h("td", { className: "num" }, fmtUSD(s.estimated_cost_usd)),
+                        h("td", { className: "num" }, pricingCostCell(s)),
                         h("td", { className: "num", style: { fontSize: 11 } }, fmtTime(s.started_at).slice(5)));
                     }))))))));
   }
@@ -1432,7 +1441,8 @@
       h("div", { className: "hud-grid hud-grid-4" },
         card(tt("近 30 分钟错误"), h("div", {
           style: { fontSize: 20, fontWeight: 700, color: errors.count_30m > 20 ? "#f87171" : undefined },
-        }, String(errors.count_30m || 0))),
+        }, errors.count_30m == null ? tt("未知") :
+          (errors.timestamp_status === "partial" ? "≥ " : "") + String(errors.count_30m))),
         card(tt("错误指纹"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, String((errors.incidents || []).length))),
         card(tt("活跃事故"), h("div", { style: { fontSize: 20, fontWeight: 700 } },
           String(activeNow.length + (incidents || []).filter(function (i) { return i.status === "active"; }).length))),
@@ -1501,7 +1511,10 @@
     const memSeries = metrics.filter(function (m) { return m.name === "mem_percent"; }).map(function (m) { return m.value; });
     const diskSeries = metrics.filter(function (m) { return m.name === "disk_free_percent"; }).map(function (m) { return m.value; });
 
-    const dashProcs = dash.procs || [];
+    const launchdUnknown = ["pending", "stale", "unavailable"].includes(launchd.sample_status) || !!launchd.error;
+    const launchdApplicable = launchd.status !== "not_applicable";
+    const dashboardUnknown = ["pending", "stale", "unavailable"].includes(dash.sample_status) || !!dash.error;
+    const dashProcs = dashboardUnknown ? [] : (dash.procs || []);
     const gwProc = sys.gateway_proc;
 
     return h(React.Fragment, null,
@@ -1535,6 +1548,7 @@
                 h("td", { className: "num" }, String(gwProc.pid)),
                 h("td", { className: "num" }, fmtBytes(gwProc.rss)),
                 h("td", { className: "num" }, gwProc.uptime_seconds ? Math.round(gwProc.uptime_seconds / 3600) + "h" : "-")) : null,
+              dashboardUnknown ? h("tr", { key: "unknown" }, h("td", { colSpan: 4 }, tt("未知"))) : null,
               dashProcs.map(function (p) {
                 return h("tr", { key: p.pid },
                   h("td", { style: { fontWeight: 600 } }, "Dashboard (serve)"),
@@ -1551,15 +1565,17 @@
                 h("td", { className: "mono" }, name),
                 h("td", { className: "num" },
                   s ? fmtBytes(s.bytes) + (s.wal_bytes ? " (+WAL " + fmtBytes(s.wal_bytes) + ")" : "") : "-"));
-            })))),
+            }))),
+          db.sampled_at ? h("div", { className: "hud-footnote" }, tt("采集于 ") + fmtTime(db.sampled_at)) : null),
         card(tt("服务托管"),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
             h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-              h("span", { className: "hud-dot " + dotClass(launchd.managed, !launchd.managed) }),
-              h("span", { fontWeight: 600 }, launchd.managed ? tt("launchd 托管") : tt("未由 launchd 托管"))),
+              h("span", { className: "hud-dot " + dotClass(!launchdUnknown && launchd.managed, !launchdUnknown && !launchd.managed) }),
+              h("span", { fontWeight: 600 }, launchdUnknown ? tt("未知") : !launchdApplicable ? launchd.note : launchd.managed ? tt("launchd 托管") : tt("未由 launchd 托管"))),
             kv(tt("服务定义"), launchd.label || tt("无 plist")),
             launchd.note ? h("div", { className: "mono", style: { fontSize: 10.5, opacity: 0.6 } }, launchd.note) : null,
-            !launchd.managed ? h(Badge, { variant: "warning" }, tt("Gateway 重启后可能不自启 — 建议修复")) : null))),
+            launchd.sampled_at ? h("div", { className: "hud-footnote" }, tt("采集于 ") + fmtTime(launchd.sampled_at)) : null,
+            !launchdUnknown && launchdApplicable && !launchd.managed ? h(Badge, { variant: "warning" }, tt("Gateway 重启后可能不自启 — 建议修复")) : null))),
 
       h("div", { className: "hud-grid hud-grid-3" },
         card(tt("CPU 趋势 (telemetry)"),

@@ -68,6 +68,7 @@ def _inc_text(title_key: str, detail_key: str | None, locale: str, *,
 def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
     checks: list[dict] = []
     incidents: list[dict] = []
+    unknown_incident_prefixes: list[str] = []
     now = time.time()
 
     gw = snap.get("gateway") or {}
@@ -207,7 +208,8 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
     # ---- warning: 错误速率 ----
     err = snap.get("errors") or {}
     err_count = err.get("count_30m", 0)
-    if err.get("error"):
+    if err.get("error") or err_count is None:
+        unknown_incident_prefixes.append("logs:")
         checks.append({"key": "error_burst", "status": "warning", "severity": "warning",
                        "message": t("errors_log_unavailable", locale)})
     elif err_count > ERROR_BURST_WARN:
@@ -216,13 +218,21 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
         incidents.append({"fingerprint": "logs:error-burst", "severity": "warning",
                           **_inc_text("error_burst_title", "recent_errors_count", locale,
                                       count=err_count)})
+    elif err.get("timestamp_status") == "partial":
+        unknown_incident_prefixes.append("logs:")
+        checks.append({"key": "error_burst", "status": "warning", "severity": "warning",
+                       "message": t("err_log_timestamps_unavailable", locale)})
     else:
         checks.append({"key": "error_burst", "status": "normal", "severity": "normal",
                        "message": t("recent_errors_count", locale, count=err_count)})
 
     # ---- warning: launchd 脱管 ----
     ld = snap.get("launchd") or {}
-    if ld.get("status") == "not_applicable":
+    if ld.get("sample_status") in {"pending", "stale", "unavailable"} or ld.get("error"):
+        unknown_incident_prefixes.append("launchd:")
+        checks.append({"key": "launchd", "status": "warning", "severity": "warning",
+                       "message": t("diagnostic_pending", locale, name="launchd")})
+    elif ld.get("status") == "not_applicable":
         # 非 macOS：launchd 概念不适用，不算告警
         checks.append({"key": "launchd", "status": "normal", "severity": "normal",
                        "message": t("launchd_na", locale)})
@@ -241,7 +251,11 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
     # ---- warning: Dashboard 未常驻 ----
     dash = snap.get("dashboard") or {}
     dash_procs = dash.get("procs") or []
-    if dash_procs:
+    if dash.get("sample_status") in {"pending", "stale", "unavailable"} or dash.get("error"):
+        unknown_incident_prefixes.append("dashboard:")
+        checks.append({"key": "dashboard", "status": "warning", "severity": "warning",
+                       "message": t("diagnostic_pending", locale, name="Dashboard")})
+    elif dash_procs:
         checks.append({"key": "dashboard", "status": "normal", "severity": "normal",
                        "message": t("dashboard_running", locale, n=len(dash_procs))})
     else:
@@ -313,5 +327,6 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
         "counts": counts,
         "checks": checks,
         "incidents": incidents,
+        "unknown_incident_prefixes": unknown_incident_prefixes,
         "evaluated_at": now,
     }

@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import sqlite3
+from contextlib import closing
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -131,21 +132,25 @@ def collect_session_events(home: Path, after_ts: int = 0) -> list[dict]:
     duration_ms = (ended_at - started_at) × 1000（epoch 秒差换算毫秒）。
     """
     out = []
+    con = None
     try:
         con = _state_conn(home)
         rows = con.execute(
             "SELECT id, source, model, started_at, ended_at, title,"
             " (SELECT SUM(input_tokens+output_tokens) FROM session_model_usage"
             " WHERE session_id=sessions.id),"
-            " (SELECT SUM(estimated_cost_usd) FROM session_model_usage"
-            " WHERE session_id=sessions.id)"
+            " NULL"
             " FROM sessions WHERE started_at >= ? OR ended_at >= ?"
             " ORDER BY started_at",
             (after_ts, after_ts)).fetchall()
-        con.close()
+        from .cost import session_pricing
+        pricing = session_pricing(con, [r[0] for r in rows])
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: sessions unavailable: %s", exc)
         return out
+    finally:
+        if con is not None:
+            con.close()
     for sid, source, model, started_at, ended_at, title, tokens, cost in rows:
         started_at = int(started_at or 0)
         if started_at:
@@ -167,7 +172,8 @@ def collect_session_events(home: Path, after_ts: int = 0) -> list[dict]:
                 "correlation_id": f"session:{sid}",
                 "duration_ms": int((ended_at - started_at) * 1000),
                 "tokens": int(tokens) if tokens is not None else None,
-                "cost_usd": float(cost) if cost is not None else None,
+                "cost_usd": (pricing[sid]["estimated_cost_usd"]
+                             if pricing[sid]["cost_complete"] else None),
             }))
     return out
 
@@ -179,6 +185,7 @@ def collect_tool_events(home: Path, after_ts: int = 0) -> list[dict]:
     只取明确含 tool 调用的行；summary 只含 tool 名（无参数、无输出）。
     """
     out = []
+    con = None
     try:
         con = _state_conn(home)
         rows = con.execute(
@@ -186,10 +193,12 @@ def collect_tool_events(home: Path, after_ts: int = 0) -> list[dict]:
             " FROM messages WHERE timestamp >= ? AND"
             " (tool_name IS NOT NULL AND tool_name != '' OR role = 'tool')"
             " ORDER BY timestamp", (after_ts,)).fetchall()
-        con.close()
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: tools unavailable: %s", exc)
         return out
+    finally:
+        if con is not None:
+            con.close()
     for sid, tool_name, call_id, ts, finish_reason, role in rows:
         if not tool_name and role == "tool":
             continue  # 无工具名的 tool 消息（纯输出）不生成事件
@@ -224,8 +233,9 @@ def collect_incident_events(storage, after_ts: int = 0) -> list[dict]:
     当前 incidents 表无 resolved_at 列 → 常规路径只生成 incident.opened。
     """
     out = []
+    con = None
     try:
-        con = storage._connect().__enter__()
+        con = storage._connect()
         # 兼容未来 schema：若 incidents 表有 resolved_at 列则读取
         cols = [r[1] for r in con.execute("PRAGMA table_info(incidents)")]
         has_resolved_at = "resolved_at" in cols
@@ -242,6 +252,9 @@ def collect_incident_events(storage, after_ts: int = 0) -> list[dict]:
     except Exception as exc:  # noqa: BLE001
         log.debug("timeline: incidents unavailable: %s", exc)
         return out
+    finally:
+        if con is not None:
+            con.close()
     for row in rows:
         if has_resolved_at:
             iid, fp, severity, title, first_seen, last_seen, status, resolved_at = row
@@ -335,7 +348,7 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
     last_scan = 0
     if not force:
         try:
-            with storage._connect() as conn:
+            with closing(storage._connect()) as conn, conn:
                 row = conn.execute("SELECT value FROM meta WHERE key='timeline_last_scan'").fetchone()
             last_scan = int(row[0]) if row and row[0] else 0
         except Exception:  # noqa: BLE001
@@ -362,7 +375,7 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
     #    scan 期间 source 写入的记录（ts ≥ scan_started_at - 5）下一轮必然被
     #    重新扫到——不漏；重复由幂等 event_id 去重。
     try:
-        with storage._connect() as conn:
+        with closing(storage._connect()) as conn, conn:
             conn.execute(
                 "INSERT OR REPLACE INTO meta(key, value) VALUES('timeline_last_scan', ?)",
                 (str(scan_started_at),))
@@ -371,3 +384,30 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
     return {"written": written, "skipped": skipped,
             "sources": ["sessions", "tools", "incidents", "skills"],
             "scan_started_at": scan_started_at}
+
+
+def refresh_session_event_costs(home: Path, events: list[dict]) -> list[dict]:
+    """Revalidate legacy persisted totals without changing telemetry or state.db."""
+    from .cost import session_pricing
+    ids = [e["session_id"] for e in events if e.get("event_type") == "session.completed"
+           and e.get("session_id")]
+    if not ids:
+        for event in events:
+            if event.get("event_type") == "session.completed":
+                event["cost_usd"] = None
+        return events
+    con = None
+    try:
+        con = _state_conn(home)
+        pricing = session_pricing(con, ids)
+    except sqlite3.Error:
+        pricing = {}
+    finally:
+        if con is not None:
+            con.close()
+    for event in events:
+        if event.get("event_type") == "session.completed":
+            value = pricing.get(event.get("session_id"), {})
+            event["cost_usd"] = (value.get("estimated_cost_usd")
+                                 if value.get("cost_complete") else None)
+    return events

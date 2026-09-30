@@ -27,7 +27,8 @@ except Exception:  # pragma: no cover
 import sys
 
 from .i18n import t
-from .redaction import redact_line, sanitize_cmdline, sanitize_path
+from .sampling import BackgroundSamples, PeriodicSample
+from .redaction import redact_line, sanitize_cmdline, sanitize_path, sanitize_title
 
 # ---------------------------------------------------------------------------
 # 基础
@@ -278,7 +279,7 @@ def collect_db(locale: str = "zh") -> dict:
         out["usage"] = {
             "input_tokens": row[0], "output_tokens": row[1],
             "cache_read_tokens": row[2], "cache_write_tokens": row[3],
-            "reasoning_tokens": row[4], "estimated_cost_usd": row[5],
+            "reasoning_tokens": row[4], "estimated_cost_usd": None, "cost_complete": False,
         }
         # 会话内模型使用（含辅助调用 task != ''）
         cur.execute(
@@ -291,7 +292,7 @@ def collect_db(locale: str = "zh") -> dict:
         out["model_usage"] = {
             "api_calls": row[0], "sessions": row[1],
             "input_tokens": row[2], "output_tokens": row[3],
-            "cache_read_tokens": row[4], "estimated_cost_usd": row[5],
+            "cache_read_tokens": row[4], "estimated_cost_usd": None, "cost_complete": False,
         }
         # 辅助调用（task != ''）
         cur.execute(
@@ -303,7 +304,7 @@ def collect_db(locale: str = "zh") -> dict:
         row = cur.fetchone()
         out["aux_usage"] = {
             "api_calls": row[0], "input_tokens": row[1], "output_tokens": row[2],
-            "cache_read_tokens": row[3], "estimated_cost_usd": row[4],
+            "cache_read_tokens": row[3], "estimated_cost_usd": None, "cost_complete": False,
         }
         # 今日（HUD statistics timezone / configured local timezone）
         tz = get_hud_timezone()
@@ -326,7 +327,7 @@ def collect_db(locale: str = "zh") -> dict:
             "output_tokens": cost_summary.get("output_tokens"),
             "cache_read_tokens": cost_summary.get("cache_read_tokens"),
             "estimated_cost_usd": cost_summary.get("estimated_cost_usd"),
-            "pricing_unknown_rows": cov.get("pricing_unknown_rows"),
+            **cov,
             "count": cur.fetchone()[0],
         }
         # aux（task != ''）独立观测：仅供 telemetry/辅助分析，绝不参与 header 估算
@@ -337,8 +338,16 @@ def collect_db(locale: str = "zh") -> dict:
             (day_start_epoch,),
         )
         row = cur.fetchone()
-        out["today_sessions"]["aux_est_cost"] = row[0]
+        out["today_sessions"]["aux_est_cost"] = None
         out["today_sessions"]["aux_actual_cost"] = row[1]
+        total_pricing = _cost.read_pricing_summary(conn)
+        for key in ("usage", "model_usage"):
+            out[key].update(total_pricing)
+            out[key]["window_attribution"] = "lifetime_cumulative"
+        out["aux_usage"].update(_cost.read_pricing_summary(conn, auxiliary=True))
+        aux_today = _cost.read_pricing_summary(conn, auxiliary=True, cutoff=day_start_epoch)
+        out["today_sessions"]["aux_est_cost"] = aux_today["estimated_cost_usd"]
+        out["today_sessions"]["aux_cost_coverage"] = aux_today
     except Exception as exc:
         out["error_key"], out["error_args"] = "err_query_failed", {"exc": str(exc)}
         out["error"] = t(out["error_key"], locale, **out["error_args"])
@@ -348,6 +357,53 @@ def collect_db(locale: str = "zh") -> dict:
         except Exception:
             pass
     return out
+
+
+_DB_SAMPLE = PeriodicSample(30.0)
+_DIAGNOSTIC_SAMPLES = BackgroundSamples(30.0)
+
+
+def _db_identity(path: Path):
+    try:
+        stat = path.stat()
+        return str(path.resolve()), stat.st_dev, stat.st_ino
+    except OSError:
+        return str(path.resolve()), None, None
+
+
+def collect_snapshot_db(locale: str = "zh") -> dict:
+    """Snapshot totals refresh at most every 30s; WAL changes appear by next sample.
+
+    Source replacement/missing file, statistics timezone and local midnight force
+    a fresh read. Errors retry after 2s. Direct collect_db remains an uncached read.
+    """
+    tz = get_hud_timezone()
+    local_day = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    source = Path(os.environ.get("HUD_STATE_DB", str(HERMES_HOME / "state.db")))
+    key = (_db_identity(HERMES_HOME / "state.db"), _db_identity(source),
+           local_day, os.environ.get("HUD_TIMEZONE"), os.environ.get("TZ"), collect_db)
+    value = _DB_SAMPLE.read(key, lambda: collect_db("zh"))
+    value["sizes"] = _db_sizes()
+    if value.get("error_key"):
+        value["error"] = t(value["error_key"], locale, **(value.get("error_args") or {}))
+    return value
+
+
+def collect_snapshot_diagnostics(locale: str = "zh") -> dict:
+    """Share diagnostic samples across locales; cold/expired reads are nonblocking."""
+    identity = (str(HERMES_HOME.resolve()), str(Path.home()), sys.platform)
+    launchd_fn, dashboard_fn = collect_launchd_check, collect_dashboard_procs
+    launchd = _DIAGNOSTIC_SAMPLES.read(
+        ("launchd", identity, launchd_fn), lambda: launchd_fn("zh"),
+        {"managed": None, "label": None, "plist_exists": None, "note": None, "status": "pending"})
+    dashboard = _DIAGNOSTIC_SAMPLES.read(
+        ("dashboard", identity, dashboard_fn), lambda: dashboard_fn("zh"), {"procs": []})
+    if launchd.get("status") == "not_applicable":
+        launchd["note"] = t("note_launchd_macos_only", locale)
+    for value in (launchd, dashboard):
+        if value.get("error_key"):
+            value["error"] = t(value["error_key"], locale)
+    return {"launchd": launchd, "dashboard": dashboard}
 
 
 def collect_active_sessions(limit: int = 30) -> list[dict]:
@@ -367,11 +423,12 @@ def collect_active_sessions(limit: int = 30) -> list[dict]:
         # 最近活动时间：MAX(messages.timestamp)（会话最近一条消息）
         last_active: dict[str, float] = {}
         try:
-            cur.execute(
-                "SELECT session_id, MAX(timestamp) FROM messages GROUP BY session_id"
-            )
-            for sid, ts in cur.fetchall():
-                if ts:
+            for active in rows:
+                sid = active[0]
+                # Existing (session_id, timestamp) index permits a single MAX lookup.
+                cur.execute("SELECT MAX(timestamp) FROM messages WHERE session_id=?", (sid,))
+                ts = cur.fetchone()[0]
+                if ts is not None:
                     last_active[sid] = ts
         except Exception:
             pass
@@ -380,10 +437,10 @@ def collect_active_sessions(limit: int = 30) -> list[dict]:
             sid, source, user_id, model, started_at, title, msgs, tools, itok, otok, cwd = r
             running = int(_now_epoch() - (started_at or _now_epoch()))
             last_ts = last_active.get(sid)
-            idle = int(_now_epoch() - last_ts) if last_ts else None  # 无可靠数据 = null
+            idle = int(_now_epoch() - last_ts) if last_ts is not None else None  # 无可靠数据 = null
             out.append({
                 "id": sid, "source": source, "user_id": user_id, "model": model,
-                "started_at": started_at, "title": title, "message_count": msgs,
+                "started_at": started_at, "title": sanitize_title(title), "message_count": msgs,
                 "tool_call_count": tools, "input_tokens": itok, "output_tokens": otok,
                 "cwd": sanitize_path(cwd) if cwd else cwd,
                 "idle_seconds": idle,
@@ -420,11 +477,15 @@ def collect_recent_sessions(days: int = 7, limit: int = 100) -> list[dict]:
              tools, itok, otok, cost, end_reason) = r
             out.append({
                 "id": sid, "source": source, "user_id": user_id, "model": model,
-                "started_at": started_at, "ended_at": ended_at, "title": title,
+                "started_at": started_at, "ended_at": ended_at, "title": sanitize_title(title),
                 "message_count": msgs, "tool_call_count": tools,
                 "input_tokens": itok, "output_tokens": otok,
                 "estimated_cost_usd": cost, "end_reason": end_reason,
             })
+        from .cost import session_pricing
+        pricing = session_pricing(conn, [r["id"] for r in out])
+        for item in out:
+            item.update(pricing[item["id"]])
         return out
     except Exception:
         return []
@@ -465,27 +526,38 @@ def collect_session_detail(session_id: str) -> Optional[dict]:
         )
         msgs_rows = [{"role": m[0], "preview": redact_line(m[1] or ""), "ts": m[2]}
                      for m in cur.fetchall()]
+        # Missing legacy provenance is unknown; retain the rest of the detail.
+        usage_columns = {r[1] for r in conn.execute("PRAGMA table_info(session_model_usage)")}
+        status_col = "cost_status" if "cost_status" in usage_columns else "NULL"
+        source_col = "cost_source" if "cost_source" in usage_columns else "NULL"
         # 会话内模型 usage
         cur.execute(
             "SELECT model, task, api_call_count, input_tokens, output_tokens,"
-            " cache_read_tokens, estimated_cost_usd, cost_status"
+            f" cache_read_tokens, estimated_cost_usd, {status_col}, {source_col}"
             " FROM session_model_usage WHERE session_id=? ORDER BY last_seen",
             (session_id,),
         )
+        usage_rows = cur.fetchall()
         usage = [{"model": u[0], "task": u[1], "api_calls": u[2], "input_tokens": u[3],
                   "output_tokens": u[4], "cache_read_tokens": u[5],
                   "estimated_cost_usd": u[6], "cost_status": u[7]}
-                 for u in cur.fetchall()]
-        return {
+                 for u in usage_rows]
+        from .cost import pricing_summary, session_pricing
+        for item, raw in zip(usage, usage_rows):
+            item.update(pricing_summary([raw[6:9]]))
+        result = {
             "id": sid, "source": source, "user_id": user_id, "model": model,
-            "started_at": started_at, "ended_at": ended_at, "title": title,
+            "started_at": started_at, "ended_at": ended_at, "title": sanitize_title(title),
             "message_count": msgs, "tool_call_count": tools, "input_tokens": itok,
             "output_tokens": otok, "cache_read_tokens": cr, "cache_write_tokens": cw,
             "reasoning_tokens": rt, "estimated_cost_usd": est, "actual_cost_usd": act,
             "cost_status": cost_status, "cost_source": cost_source,
-            "end_reason": end_reason, "cwd": cwd, "billing_provider": provider,
+            "end_reason": end_reason, "cwd": sanitize_path(cwd) if cwd else cwd,
+            "billing_provider": provider,
             "messages": msgs_rows, "model_usage": usage,
         }
+        result.update(session_pricing(conn, [sid])[sid])
+        return result
     except Exception:
         return None
     finally:
@@ -691,42 +763,76 @@ def collect_logs(lines_per_file: int = 60) -> dict:
 
 
 def collect_error_stats(minutes: int = 30, locale: str = "zh") -> dict:
-    """errors.log 近 N 分钟错误数 + 按指纹聚合。"""
+    """Log timestamps use explicit offsets or the producer's local timezone.
+
+    Unknown timestamps are reported, never silently presented as healthy zero.
+    Untimestamped traceback continuation lines do not create extra log records.
+    """
     path = HERMES_HOME / "logs" / "errors.log"
     if not path.exists():
-        return {"error": t("err_errorslog_missing", locale), "count_30m": 0, "incidents": []}
+        return {"error": t("err_errorslog_missing", locale), "count_30m": None,
+                "timestamp_status": "unavailable", "incidents": []}
     lines = _tail_lines(path, 800)
-    cutoff = time.time() - minutes * 60
-    recent = 0
+    now = time.time()
+    cutoff = now - minutes * 60
+    recent = parsed = unknown = future = 0
     buckets: dict[str, dict] = {}
     for line in lines:
         ts = _extract_log_ts(line)
-        if ts is not None and ts >= cutoff:
-            recent += 1
+        if ts is not None:
+            parsed += 1
+            if cutoff <= ts <= now:
+                recent += 1
+            elif ts > now:
+                future += 1
+        elif re.match(r"^\[?\d{4}-\d{2}-\d{2}|^\s*(ERROR|WARNING|CRITICAL)\b", line):
+            unknown += 1
         fp = _fingerprint_from_line(line)
-        if not fp:
-            continue
-        b = buckets.setdefault(fp, {"fingerprint": fp, "count": 0, "first": line, "last": line})
-        b["count"] += 1
-        b["last"] = line
-    incidents = []
-    for b in sorted(buckets.values(), key=lambda x: -x["count"])[:15]:
-        incidents.append({
-            "fingerprint": b["fingerprint"],
-            "count": b["count"],
-            "sample": redact_line(b["last"])[:300],
-        })
-    return {"count_30m": recent, "incidents": incidents}
+        if fp:
+            b = buckets.setdefault(fp, {"fingerprint": fp, "count": 0, "last": line})
+            b["count"] += 1
+            b["last"] = line
+    incidents = [{"fingerprint": b["fingerprint"], "count": b["count"],
+                  "sample": redact_line(b["last"])[:300]}
+                 for b in sorted(buckets.values(), key=lambda x: -x["count"])[:15]]
+    unavailable = bool(lines and not parsed)
+    out = {"count_30m": None if unavailable else recent, "incidents": incidents,
+           "timestamp_status": "unavailable" if unavailable else "partial" if unknown else "known",
+           "timestamp_unknown_records": unknown, "future_records": future,
+           "timestamp_timezone": os.environ.get("HUD_LOG_TIMEZONE") or "process_local"}
+    if unavailable:
+        out["error"] = t("err_log_timestamps_unavailable", locale)
+    return out
 
 
 def _extract_log_ts(line: str) -> Optional[float]:
-    m = re.search(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})", line)
+    # Read a log header, not a timestamp embedded in an error's message.
+    m = re.match(r"^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}"
+                 r"(?:[.,]\d{1,6})?(?:\s?(?:Z|[+-]\d{2}:?\d{2}))?)", line)
     if not m:
         return None
     try:
-        return datetime.strptime(m.group(1) + " " + m.group(2), "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=timezone.utc).timestamp()
-    except Exception:
+        header = re.sub(r"\s+(?=[+-]\d{2}:?\d{2}$)", "", m.group(1))
+        # Normalize compact offsets/fractions for Python 3.10's ISO parser too.
+        header = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", header)
+        header = re.sub(r"[.,](\d{1,6})", lambda part: "." + part[1].ljust(6, "0"), header)
+        dt = datetime.fromisoformat(header.replace(",", ".").replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            return dt.timestamp()
+        zone_name = os.environ.get("HUD_LOG_TIMEZONE", "").strip()
+        if zone_name:
+            from zoneinfo import ZoneInfo
+            zone = ZoneInfo(zone_name)
+            candidates = {dt.replace(tzinfo=zone, fold=fold).timestamp() for fold in (0, 1)}
+            valid = {ts for ts in candidates if datetime.fromtimestamp(ts, zone).replace(
+                tzinfo=None, fold=0) == dt.replace(fold=0)}
+        else:
+            # Naive timestamp() uses the producer process's local TZ, including DST.
+            candidates = {dt.replace(fold=fold).timestamp() for fold in (0, 1)}
+            valid = {ts for ts in candidates if datetime.fromtimestamp(ts).replace(fold=0) == dt.replace(fold=0)}
+        # Ambiguous fall-back / nonexistent spring-forward hours need an offset.
+        return valid.pop() if len(valid) == 1 else None
+    except (ValueError, OSError, OverflowError, KeyError):
         return None
 
 
@@ -833,8 +939,14 @@ def collect_launchd_check(locale: str = "zh") -> dict:
                 "hermes" in line.lower() and "gateway" in line.lower()
                 for line in r.stdout.splitlines()
             )
+        else:
+            out.update(managed=None, status="unavailable", error_key="err_diagnostic_query",
+                       error=t("err_diagnostic_query", locale))
+            return out
     except Exception:
-        pass
+        out.update(managed=None, status="unavailable", error_key="err_diagnostic_query",
+                   error=t("err_diagnostic_query", locale))
+        return out
     out["status"] = "managed" if out["managed"] else "unmanaged"
     return out
 
@@ -897,7 +1009,7 @@ def collect_dashboard_procs(locale: str = "zh") -> dict:
             except Exception:
                 continue
     except Exception:
-        pass
+        return {"error_key": "err_diagnostic_query", "error": t("err_diagnostic_query", locale), "procs": out}
     return {"procs": out}
 
 
@@ -1014,15 +1126,46 @@ def collect_usage(days: int = 30) -> dict:
             b["api_calls"] += r[11] or 1
         by_task_list = sorted(by_task.values(), key=lambda x: -x["est_cost"])
 
+        from .cost import read_pricing_rows, pricing_summary
+        pricing_rows, source_ok = read_pricing_rows(conn, cutoff=time.time() - days * 86400)
+        cost_days, cost_models, cost_tasks = {}, {}, {}
+        for r in pricing_rows:
+            cost_days.setdefault(_cst_day(r[3]), []).append(r[4:7])
+            cost_models.setdefault(r[1] or "unknown", []).append(r[4:7])
+            if r[2]:
+                cost_tasks.setdefault(r[2], []).append(r[4:7])
+        # A session may start before the window and still have last_seen in it.
+        for day in cost_days:
+            days_agg.setdefault(day, {"day": day, "input": 0, "output": 0,
+                "cache_read": 0, "cache_write": 0, "reasoning": 0,
+                "sessions": 0, "api_calls": 0, "actual_cost": 0.0})
+        for model in cost_models:
+            by_model.setdefault(model, {"model": model, "input": 0, "output": 0,
+                "cache_read": 0, "sessions": 0, "api_calls": 0})
+        for collection, field, grouped in ((days_agg, "day", cost_days),
+                (by_model, "model", cost_models), (by_task, "task", cost_tasks)):
+            for item in collection.values():
+                pricing = pricing_summary(grouped.get(item[field], []), source_ok)
+                item.update(pricing)
+                item["est_cost"] = pricing["estimated_cost_usd"]
+                item["window_attribution"] = "last_seen"
+                item["window_exact"] = False
+        by_day = [days_agg[k] for k in sorted(days_agg)]
+        by_model_list = sorted(by_model.values(), key=lambda x: -(x["est_cost"] or 0))
+        by_task_list = sorted(by_task.values(), key=lambda x: -(x["est_cost"] or 0))
+        total_pricing = pricing_summary([r[4:7] for r in pricing_rows], source_ok)
         return {
-            "days": days, "by_day": by_day,
+            "days": days, "window_attribution": "last_seen", "window_exact": False,
+            "actual_cost_semantics": "recorded_unverified",
+            "by_day": by_day,
             "by_model": by_model_list,
             "by_task": by_task_list,
             "totals": {
                 "input": sum(d["input"] for d in by_day),
                 "output": sum(d["output"] for d in by_day),
                 "cache_read": sum(d["cache_read"] for d in by_day),
-                "est_cost": round(sum(d["est_cost"] for d in by_day), 4),
+                **total_pricing,
+                "est_cost": total_pricing["estimated_cost_usd"],
                 "actual_cost": round(sum(d["actual_cost"] for d in by_day), 4),
                 "api_calls": sum(d["api_calls"] for d in by_day),
             },
@@ -1043,21 +1186,28 @@ def search_sessions(q: str, limit: int = 50) -> list[dict]:
         return []
     try:
         cur = conn.cursor()
-        like = f"%{q}%"
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
         cur.execute(
             "SELECT id, source, model, started_at, title, message_count,"
             " input_tokens, output_tokens, estimated_cost_usd, ended_at"
-            " FROM sessions WHERE title LIKE ? OR id LIKE ? OR user_id LIKE ?"
+            " FROM sessions WHERE title LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\'"
+            " OR user_id LIKE ? ESCAPE '\\'"
             " ORDER BY started_at DESC LIMIT ?",
             (like, like, like, limit),
         )
         rows = cur.fetchall()
-        return [
+        out = [
             {"id": r[0], "source": r[1], "model": r[2], "started_at": r[3],
-             "title": r[4], "message_count": r[5], "input_tokens": r[6],
+             "title": sanitize_title(r[4]), "message_count": r[5], "input_tokens": r[6],
              "output_tokens": r[7], "estimated_cost_usd": r[8], "ended_at": r[9]}
             for r in rows
         ]
+        from .cost import session_pricing
+        pricing = session_pricing(conn, [r["id"] for r in out])
+        for item in out:
+            item.update(pricing[item["id"]])
+        return out
     except Exception:
         return []
     finally:
@@ -1160,7 +1310,7 @@ def collect_tool_events(limit: int = 60) -> list[dict]:
                     pass
             out.append({
                 "session_id": sid,
-                "title": (title or sid)[:50],
+                "title": sanitize_title(title or sid, 50),
                 "role": role,
                 "tool_name": tool_name or (names[0] if names else "unknown"),
                 "tool_calls": names[:5],
@@ -1183,19 +1333,19 @@ def collect_tool_events(limit: int = 60) -> list[dict]:
 def build_snapshot(locale: str = "zh") -> dict:
     """一次取齐所有采集器结果（各自容错）。"""
     collected_at = _now_epoch()
+    diagnostics = collect_snapshot_diagnostics(locale)
     return {
         "collected_at": collected_at,
         "generated_at_iso": datetime.now(get_hud_timezone()).isoformat(timespec="seconds"),
         "tz": hud_tz_name(),
         "gateway": collect_gateway(locale),
         "system": collect_system(locale),
-        "db": collect_db(locale),
+        "db": collect_snapshot_db(locale),
         "active_sessions": collect_active_sessions(),
         "cron": collect_cron_jobs(locale),
         "executions": collect_cron_executions(locale=locale),
         "logs": collect_logs(),
         "errors": collect_error_stats(locale=locale),
         "memory": collect_memory(),
-        "launchd": collect_launchd_check(locale),
-        "dashboard": collect_dashboard_procs(locale),
+        **diagnostics,
     }
