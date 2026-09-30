@@ -336,8 +336,37 @@ def collect_skill_events(home: Path, after_ts: int = 0) -> list[dict]:
     return out
 
 
+def _input_error(event: dict) -> Optional[str]:
+    """Reject only invalid input before SQL; never classify database/IO errors.
+
+    Check every bound value, including optional metadata: JSON containers cannot
+    be SQLite parameters, and Python integers must fit signed 64-bit SQLite.
+    Reasons use fixed field names only; no values or source identities are logged.
+    """
+    if not event.get("event_id") or not event.get("timestamp"):
+        return "missing_identity_or_time"
+    for field in ("event_id", "timestamp", "event_type", "status", "session_id",
+                  "skill", "tool", "tool_call_id", "duration_ms", "tokens",
+                  "cost_usd", "incident_id", "summary", "source",
+                  "correlation_id", "source_record_id"):
+        value = event.get(field)
+        if isinstance(value, int) and not -(1 << 63) <= value < (1 << 63):
+            return f"integer_range:{field}"
+        if value is not None and not isinstance(value, (str, int, float, bytes,
+                                                       bytearray, memoryview)):
+            return f"binding_type:{field}"
+        if isinstance(value, memoryview) and not value.c_contiguous:
+            return f"binding_type:{field}"
+        if isinstance(value, str):
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError:
+                return f"string_encoding:{field}"
+    return None
+
+
 def collect_timeline(home: Path, storage, force: bool = False) -> dict:
-    """增量采集全部事件源；返回 {written, skipped, sources}。
+    """增量采集全部事件源；返回写入/跳过及无效输入原因的聚合计数。
 
     last_scan 存于 telemetry meta（force=True 全量重采但 event_id 幂等去重）。
     Watermark race 防护：查询起点 = 上次 watermark - SAFETY_WINDOW_S 安全窗口
@@ -362,26 +391,26 @@ def collect_timeline(home: Path, storage, force: bool = False) -> dict:
     events += collect_tool_events(home, scan_start)
     events += collect_incident_events(storage, scan_start)
     events += collect_skill_events(home, scan_start)
-    written = skipped = 0
+    valid_events = []
+    invalid_reasons: dict[str, int] = {}
     for ev in events:
-        if not ev.get("event_id") or not ev.get("timestamp"):
-            skipped += 1
-            continue
-        if storage.record_timeline_event(ev):
-            written += 1
+        reason = _input_error(ev)
+        if reason is None:
+            valid_events.append(ev)
         else:
-            skipped += 1
-    # 3. watermark 提交点 = scan_started_at（禁止写 scan-end now）：
+            invalid_reasons[reason] = invalid_reasons.get(reason, 0) + 1
+    invalid = len(events) - len(valid_events)
+    if invalid:
+        log.warning("timeline: rejected input events: invalid=%d reasons=%s",
+                    invalid, dict(sorted(invalid_reasons.items())))
+    # 3. One transaction for events and watermark; no per-event connection/commit.
+    # watermark 提交点 = scan_started_at（禁止写 scan-end now）：
     #    scan 期间 source 写入的记录（ts ≥ scan_started_at - 5）下一轮必然被
     #    重新扫到——不漏；重复由幂等 event_id 去重。
-    try:
-        with closing(storage._connect()) as conn, conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO meta(key, value) VALUES('timeline_last_scan', ?)",
-                (str(scan_started_at),))
-    except Exception as exc:  # noqa: BLE001
-        log.debug("timeline: last_scan write failed: %s", exc)
+    written = storage.bulk_record_timeline_events(valid_events, scan_started_at=scan_started_at)
+    skipped = len(events) - written  # invalid and duplicate events retain skipped semantics
     return {"written": written, "skipped": skipped,
+            "invalid": invalid, "invalid_reasons": invalid_reasons,
             "sources": ["sessions", "tools", "incidents", "skills"],
             "scan_started_at": scan_started_at}
 
