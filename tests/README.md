@@ -22,6 +22,13 @@ python -m pytest tests/ --ignore=tests/performance_verify.py   # CI 同款
 | `test_platform_detection.py` | P1-8 | 非 macOS not_applicable、动态 UID、rules 处理 |
 | `test_privacy_sanitizer.py` | P1-6 | sanitize_path/sanitize_cmdline/redact_obj 全矩阵 |
 | `test_secrets_scan.py` | §八 | 测试 secret 全链路 0 occurrence（含真实 telemetry 只读扫描） |
+| `test_timeline_batch_isolation.py` | Timeline 批量/并发 | 单事务提交事件和水位、空扫描、bulk 默认值、真实 SQLite 回滚、executor 容量与取消 drain |
+| `test_timeline_poison_events.py` | R4-1 回归 | 坏事件位于有效批次中间；53 条保留、重复扫描幂等、追加后 54 条、水位推进、拒绝计数与日志脱敏；真实事件/水位/commit/IO 故障仍回滚 |
+
+R4-1 的坏输入测试针对批量写入后确认的整批停采回归。取消 drain 和
+事件/水位原子提交测试是本候选的设计契约，不能把它们在旧版本上的失败
+解释成已经发生过数据损坏。`skipped` 包含无效输入和幂等重复，`invalid`
+及 `invalid_reasons` 是采集函数的内部聚合结果；公开 `/timeline` 响应保持原有字段。
 
 ## 安全约束（CI 与本地一致）
 

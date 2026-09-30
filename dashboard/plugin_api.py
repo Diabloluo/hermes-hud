@@ -17,7 +17,6 @@ import logging
 import os
 import sys
 import time
-from threading import Lock
 from pathlib import Path
 from typing import Any, Optional
 
@@ -36,7 +35,7 @@ from hud.redaction import redact_line  # noqa: E402
 log = logging.getLogger(__name__)
 
 router = APIRouter()
-_timeline_lock = Lock()
+_timeline_lock = asyncio.Lock()
 
 store = storage.TelemetryStore()
 
@@ -231,7 +230,7 @@ async def get_timeline(limit: int = 100, before: int | None = None,
     home = Path(collectors.HERMES_HOME)
     current_store = store
 
-    def collect_and_query_unlocked():
+    def collect_and_query():
         from hud import timeline
         try:
             timeline.collect_timeline(home, current_store)
@@ -242,12 +241,25 @@ async def get_timeline(limit: int = 100, before: int | None = None,
             session_id=session_id, event_type=event_type, status=status, skill=skill)
         return timeline.refresh_session_event_costs(home, rows)
 
-    def collect_and_query():
-        # Preserve watermark ordering when several clients request a refresh.
-        with _timeline_lock:
-            return collect_and_query_unlocked()
-
-    rows = await asyncio.to_thread(collect_and_query)
+    # Wait before submitting a worker, so timeline contention cannot consume
+    # the shared executor needed by snapshots. Only one IO job is in flight.
+    async with _timeline_lock:
+        worker = asyncio.create_task(asyncio.to_thread(collect_and_query))
+        try:
+            rows = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # Cancelling to_thread cannot stop SQLite. Retain serialization
+            # until IO finishes, including repeated cancellation requests.
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not worker.cancelled():
+                worker.exception()  # retrieve failure while preserving cancellation
+            raise
     return {"events": rows[:limit], "has_more": len(rows) > limit, "limit": limit}
 
 

@@ -390,25 +390,31 @@ class TelemetryStore:
                  "status": r[3], "skill": r[4], "duration_ms": r[5],
                  "summary": r[6], "source": r[7]} for r in rows]
 
-    def bulk_record_timeline_events(self, events: list[dict]) -> int:
+    def bulk_record_timeline_events(self, events: list[dict], *,
+                                    scan_started_at: Optional[int] = None) -> int:
         """bulk 写入（单连接单事务 executemany，INSERT OR IGNORE 幂等）。
-        返回新写入条数（测试/批量场景避免 10 万次独立连接）。"""
-        if not events:
+        返回新写入条数。采集时可在同一事务提交 scan-start 水位；
+        事件或水位写入失败均回滚，并关闭连接。空扫描仍提交水位。
+        """
+        if not events and scan_started_at is None:
             return 0
         cols = ("event_id", "ts", "event_type", "status", "session_id", "skill",
                 "tool", "tool_call_id", "duration_ms", "tokens", "cost_usd",
                 "incident_id", "summary", "source", "correlation_id",
                 "source_record_id")
         # normalize_event 用 "timestamp" 键 → 映射到列名 "ts"
-        rows = []
-        for ev in events:
-            rows.append(tuple(ev.get(c) if c != "ts" else ev.get("timestamp")
-                              for c in cols))
+        defaults = {"status": "success", "summary": "", "source": "hermes"}
+        rows = (tuple(ev.get("timestamp") if c == "ts" else ev.get(c, defaults.get(c))
+                      for c in cols) for ev in events)
         with closing(self._connect()) as conn, conn:
             cur = conn.executemany(
                 f"INSERT OR IGNORE INTO timeline_events ({','.join(cols)})"
                 f" VALUES ({','.join('?' * len(cols))})", rows)
             written = cur.rowcount
+            if scan_started_at is not None:
+                conn.execute(
+                    "INSERT OR REPLACE INTO meta(key, value) VALUES('timeline_last_scan', ?)",
+                    (str(scan_started_at),))
         return written
 
     def timeline_stats(self) -> dict:

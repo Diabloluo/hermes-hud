@@ -6,6 +6,13 @@
 ## [Unreleased]
 
 ### Fixed
+- Batch timeline events and the scan-start watermark in one transaction. Wait
+  for timeline work before submitting an executor job, and drain an active job
+  on cancellation so waiting clients leave capacity for snapshot refreshes.
+- Skip timeline inputs that cannot be bound to SQLite, including object-valued
+  fingerprints and integers outside the signed 64-bit range. Count rejected
+  events and log fixed field/reason counts without source content; valid events
+  and later scans continue, while database/commit failures still roll back.
 - Use canonical `session_model_usage` pricing provenance in session, usage,
   snapshot and timeline responses. Unknown pricing is not displayed as a free
   session. `/usage` now marks activity without pricing records as incomplete,
