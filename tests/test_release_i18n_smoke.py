@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from test_frontend_smoke import hud_env  # noqa: F401
+from test_frontend_smoke import SYNTHETIC_SKILLS, hud_env, seed_synthetic_skills  # noqa: F401
 
 
 def wait_for(cdp, expression, timeout=20):
@@ -36,6 +36,29 @@ SKILL_HEADERS = {
 UNCATEGORIZED = {"zh": "未分类", "en": "Uncategorized", "fr": "Non classé", "ar": "غير مصنّف"}
 
 
+def assert_skill_payload(payload, expected_skills, locale):
+    assert payload["error"] is None
+    for expected in expected_skills:
+        matches = [skill for skill in payload["skills"] if skill["name"] == expected["name"]]
+        assert len(matches) == 1, (locale, expected["id"], "synthetic metadata missing/rewritten")
+        actual = matches[0]
+        for field in ("name", "version", "description"):
+            assert actual[field] == expected[field], (locale, expected["id"], field)
+        category = expected["category"] if expected["category"] is not None else UNCATEGORIZED[locale]
+        assert actual["category"] == category, (locale, expected["id"], "category")
+
+
+@pytest.mark.parametrize("locale", ["zh", "en", "fr", "ar"])
+def test_synthetic_skill_collector_contract(tmp_path, monkeypatch, locale):
+    """Run the fixture/parser contract even when a browser is unavailable."""
+    from dashboard.hud import collectors
+    seed_synthetic_skills(tmp_path)
+    monkeypatch.setattr(collectors, "HERMES_HOME", tmp_path)
+    payload = collectors.collect_skills(locale)
+    assert len(payload["skills"]) == len(SYNTHETIC_SKILLS)
+    assert_skill_payload(payload, SYNTHETIC_SKILLS, locale)
+
+
 def skill_api_contract(hud_env, locale):
     """Independent file -> authenticated API check, not just DOM versus API."""
     base = f"http://127.0.0.1:{hud_env['port']}"
@@ -47,15 +70,7 @@ def skill_api_contract(hud_env, locale):
                                     headers={"X-Hermes-Session-Token": token.group(1)})
     with urllib.request.urlopen(request, timeout=10) as response:
         payload = json.load(response)
-    assert payload["error"] is None
-    for expected in hud_env["synthetic_skills"]:
-        matches = [skill for skill in payload["skills"] if skill["name"] == expected["name"]]
-        assert len(matches) == 1, (locale, expected["id"], "synthetic metadata missing/rewritten")
-        actual = matches[0]
-        for field in ("name", "version", "description"):
-            assert actual[field] == expected[field], (locale, expected["id"], field)
-        category = expected["category"] if expected["category"] is not None else UNCATEGORIZED[locale]
-        assert actual["category"] == category, (locale, expected["id"], "category")
+    assert_skill_payload(payload, hud_env["synthetic_skills"], locale)
     return payload
 
 
