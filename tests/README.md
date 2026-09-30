@@ -24,11 +24,19 @@ python -m pytest tests/ --ignore=tests/performance_verify.py   # CI 同款
 | `test_secrets_scan.py` | §八 | 测试 secret 全链路 0 occurrence（含真实 telemetry 只读扫描） |
 | `test_timeline_batch_isolation.py` | Timeline 批量/并发 | 单事务提交事件和水位、空扫描、bulk 默认值、真实 SQLite 回滚、executor 容量与取消 drain |
 | `test_timeline_poison_events.py` | R4-1 回归 | 坏事件位于有效批次中间；53 条保留、重复扫描幂等、追加后 54 条、水位推进、拒绝计数与日志脱敏；真实事件/水位/commit/IO 故障仍回滚 |
+| `test_release_i18n_smoke.py` | 四语言真实浏览器 | 13 Tab 静态文案、lang/dir、切换/持久化、三种视口；合成多语言技能文件 → 鉴权 API → DOM 原文保留（描述前 60 字符）；漏翻译表头/按钮/单元格负向守卫 |
 
 R4-1 的坏输入测试针对批量写入后确认的整批停采回归。取消 drain 和
 事件/水位原子提交测试是本候选的设计契约，不能把它们在旧版本上的失败
 解释成已经发生过数据损坏。`skipped` 包含无效输入和幂等重复，`invalid`
 及 `invalid_reasons` 是采集函数的内部聚合结果；公开 `/timeline` 响应保持原有字段。
+
+技能 name/category/version/description 是观测元数据，不自动翻译。语言验收
+仅在可见行逐字段匹配 API 后排除这四个原文单元格；分类按钮必须整段匹配
+API 分类及数量。静态表头、大小/相对时间、其他按钮和页面文案仍接受漏翻译
+检查，且对表头、分类按钮、原文单元格注入中文静态文案必须导致检查失败。
+测试使用隔离 home 的合成 SKILL.md，不使用真实用户技能；默认「未分类」
+是系统文案，另按四个 locale 验证，不能归入用户原文。
 
 ## 安全约束（CI 与本地一致）
 
