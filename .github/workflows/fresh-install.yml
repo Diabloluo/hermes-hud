@@ -1,243 +1,71 @@
-name: Fresh Install CI
+name: Isolated finite memory experiment on test branch only
+run-name: finite-memory-${{ inputs.authorization_id }}
 
-# 陌生环境首次安装自动验证（source-under-test）：
-# - clean runner · Python 3.13（<3.14）· Hermes 固定 PyPI 0.19.0
-#   （minimum supported，实证 config set 存字符串 → enable 脚本走官方 config API）
-# - 安装的 HUD 内容必须来自当前 workflow 对应的 commit/PR（$GITHUB_SHA），
-#   机械断言 installed SHA == workflow SHA，不允许静默 fallback 到 main
-# - 链路：install → enable（安全读-合-写）→ config safety → dashboard start
-#   （轮询就绪）→ HTTP smoke → CST 回归守卫 → owned-PID 清理（禁 killall/pkill）
-
+# This existing workflow filename is registered on main. Only its test-branch
+# definition is replaced, so dispatch --ref works without touching main.
 on:
-  pull_request:
-    paths:
-      - 'dashboard/**'
-      - 'scripts/**'
-      - 'requirements*'
-      - 'pyproject*'
-      - 'INSTALL.md'
-      - 'README.md'
-      - 'README.en.md'
-      - '.github/workflows/fresh-install.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'dashboard/**'
-      - 'scripts/**'
-      - 'requirements*'
-      - 'pyproject*'
-      - 'INSTALL.md'
-      - 'README.md'
-      - 'README.en.md'
-      - '.github/workflows/fresh-install.yml'
   workflow_dispatch:
+    inputs:
+      reviewed_sha:
+        description: Exact full SHA accepted by the focused safety review
+        required: true
+        type: string
+      reviewed_freeze:
+        description: SHA256 of the reviewed FREEZE.json bytes
+        required: true
+        type: string
+      authorization_id:
+        description: Single owner authorization consumed locally before dispatch
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hud-finite-memory-owned
+  cancel-in-progress: false
 
 jobs:
-  fresh-install:
+  finite:
+    if: github.repository == 'Diabloluo/hermes-hud' && github.ref == 'refs/heads/test/v2-isolated-memory-20261003' && github.run_attempt == 1 && github.sha == inputs.reviewed_sha
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 135
     env:
-      HERMES_HOME: /tmp/hermes-fresh-home
-      HUD_SRC: /tmp/hermes-fresh-home/plugins/hermes-hud
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      REVIEWED_FREEZE: ${{ inputs.reviewed_freeze }}
+      AUTHORIZATION_ID: ${{ inputs.authorization_id }}
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
-      - name: Checkout hermes-hud
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.13 (fixed, <3.14)
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.reviewed_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.13'
-
-      - name: Verify Python version
-        run: |
-          python --version
-          pip --version
-          python -c 'import sys; assert sys.version_info < (3, 14), "Python must be <3.14"'
-          echo "PASS: Python 3.13 ready"
-
-      - name: Install Hermes (pinned PyPI 0.19.0 — empirically verified)
-        run: |
-          pip install --quiet "hermes-agent==0.19.0"
-          python - <<'PY'
-          import importlib.metadata
-          ver = importlib.metadata.version("hermes-agent")
-          print("installed hermes-agent:", ver)
-          assert ver == "0.19.0", f"expected 0.19.0, got {ver}"
-          PY
-          hermes --version
-        env:
-          PIP_DISABLE_PIP_VERSION_CHECK: '1'
-
-      - name: Diagnostic — Hermes config API capability (truth, not guess)
-        run: |
-          python - <<'PY'
-          import hermes_cli.config as c
-          for name in ("load_config", "save_config", "cfg_get", "get_config_value"):
-              print(name, hasattr(c, name))
-          PY
-          hermes config --help 2>&1 | head -12
-          hermes config --help 2>&1 | tee /tmp/hermes-config-help.txt
-
-      - name: Install hermes-hud plugin — source-under-test (current $GITHUB_SHA, no silent main)
-        run: |
-          mkdir -p "$HERMES_HOME/plugins"
-          git clone --quiet https://github.com/Diabloluo/hermes-hud "$HUD_SRC"
-          # 显式 fetch 当前 workflow 的 ref（push=refs/heads/main；PR=refs/pull/N/merge）
-          git -C "$HUD_SRC" fetch --quiet --depth 1 origin "$GITHUB_REF"
-          git -C "$HUD_SRC" checkout --quiet --detach FETCH_HEAD
-          ls "$HUD_SRC/dashboard/manifest.json"
-
-      - name: Assert installed HUD SHA == workflow GITHUB_SHA (mechanical)
-        run: |
-          EXPECTED="$GITHUB_SHA"
-          INSTALLED=$(git -C "$HUD_SRC" rev-parse HEAD)
-          echo "workflow SHA:   $EXPECTED"
-          echo "installed SHA:  $INSTALLED"
-          if [ "$EXPECTED" != "$INSTALLED" ]; then
-            echo "FAIL: installed HUD != workflow commit (silent main fallback?)"
-            exit 1
-          fi
-          echo "match: yes"
-
-      - name: Capture plugins.enabled baseline
-        run: |
-          python - <<'PY'
-          import hermes_cli.config as c
-          cfg = c.load_config()
-          print("baseline:", (cfg.get("plugins") or {}).get("enabled") or [])
-          PY
-
-      - name: Enable dashboard plugin (safe read-merge-write, diagnosable)
-        run: |
-          set -o pipefail
-          python scripts/enable_dashboard_plugin.py enable 2>&1 | tee /tmp/enable.log
-          echo "--- enabled after: ---"
-          python -c "import hermes_cli.config as c; cfg=c.load_config(); print((cfg.get('plugins') or {}).get('enabled'))"
-
-      - name: Config safety — preserved + added once + idempotent
-        run: |
-          read_enabled() { python -c "import hermes_cli.config as c; cfg=c.load_config(); print(__import__('json').dumps((cfg.get('plugins') or {}).get('enabled') or []))"; }
-          BEFORE=$(read_enabled)
-          python scripts/enable_dashboard_plugin.py enable
-          AFTER=$(read_enabled)
-          python - "$BEFORE" "$AFTER" <<'PY'
-          import json, sys
-          before = json.loads(sys.argv[1] or "[]")
-          after = json.loads(sys.argv[2] or "[]")
-          assert before.count("hermes-hud") == 1, f"enable 后 hermes-hud 不在: {before}"
-          assert after.count("hermes-hud") == 1, f"幂等失败（重复）: {after}"
-          assert after == before, f"二次 enable 改变了列表: {after}"
-          print("PASS: enabled once, idempotent, no duplicates")
-          PY
-
-      - name: Disable only removes hermes-hud (then re-enable)
-        run: |
-          python scripts/enable_dashboard_plugin.py disable
-          python - <<'PY'
-          import hermes_cli.config as c
-          cfg = c.load_config()
-          after = (cfg.get("plugins") or {}).get("enabled") or []
-          assert "hermes-hud" not in after, f"disable 未移除: {after}"
-          print(f"PASS: disable removed only hermes-hud (remaining: {after})")
-          PY
-          python scripts/enable_dashboard_plugin.py enable
-
-      - name: Start dashboard and wait for readiness (polling, no bare sleep)
-        run: |
-          hermes dashboard --host 127.0.0.1 --port 9121 \
-            --no-open > /tmp/dashboard.log 2>&1 &
-          echo $! > /tmp/dashboard.pid
-          echo "dashboard PID: $(cat /tmp/dashboard.pid)"
-          python scripts/fresh_install_check.py wait-http http://127.0.0.1:9121/ 60 1
-
-      - name: HTTP smoke — GET / and snapshot endpoint
-        run: |
-          curl -sf -o /tmp/root.html http://127.0.0.1:9121/ && echo "GET / -> 200 OK"
-          TOKEN=$(grep -o 'window.__HERMES_SESSION_TOKEN__="[^"]*"' /tmp/root.html \
-            | sed 's/.*="//;s/"//')
-          curl -sf -H "X-Hermes-Session-Token: $TOKEN" \
-            -o /tmp/snapshot.json http://127.0.0.1:9121/api/plugins/hermes-hud/snapshot
-          python scripts/fresh_install_check.py check-json /tmp/snapshot.json \
-            generated_at_iso tz db gateway system active_sessions
-          echo "--- snapshot size: $(wc -c < /tmp/snapshot.json) bytes"
-          # v1.1.0 endpoints: timeline / skill analytics / cost summary (read-only, never 500)
-          for ep in timeline cost/summary skills/analytics; do
-            curl -sf -H "X-Hermes-Session-Token: $TOKEN" \
-              "http://127.0.0.1:9121/api/plugins/hermes-hud/$ep?limit=5&range=7d" \
-              -o "/tmp/$(echo "$ep" | tr '/' '_').json" && echo "GET /$ep -> 200 OK"
-          done
-
-      - name: Regression guards — no CST is not defined
-        run: |
-          cat /tmp/dashboard.log /tmp/snapshot.json > /tmp/cst-check.txt
-          python scripts/fresh_install_check.py check-no-cst /tmp/cst-check.txt
-
-      - name: Clean shutdown (owned PID only)
+      - name: Single setup no retry
+        timeout-minutes: 30
+        run: >-
+          python -I -B scripts/isolated_memory/runner.py setup
+          --sha "$REVIEWED_SHA" --freeze "$REVIEWED_FREEZE" --grant "$AUTHORIZATION_ID"
+      - name: One finite pair no retry
+        timeout-minutes: 100
+        run: >-
+          "$RUNNER_TEMP/hud-finite-owned/venv/bin/python" -I -B
+          scripts/isolated_memory/runner.py pair
+          --sha "$REVIEWED_SHA" --freeze "$REVIEWED_FREEZE" --grant "$AUTHORIZATION_ID"
+      - name: Independent aggregate analysis including failure
         if: always()
-        run: |
-          PID=$(cat /tmp/dashboard.pid 2>/dev/null || echo 0)
-          python scripts/fresh_install_check.py cleanup-owned "$PID"
-          sleep 2
-          ps -p "$PID" > /dev/null 2>&1 && { echo "FAIL: orphan dashboard $PID"; exit 1; } \
-            || echo "PASS: no orphan dashboard process"
-
-      - name: Upload failure artifacts (redacted, diagnosable)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fresh-install-failure
-          path: |
-            /tmp/enable.log
-            /tmp/dashboard.log
-            /tmp/root.html
-            /tmp/snapshot.json
-            /tmp/hermes-config-help.txt
-            /tmp/versions.txt
-            /tmp/config-redacted.yaml
-          if-no-files-found: ignore
-
-      - name: Diagnosable context — versions + API summary (never upload secrets)
-        if: failure()
-        run: |
-          python --version 2>&1 | tee /tmp/versions.txt
-          hermes --version 2>&1 | tee -a /tmp/versions.txt
-          python -c "import hermes_cli.config as c; print([(n, hasattr(c, n)) for n in ('load_config','save_config','cfg_get','get_config_value')])" 2>&1 | tee -a /tmp/versions.txt
-          python scripts/fresh_install_check.py redact-config \
-            "$HERMES_HOME/config.yaml" /tmp/config-redacted.yaml
-
-  browser-acceptance:
-    # Native macOS install remains the job above; use a Linux Chrome renderer
-    # for deterministic browser acceptance, with the same minimum host.
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Install minimum supported Hermes and browser test dependencies
-        run: pip install 'hermes-agent==0.19.0' pytest websockets
-      - name: Install Chinese and Arabic screenshot fonts
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk fonts-noto-core
-      - name: Setup Chrome
-        id: chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-          install-dependencies: true
-      - name: Real Dashboard acceptance — four locales, live switching and RTL
-        env:
-          HUD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-          HUD_REQUIRE_BROWSER_ACCEPTANCE: '1'
-          HUD_ACCEPTANCE_ARTIFACT_DIR: /tmp/hud-browser-acceptance
-        run: |
-          python -m pytest tests/test_enable_script.py tests/test_frontend_smoke.py tests/test_release_i18n_smoke.py -q -rs -x
-      - name: Upload synthetic browser acceptance evidence
+        timeout-minutes: 3
+        run: >-
+          python -I -B scripts/isolated_memory/analyze.py
+          "$RUNNER_TEMP/hud-finite-owned"
+      - name: Aggregate report only
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: hud-browser-acceptance
-          path: /tmp/hud-browser-acceptance
-          if-no-files-found: ignore
+          name: finite-memory-aggregate-${{ github.run_id }}
+          path: ${{ runner.temp }}/hud-finite-owned/aggregate-artifact/analysis.json
+          if-no-files-found: error
+          retention-days: 14
