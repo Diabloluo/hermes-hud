@@ -1,5 +1,6 @@
 """Fresh CI child. Scalar self memory and hashed filename provenance, never raw output."""
 import ctypes
+import hashlib
 import importlib.machinery
 import json
 import os
@@ -11,7 +12,29 @@ import tracemalloc
 
 # -I excludes the script directory; this exact reviewed directory is explicit.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import atomic, read, protocol, require, LABELS
+from common import atomic, read, protocol, require, Refused, LABELS
+from identity_contract import FAILURE_STAGES, FAILURE_CODES
+_failure_out = None
+_failure_stage = 'preload'
+
+
+def failure_record(error, stage):
+    require(stage in FAILURE_STAGES, 'failure_stage')
+    code = 'internal'
+    if type(error) is Refused and len(error.args) == 1 and type(error.args[0]) is str \
+            and error.args[0] in FAILURE_CODES:
+        code = error.args[0]
+    site, tb, frames = None, error.__traceback__, 0
+    while tb is not None and frames < 128:
+        site = {'filename_sha256': hashlib.sha256(tb.tb_frame.f_code.co_filename.encode()).hexdigest(),
+                'line': tb.tb_lineno}
+        tb, frames = tb.tb_next, frames+1
+    if tb is not None:
+        site = None
+    return {'schema': 'hud_remote_observer_failure_v2', 'error': code, 'stage': stage,
+            'site': site, 'site_semantics': 'filename_provenance_only_not_source_hash',
+            'raw_persisted': False}
+
 
 
 class VMInfo(ctypes.Structure):
@@ -53,6 +76,17 @@ def checkpoint(trace, baseline):
 
 
 def boot():
+    global _failure_out, _failure_stage
+    require(os.environ.get('HUD_REMOTE_CHILD') == '1' and sys.platform == 'darwin', 'child_authority')
+    p = protocol()
+    home, out, repo = (Path(os.environ[k]).resolve() for k in ('HERMES_HOME', 'HUD_OUT', 'HUD_REPO'))
+    arm = os.environ['HUD_ARM']
+    port = int(os.environ['HUD_PORT'])
+    require(Path.cwd() == home and home.name == 'synthetic-home'
+            and out == home.parent/'evidence' and home.parent.name == arm
+            and home.parent.parent.name == 'hud-finite-owned'
+            and arm in p['arms'] and 1024 <= port <= 65535 and port != 9119, 'child_scope')
+    _failure_out, _failure_stage = out, 'preload'
     import psutil
     import signal
     # Pinned public networking library performs an optional IPv6 capability
@@ -60,13 +94,7 @@ def boot():
     # hook and tracing, rather than turning its benign import into a fake failure.
     # This is not a production request or a probe of an existing local service.
     import urllib3  # noqa: F401
-    require(os.environ.get('HUD_REMOTE_CHILD') == '1' and sys.platform == 'darwin', 'child_authority')
-    p = protocol()
-    home, out, repo = (Path(os.environ[k]).resolve() for k in ('HERMES_HOME', 'HUD_OUT', 'HUD_REPO'))
-    arm = os.environ['HUD_ARM']
-    port = int(os.environ['HUD_PORT'])
-    require(Path.cwd() == home and home.name == 'synthetic-home'
-            and out.parent == home.parent and arm in p['arms'] and port != 9119, 'child_scope')
+    _failure_stage = 'policy'
     # Public CI code and interpreter libraries are readable; writes are owned only.
     roots = (repo, Path(sys.prefix).resolve(), Path(sys.base_prefix).resolve(),
              Path('/System'), Path('/usr/lib'), Path('/Library/Developer'))
@@ -94,9 +122,9 @@ def boot():
     failed = threading.Event()
     own = psutil.Process()
     state = {'baseline': None, 'next': 0}
-    def failure():
+    def failure(error, stage):
         failed.set()
-        atomic(out/'observer-failure.json', {'error': 'observer_failed'})
+        atomic(out/'observer-failure.json', failure_record(error, stage))
     def sampler(mod):
         try:
             while not failed.is_set():
@@ -117,8 +145,8 @@ def boot():
                 atomic(out/'latest.json', row)
                 atomic(out/'phase-ack.json', {**c, 'at': at})
                 time.sleep(p['sample_seconds'])
-        except BaseException:
-            failure()
+        except BaseException as error:
+            failure(error, 'sampler')
     def worker():
         try:
             while not failed.is_set():
@@ -142,8 +170,8 @@ def boot():
                         atomic(out/'operation-done.json', {'sequence': seq, 'seconds': elapsed})
                         state['next'] = seq
                 time.sleep(.05)
-        except BaseException:
-            failure()
+        except BaseException as error:
+            failure(error, 'worker')
     original = importlib.machinery.SourceFileLoader.exec_module
     activated = False
     def load(loader, mod):
@@ -159,13 +187,20 @@ def boot():
     importlib.machinery.SourceFileLoader.exec_module = load
     # TERM causes Python finally handling where possible; parent still verifies exit.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    _failure_stage = 'host_import'
     from hermes_cli.main import main
+    _failure_stage = 'host_main'
     main()
 
 
 if __name__ == '__main__':
     try:
         boot()
-    except BaseException:
+    except BaseException as error:
         # No console stack, argv, token, HTML or exception text.
+        if _failure_out is not None:
+            try:
+                atomic(_failure_out/'observer-failure.json', failure_record(error, _failure_stage))
+            except BaseException:
+                pass  # Missing/failed diagnostic never authorizes a PASS.
         raise SystemExit(2) from None

@@ -10,6 +10,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (require, read, digest, frozen, protocol, schedule, coverage,
                     METRICS, LABELS, number, SHA, HEX)
+from identity_contract import (valid as identity_valid, binding_valid, diagnostic_valid,
+                               diagnostic_matched, failure_valid)
 
 
 def slope(points):
@@ -37,28 +39,34 @@ def samples_read(path):
 
 def analyze_arm(root, arm, p, pair):
     out = root/arm/'evidence'
+    require(not (out/'observer-failure.json').exists(), 'observer_failed')
     r = read(out/'result.json')
     require(set(r) == {'schema', 'arm', 'result', 'error', 'phases', 'operations', 'cleanup',
-                       'fixture', 'sources_end', 'counts_end', 'tool_end', 'start', 'seconds', 'identity'}
-            and r['schema'] == 'hud_remote_arm_v1' and r['arm'] == arm
+                       'fixture', 'sources_end', 'counts_end', 'tool_end', 'start', 'seconds', 'identity',
+                       'identity_diagnostic'}
+            and r['schema'] == 'hud_remote_arm_v2' and r['arm'] == arm
             and r['result'] == 'EXECUTION_COMPLETE_PENDING_ANALYSIS' and r['error'] is None
             and 0 < r['seconds'] < p['arm_seconds'] and r['tool_end'] == pair['tool_start'], 'arm')
     clean = r['cleanup']
-    require(set(clean) == {'identity_matched', 'alive', 'exit_code', 'error'}
+    require(set(clean) == {'identity_matched', 'alive', 'exit_code', 'error', 'diagnostic'}
             and clean['identity_matched'] is True and clean['alive'] is False
-            and type(clean['exit_code']) is int and clean['error'] is None, 'cleanup')
+            and type(clean['exit_code']) is int and clean['error'] is None
+            and diagnostic_matched(clean['diagnostic'])
+            and clean['diagnostic']['stage'] in ('pre_term', 'pre_kill'), 'cleanup')
     identity = r['identity']
     expected_home = root/arm/'synthetic-home'
-    require(set(identity) == {'pid', 'birth', 'cwd', 'argv'} and type(identity['pid']) is int
-            and identity['pid'] > 0 and number(identity['birth'])
-            and identity['cwd'] == str(expected_home), 'identity')
+    require(identity_valid(identity) and identity['cwd'] == str(expected_home)
+            and identity['exe'] == pair['interpreter_binding']['exe']
+            and diagnostic_matched(r['identity_diagnostic'])
+            and r['identity_diagnostic']['stage'] in ('initial', 'loop'), 'identity')
     # Explicit argv length is eleven; do not trust an extra shell/token argument.
     require(type(identity['argv']) is list and len(identity['argv']) == 11
             and identity['argv'][1:4] == ['-I', '-B', str(Path(__file__).resolve().parent/'observer.py')]
             and identity['argv'][4:8] == ['dashboard', '--host', '127.0.0.1', '--port']
             and identity['argv'][9:] == ['--no-open', '--skip-build']
             and identity['argv'][8].isdigit() and 1024 <= int(identity['argv'][8]) <= 65535
-            and int(identity['argv'][8]) != 9119 and identity['argv'][0] == str(root/'venv/bin/python'),
+            and int(identity['argv'][8]) != 9119
+            and identity['argv'][0] == pair['interpreter_binding']['argv0'],
             'identity_command')
     require(read(out/'identity.json') == identity, 'identity_binding')
     fixture = r['fixture']
@@ -139,14 +147,17 @@ def analyze(root):
     pair = read(root/'result.json')
     require(set(pair) == {'schema', 'sha', 'candidate', 'grant', 'run_id', 'result', 'arms',
                          'tool_start', 'tool_end', 'seconds', 'environment', 'memory_risk',
-                         'public_release', 'public_source_start', 'public_source_end'}
-            and pair['schema'] == 'hud_remote_pair_v1' and pair['candidate'] == p['candidate']
+                         'public_release', 'public_source_start', 'public_source_end',
+                         'interpreter_binding', 'interpreter_binding_end'}
+            and pair['schema'] == 'hud_remote_pair_v2' and pair['candidate'] == p['candidate']
             and SHA.fullmatch(pair['sha']) is not None and pair['result'] == 'EXECUTION_COMPLETE_PENDING_ANALYSIS'
             and pair['memory_risk'] == 'WARN_NOT_ACCEPTED' and pair['public_release'] == 'BLOCK'
             and pair['arms'] == [{'arm': a, 'result': 'EXECUTION_COMPLETE_PENDING_ANALYSIS'} for a in p['arms']]
             and number(pair['seconds']) and 0 < pair['seconds'] < p['pair_seconds']
             and pair['tool_start'] == pair['tool_end'] == frozen()
             and pair['public_source_start'] == pair['public_source_end'], 'pair')
+    require(binding_valid(pair['interpreter_binding'], root)
+            and pair['interpreter_binding'] == pair['interpreter_binding_end'], 'interpreter_binding')
     source = pair['public_source_start']
     require(set(source) == {'count', 'sha256'} and type(source['count']) is int and source['count'] > 0
             and HEX.fullmatch(source['sha256']) is not None, 'public_source')
@@ -164,7 +175,11 @@ def analyze(root):
     require(arms[0]['fixture'] == arms[1]['fixture'], 'paired_fixture')
     return {'result': 'VERIFIED_REMOTE_FINITE_EXECUTION_ONLY', 'sha': pair['sha'],
             'seconds': pair['seconds'], 'arms': arms, 'environment': {'python': env['python'],
-                'platform': env['platform'], 'versions': versions, 'public_cli_source': source},
+                'platform': env['platform'], 'versions': versions, 'public_cli_source': source,
+                'interpreter_fingerprint': {k: pair['interpreter_binding'][k]
+                    for k in ('launcher_sha256', 'exe_sha256')},
+                'os_argv0_equals_launcher': pair['interpreter_binding']['argv0'] ==
+                                           pair['interpreter_binding']['launcher']},
             'absolute_between_arm_memory_comparison': 'FORBIDDEN',
             'ols': 'four_cooldown_points_descriptive_only',
             'historical_cause': 'UNKNOWN', 'growth_acceptance_budget': None,
@@ -184,13 +199,15 @@ def diagnostic(root):
     allowed_errors = {'start_resource', 'fixture_counts', 'port', 'host_identity', 'observer_failed',
         'resource', 'sampler_guard', 'operation_budget', 'pair_budget', 'arm_budget', 'phase_ack',
         'http', 'http_schema', 'ws_schema', 'ws_early_exit', 'load', 'startup_budget', 'observer_ready',
-        'operation_ack', 'clock', 'internal', 'cleanup_failed', 'final_readback', 'source_changed', 'tool_drift'}
+        'operation_ack', 'clock', 'internal', 'cleanup_failed', 'final_readback', 'source_changed', 'tool_drift',
+        'host_early_exit', 'identity_inspection', 'interpreter_binding'}
     for arm in protocol()['arms']:
         out = root/arm/'evidence'
         if not (out/'result.json').is_file():
             continue
         values = {'arm': arm, 'result': 'DIAGNOSTIC_ONLY', 'error': 'unclassified',
-                  'cleanup': None, 'seconds': None, 'samples': [], 'observer_failure_recorded': False}
+                  'cleanup': None, 'seconds': None, 'samples': [], 'observer_failure_recorded': False,
+                  'identity_diagnostic': None, 'observer_failure': None}
         try:
             r = read(out/'result.json')
             if r.get('error') in allowed_errors:
@@ -198,12 +215,19 @@ def diagnostic(root):
             if number(r.get('seconds')) and 0 <= r['seconds'] < 10000:
                 values['seconds'] = r['seconds']
             c = r.get('cleanup')
-            if (type(c) is dict and set(c) == {'identity_matched', 'alive', 'exit_code', 'error'}
+            if (type(c) is dict and set(c) == {'identity_matched', 'alive', 'exit_code', 'error', 'diagnostic'}
                 and type(c['identity_matched']) is bool and (c['alive'] is None or type(c['alive']) is bool)
                 and (c['exit_code'] is None or type(c['exit_code']) is int and abs(c['exit_code']) < 10000)
-                and c['error'] in (None, 'unexpected_exit', 'cleanup_failed')):
+                and c['error'] in (None, 'unexpected_exit', 'cleanup_failed')
+                and diagnostic_valid(c['diagnostic'])):
                 values['cleanup'] = c
+            if diagnostic_valid(r.get('identity_diagnostic')):
+                values['identity_diagnostic'] = r['identity_diagnostic']
             values['observer_failure_recorded'] = (out/'observer-failure.json').is_file()
+            if values['observer_failure_recorded']:
+                child = read(out/'observer-failure.json', maximum=4096)
+                if failure_valid(child):
+                    values['observer_failure'] = child
         except BaseException:
             pass
         try:

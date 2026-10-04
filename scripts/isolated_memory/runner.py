@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (HERE, Refused, atomic, read, require, digest, frozen, protocol,
                     schedule, live_identity, identity_matches, cleanup, deadline,
                     workflow_authority, endpoint, LABELS)
+from identity_contract import (bind_parent, expected as expected_identity, diagnostic,
+                               exception_code, valid as identity_valid)
 
 
 def freeze_check(expected):
@@ -76,9 +78,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class Host:
-    def __init__(self, arm, home, out, repo, port):
+    def __init__(self, arm, home, out, repo, port, binding=None):
         self.arm, self.home, self.out, self.port = arm, home, out, port
         self.proc, self.identity, self.token = None, None, None
+        self.binding, self.identity_diagnostic = binding, None
         self.sequence = 0
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
         self.argv = [sys.executable, '-I', '-B', str(HERE/'observer.py'), 'dashboard',
@@ -92,20 +95,51 @@ class Host:
                     'HUD_OUT': str(out), 'HUD_REPO': str(repo), 'HUD_PORT': str(port)}
 
     def spawn(self):
+        require(self.binding is not None and self.argv[0] == self.binding['launcher'], 'interpreter_binding')
         self.proc = subprocess.Popen(self.argv, cwd=self.home, env=self.env,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # This full expected identity is also independently rechecked before signals.
-        actual = live_identity(self.proc)
-        self.identity = {'pid': self.proc.pid, 'birth': actual['birth'],
-                         'cwd': str(self.home), 'argv': self.argv}
-        require(identity_matches(self.identity, actual), 'host_identity')
+        # Read-only startup settling, not another Popen. Birth is captured ONCE,
+        # never refreshed to a different process. Only trusted parent argv0/exe
+        # supply authority; the child's observed command is never adopted.
+        until = time.monotonic()+2
+        while True:
+            code = self.proc.poll()
+            if code is not None:
+                self.identity_diagnostic = diagnostic('initial', exit_code=code)
+                raise Refused('host_early_exit')
+            try:
+                actual = live_identity(self.proc)
+            except BaseException as error:
+                self.identity_diagnostic = diagnostic('initial', inspection_error=exception_code(error))
+                raise Refused('identity_inspection') from None
+            if self.identity is None and identity_valid(actual):
+                self.identity = expected_identity(self.argv, self.home, self.proc.pid,
+                                                  actual['birth'], self.binding)
+            self.identity_diagnostic = diagnostic('initial', self.identity, actual)
+            if identity_matches(self.identity, actual):
+                break
+            if time.monotonic() >= until:
+                raise Refused('host_identity')
+            time.sleep(.05)
         atomic(self.out/'identity.json', self.identity)
+
+    def check_identity(self):
+        code = self.proc.poll() if self.proc is not None else None
+        if self.proc is None or code is not None:
+            self.identity_diagnostic = diagnostic('loop', exit_code=code)
+            raise Refused('host_early_exit')
+        try:
+            actual = live_identity(self.proc)
+        except BaseException as error:
+            self.identity_diagnostic = diagnostic('loop', inspection_error=exception_code(error))
+            raise Refused('identity_inspection') from None
+        self.identity_diagnostic = diagnostic('loop', self.identity, actual)
+        require(identity_matches(self.identity, actual), 'host_identity')
 
     def check(self, p, pair_begin, arm_begin, operation=None):
         import psutil
         deadline(time.monotonic(), pair_begin, arm_begin, p)
-        require(self.proc is not None and self.proc.poll() is None
-                and identity_matches(self.identity, live_identity(self.proc)), 'host_identity')
+        self.check_identity()
         require(not (self.out/'observer-failure.json').exists(), 'observer_failed')
         require(psutil.virtual_memory().available >= p['available_running_bytes']
                 and psutil.disk_usage(self.out).free >= p['disk_running_bytes']
@@ -210,7 +244,7 @@ async def operation(host, label, seq, guard, p):
             'observed_seconds': done-begin, 'window_seconds': time.monotonic()-begin}
 
 
-async def run_arm(root, arm, repo, epoch, p, begun, hashes):
+async def run_arm(root, arm, repo, epoch, p, begun, hashes, binding):
     import psutil
     from fixture import build, source_hashes, counts
     at = time.monotonic()
@@ -218,10 +252,10 @@ async def run_arm(root, arm, repo, epoch, p, begun, hashes):
     directory.mkdir()
     out, home = directory/'evidence', directory/'synthetic-home'
     out.mkdir()
-    r = {'schema': 'hud_remote_arm_v1', 'arm': arm, 'result': 'RUNNING', 'error': None,
+    r = {'schema': 'hud_remote_arm_v2', 'arm': arm, 'result': 'RUNNING', 'error': None,
          'phases': [], 'operations': [], 'cleanup': None, 'fixture': None,
          'sources_end': None, 'counts_end': None, 'tool_end': None,
-         'start': at, 'seconds': None, 'identity': None}
+         'start': at, 'seconds': None, 'identity': None, 'identity_diagnostic': None}
     host = None
     try:
         require(psutil.virtual_memory().available >= p['available_start_bytes']
@@ -232,7 +266,8 @@ async def run_arm(root, arm, repo, epoch, p, begun, hashes):
             port = sock.getsockname()[1]
         endpoint(port, '')
         atomic(out/'control.json', {'phase': 'startup', 'sequence': 0})
-        host = Host(arm, home, out, repo, port)
+        require(bind_parent(root) == binding, 'interpreter_binding')
+        host = Host(arm, home, out, repo, port, binding)
         host.spawn()
         r['identity'] = host.identity
         until = time.monotonic()+p['startup_seconds']
@@ -265,10 +300,14 @@ async def run_arm(root, arm, repo, epoch, p, begun, hashes):
         allowed = {'start_resource', 'fixture_counts', 'port', 'host_identity', 'observer_failed',
                    'resource', 'sampler_guard', 'operation_budget', 'pair_budget', 'arm_budget',
                    'phase_ack', 'http', 'http_schema', 'ws_schema', 'ws_early_exit', 'load',
-                   'startup_budget', 'observer_ready', 'operation_ack', 'clock'}
+                   'startup_budget', 'observer_ready', 'operation_ack', 'clock',
+                   'host_early_exit', 'identity_inspection', 'interpreter_binding'}
         r['result'] = 'FAIL'
         r['error'] = str(error) if type(error) is Refused and str(error) in allowed else 'internal'
     finally:
+        if host:
+            r['identity'] = host.identity
+            r['identity_diagnostic'] = host.identity_diagnostic
         if host and host.proc:
             r['cleanup'] = cleanup(host.proc, host.identity or {})
             if not (r['cleanup']['identity_matched'] is True and r['cleanup']['alive'] is False
@@ -304,12 +343,13 @@ async def pair(args):
         stream.write('CONSUMED_ONCE_NO_RETRY\n')
     begun = time.monotonic()
     repo = HERE.parents[1]
-    r = {'schema': 'hud_remote_pair_v1', 'sha': args.sha, 'candidate': protocol()['candidate'],
+    r = {'schema': 'hud_remote_pair_v2', 'sha': args.sha, 'candidate': protocol()['candidate'],
          'grant': args.grant, 'run_id': os.environ['GITHUB_RUN_ID'], 'result': 'RUNNING',
          'arms': [], 'tool_start': hashes, 'tool_end': None, 'seconds': None,
          'environment': {'python': sys.version.split()[0], 'platform': sys.platform,
              'distributions': {d.metadata['Name']: d.version for d in importlib.metadata.distributions()}},
-         'memory_risk': 'WARN_NOT_ACCEPTED', 'public_release': 'BLOCK'}
+         'memory_risk': 'WARN_NOT_ACCEPTED', 'public_release': 'BLOCK',
+         'interpreter_binding': None, 'interpreter_binding_end': None}
     p = protocol()
     require(importlib.metadata.version('hermes-agent') == p['host_version'], 'host_version')
     # File name+content fingerprint of public Python modules only, no metadata/config/logs.
@@ -329,10 +369,12 @@ async def pair(args):
         return {'count': count, 'sha256': h.hexdigest()}
     r['public_source_start'] = public_source_fingerprint()
     atomic(root/'result.json', r)
+    r['interpreter_binding'] = bind_parent(root)
+    atomic(root/'result.json', r)
     # The artifact is created only after both arms are sealed. No synthetic home uploads.
     epoch = int(time.time())-7200
     for arm in p['arms']:
-        value = await run_arm(root, arm, repo, epoch, p, begun, hashes)
+        value = await run_arm(root, arm, repo, epoch, p, begun, hashes, r['interpreter_binding'])
         r['arms'].append({'arm': arm, 'result': value['result']})
         atomic(root/'result.json', r)
         if value['result'] == 'FAIL':
@@ -340,9 +382,11 @@ async def pair(args):
     r['seconds'] = time.monotonic()-begun
     r['tool_end'] = frozen()
     r['public_source_end'] = public_source_fingerprint()
+    r['interpreter_binding_end'] = bind_parent(root)
     r['result'] = ('EXECUTION_COMPLETE_PENDING_ANALYSIS' if len(r['arms']) == 2
                    and all(a['result'] != 'FAIL' for a in r['arms']) and r['seconds'] < 6000
-                   and r['tool_end'] == hashes and r['public_source_start'] == r['public_source_end'] else 'FAIL')
+                   and r['tool_end'] == hashes and r['public_source_start'] == r['public_source_end']
+                   and r['interpreter_binding'] == r['interpreter_binding_end'] else 'FAIL')
     atomic(root/'result.json', r)
     return root
 

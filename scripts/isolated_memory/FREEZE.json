@@ -1,1 +1,16 @@
-{"files": {"../../.github/workflows/fresh-install.yml": "b0bd358b7db62d340c6d39dac8b9fe988184dc020c94a8710cf688ef5568e18f", "PROTOCOL.md": "9906f7ba24eb1d2deaec5ee2c7da1edb4e163697df8be706df67516bf249a671", "analyze.py": "1c462c0b040c36cae365550e938699b5018a1445bd2633d1c51fa31bf8402f34", "common.py": "d3af7aba99919a91dd57a2658fd5733a0da3b22095c7cc0bca63b699876693d8", "fixture.py": "695b7f5e25906241321a78b3105fd9180d762fecc26757a801bc64032d75dce9", "observer.py": "740621223cc09ca4afbafa4f9ed39d1ca7705ea7144441fcbee03d5ae1703154", "protocol.json": "a83beb7e3622d566e4d837293a0848aef6e67fd8bc3d36e02ee34e0c71c24f79", "runner.py": "de903c3ca5fb4a20ef6e3d674438b8a6965678ae296e85611acf97167cdd61e2", "test_contract.py": "4eaa91c0ffa6dd6ccf69157619c06428d9995e29084451f110567b04d95bcad9"}, "schema": "hud_remote_tool_freeze_v1"}
+{
+  "files": {
+    "../../.github/workflows/fresh-install.yml": "b0bd358b7db62d340c6d39dac8b9fe988184dc020c94a8710cf688ef5568e18f",
+    "PROTOCOL.md": "1764574e9d39ade28719dd7b14c8a2e32c180c7a9c83b92ccce6b9dbc708eb1c",
+    "analyze.py": "05f884c0ed9f401c66acec92d181246da1700677192929ee184dda8cc5db424b",
+    "common.py": "1792d8bb39d3e18f204163bc2e584bbf12c71b0eb14467f50f17801727a94124",
+    "fixture.py": "695b7f5e25906241321a78b3105fd9180d762fecc26757a801bc64032d75dce9",
+    "identity_contract.py": "fb37d96381ebc26bb7b550f13de516696636ab3152eef8b6d792c398609539d6",
+    "observer.py": "ae180cc41fa6108dd74ffc1f8ea53b3e7063f56f5eb5133638faae88a2585229",
+    "protocol.json": "d8992ff29ea9f2d2ae754680aa20cc538f86e6f12aed4dce0b175b6d8e7f5f60",
+    "runner.py": "a85ea6edc391ab6d3894e729f2f1e70e400388a1c758fd75cb64ab9c516464b1",
+    "test_contract.py": "2f1ad7d008aaddd3a30331ad8839562196310d94316445228efe5a2d40294a58",
+    "test_identity.py": "5d313fbc839fd2e172ce8274bdccf471337b8d150e8c8dfa8802f20d2c3b3fe0"
+  },
+  "schema": "hud_remote_tool_freeze_v1"
+}

@@ -1,4 +1,6 @@
-# Finite remote memory experiment
+# Finite remote memory experiment — private identity repair v2
+
+Current state: LOCAL_OFFLINE_PREPARATION_ONLY. The prior grant was consumed by the failed run; the historical authorization narrative below is not a new grant. This repair has not been pushed or executed in CI. No acceptance, permit, dispatch claim or native run is created here.
 
 This test branch adds private diagnostic tooling, not a product release. A successful run means finite execution evidence is valid; memory risk remains WARN_NOT_ACCEPTED and public release remains BLOCK. Historical memory growth is still unassigned. No new growth acceptance threshold is invented.
 
@@ -39,3 +41,17 @@ The offline analyzer imports neither runner nor host and never opens a DB, synth
 Only the analyzer's fixed-schema aggregate projection is uploaded. On failure it preserves enumerated errors, validated cleanup/scalar samples and observer-failure presence; invalid fields/raw-containing samples are not exported. No raw service log, HTML, token, allocation text, source database, fixture configuration, backup, ZIP or historical private evidence. Failure is DIAGNOSTIC_ONLY_NOT_VERIFIED, never PASS. A valid finite run is not long-term no-leak proof, historical cause attribution, user risk acceptance or public release PASS.
 
 Local tests use injected process/trace/transport models and generated aggregate records. They reject subprocess, network, SQLite and signal attempts after dependency preload. No local host/Mach call is executed. Their model success does not verify real CI transport, host startup or resource cleanup. One focused code/workflow safety review precedes the single remote run; no further per-low-item audit cycle is required.
+
+## Identity repair v2 contract
+
+The venv launcher remains exactly the owned root's venv/bin/python, launched with -I -B and the same fixed eleven arguments. Before each arm the trusted parent binds its own actual OS argv0 and canonical executable, its venv prefix and launcher, and both binary SHA-256 values. Parent OS argv tail must equal sys.orig_argv tail, including -I -B. The binding is rechecked before child spawn and at pair end. No child-observed argv0/executable is adopted as authority; no wildcard or compatibility alias list is allowed.
+
+CPython's public macOS framework launcher can replace OS argv0 while preserving sys.executable's launcher role. This is a supported mechanism for the repair hypothesis, NOT proof of what happened in the old failed run. The current exact parent image is the only allowed child image. Initial admission may inspect the one spawned child for at most two seconds, inside the existing budgets. Its first observed birth is retained permanently; subsequent changes cannot rebind it. This is not another spawn, automatic rerun, or deterministic OS deadline.
+
+Every live check and every signal recheck now compares PID, birth, cwd, full argv AND executable. Initial/loop/pre_term/pre_kill diagnostics contain only five bool/null comparisons, an exit integer and fixed inspection-error enum. Early exit, inspection exception and mismatch are distinct. Natural exit is not called identity-matched cleanup. A successful late cleanup cannot turn failed startup into execution success. Unknown identity sends no signal; a failed KILL recheck sends no KILL. A single Popen.poll observation produces each exit decision.
+
+Arm/pair/interpreter/observer-failure schemas are v2; old failures must be read with their original analyzer, never backfilled. Child boot/sampler/worker failures use fixed stage/error plus optional SHA-256 of the in-memory traceback filename STRING and a line number. This is filename provenance, not source-content hash or historical attribution; it reads no traceback source. No exception text, path, token or raw body is persisted. Failure before validated owned scope produces no child file; parent exit diagnostics remain. Concurrent failure writers or failed evidence writes may leave missing diagnostics, which cannot validate PASS.
+
+The independent analyzer imports neither runner nor observer. It projects child failure records only after exact schema validation and a 4096-byte input bound. Presence of any observer-failure file prevents successful arm analysis. Interpretation limits, fixture, loads, resource thresholds, cleanup waits, action/workflow bindings and memory/public-release states remain unchanged. Preflight exceptions may still leave provisional/missing terminal evidence; missing bindings/terminal cannot pass analysis. Python audit starts after preload and is not OS containment; real psutil, OS pipes, Mach and CI startup remain NOT VERIFIED by models.
+
+The old grant, claims, original source files and aggregate FAIL remain immutable. One consolidated review of the changed identity/signal/privacy boundary is required; register nonblocking remarks without per-word preparation loops. Any future remote dispatch requires a separately reviewed SHA, fresh grant and explicit owner authorization. Preparation PASS never accepts memory WARN or authorizes product versioning, main, merge/tag/release or promotion.

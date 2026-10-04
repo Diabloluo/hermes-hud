@@ -8,7 +8,7 @@ import time
 
 HERE = Path(__file__).resolve().parent
 FILES = ('protocol.json', 'common.py', 'fixture.py', 'observer.py', 'runner.py', 'analyze.py',
-         'test_contract.py', 'PROTOCOL.md')
+         'test_contract.py', 'identity_contract.py', 'test_identity.py', 'PROTOCOL.md')
 HEX = re.compile(r'^[0-9a-f]{64}$')
 SHA = re.compile(r'^[0-9a-f]{40}$')
 LABELS = ('baseline', 'cooldown-1', 'cooldown-2', 'cooldown-3', 'cooldown-4')
@@ -60,7 +60,7 @@ def read(path, maximum=32 * 1024 * 1024):
 
 def protocol():
     p = read(HERE / 'protocol.json')
-    require(p['schema'] == 'hud_remote_finite_memory_v1' and p['rounds'] == 4
+    require(p['schema'] == 'hud_remote_finite_memory_v2' and p['rounds'] == 4
             and p['arms'] == ['sham', 'snapshot'] and p['trace_depth'] == 1
             and p['runs'] == 1 and p['retry'] is False and p['forced_gc'] is False
             and p['allocator_trim'] is False and p['vmmap'] is False
@@ -102,42 +102,60 @@ def coverage(samples, phase, p):
 
 
 def live_identity(proc):
-    import psutil
-    obj = psutil.Process(proc.pid)
-    return {'pid': proc.pid, 'birth': obj.create_time(), 'cwd': obj.cwd(), 'argv': obj.cmdline()}
+    from identity_contract import inspect
+    return inspect(proc)
 
 
 def identity_matches(saved, actual):
-    return (set(actual) == {'pid', 'birth', 'cwd', 'argv'}
-            and type(saved.get('pid')) is int and type(saved.get('birth')) is float
-            and saved['pid'] == actual['pid'] and saved['birth'] == actual['birth']
-            and saved['cwd'] == actual['cwd'] and saved['argv'] == actual['argv'])
+    from identity_contract import matches
+    return matches(saved, actual)
 
 
 def cleanup(proc, saved, inspect=live_identity):
     """Signals require PID+birth+cwd+full argv, rechecked before TERM and KILL."""
-    result = {'identity_matched': False, 'alive': None, 'exit_code': None, 'error': None}
+    from identity_contract import diagnostic, exception_code
+    result = {'identity_matched': False, 'alive': None, 'exit_code': None, 'error': None,
+              'diagnostic': None}
+    stage = 'pre_term'
     try:
         # A natural exit is observed, but is not fabricated into identity-matched cleanup.
         code = proc.poll()
         if code is not None:
+            require(type(code) is int and abs(code) < 10000, 'cleanup_exit')
+            result['diagnostic'] = diagnostic(stage, exit_code=code)
             return dict(result, alive=False, exit_code=code, error='unexpected_exit')
-        require(identity_matches(saved, inspect(proc)), 'cleanup_identity')
+        try:
+            actual = inspect(proc)
+        except BaseException as error:
+            result['diagnostic'] = diagnostic(stage, inspection_error=exception_code(error))
+            raise
+        result['diagnostic'] = diagnostic(stage, saved, actual)
+        require(identity_matches(saved, actual), 'cleanup_identity')
         result['identity_matched'] = True
         proc.terminate()
         try:
             code = proc.wait(timeout=15)
-        except TimeoutError:
-            require(identity_matches(saved, inspect(proc)), 'cleanup_identity')
+        except (TimeoutError, __import__('subprocess').TimeoutExpired):
+            stage = 'pre_kill'
+            code = proc.poll()
+            if code is not None:
+                require(type(code) is int and abs(code) < 10000, 'cleanup_exit')
+                return dict(result, alive=False, exit_code=code)
+            try:
+                actual = inspect(proc)
+            except BaseException as error:
+                result['diagnostic'] = diagnostic(stage, inspection_error=exception_code(error))
+                raise
+            result['diagnostic'] = diagnostic(stage, saved, actual)
+            require(identity_matches(saved, actual), 'cleanup_identity')
             proc.kill()
             code = proc.wait(timeout=5)
-        except __import__('subprocess').TimeoutExpired:
-            require(identity_matches(saved, inspect(proc)), 'cleanup_identity')
-            proc.kill()
-            code = proc.wait(timeout=5)
+        require(type(code) is int and abs(code) < 10000, 'cleanup_exit')
         return dict(result, alive=False, exit_code=code)
     except BaseException:
         # No follow-up signal after an unknown identity. No raw exception content.
+        if result['diagnostic'] is None:
+            result['diagnostic'] = diagnostic(stage, inspection_error='inspection_other')
         return dict(result, error='cleanup_failed')
 
 

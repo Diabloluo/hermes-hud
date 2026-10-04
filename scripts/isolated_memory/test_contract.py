@@ -16,6 +16,7 @@ import analyze
 import observer
 import runner
 import fixture
+import identity_contract as ident
 import psutil
 from types import SimpleNamespace
 
@@ -58,7 +59,8 @@ class PureContract(unittest.TestCase):
         self.env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'Diabloluo/hermes-hud',
                     'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_RUN_ATTEMPT': '1',
                     'GITHUB_REF': 'refs/heads/test/v2-isolated-memory-20261003', 'GITHUB_SHA': 'a'*40}
-        self.saved = {'pid': 456, 'birth': 1.0, 'cwd': '/synthetic/home', 'argv': ['fixed-entry', '1234']}
+        self.saved = {'pid': 456, 'birth': 1.0, 'cwd': '/synthetic/home',
+                      'argv': ['fixed-entry', '1234'], 'exe': '/synthetic/Python'}
 
     def test_authority_exact(self):
         common.workflow_authority(self.env, 'a'*40, 'b'*32)
@@ -146,7 +148,7 @@ class PureContract(unittest.TestCase):
 
     def test_frozen_real_file_read_only(self):
         values = common.frozen()
-        self.assertEqual(len(values), 9)
+        self.assertEqual(len(values), 11)
         self.assertTrue(all(common.HEX.fullmatch(x) for x in values.values()))
 
     def test_invalid_authorization_strings(self):
@@ -168,7 +170,8 @@ class GuardModel(unittest.TestCase):
         self.out = Path(self.tmp.name).resolve()
         self.host = runner.Host('sham', self.out/'synthetic-home', self.out, Path('/public/repo'), 1234)
         self.host.proc = Proc()
-        self.host.identity = {'pid': 456, 'birth': 1., 'cwd': '/synthetic/home', 'argv': ['entry']}
+        self.host.identity = {'pid': 456, 'birth': 1., 'cwd': '/synthetic/home',
+                              'argv': ['entry'], 'exe': '/synthetic/Python'}
         self.p = common.protocol()
         self.available = 4*1024**3
         self.free = 6*1024**3
@@ -245,7 +248,11 @@ class EvidenceModel(unittest.TestCase):
         self.root.mkdir()
         self.p = common.protocol()
         self.tools = common.frozen()
-        self.pair = {'schema': 'hud_remote_pair_v1', 'sha': 'a'*40, 'candidate': self.p['candidate'],
+        self.binding = {'schema': 'hud_remote_interpreter_v2', 'launcher': str(self.root/'venv/bin/python'),
+                        'prefix': str(self.root/'venv'), 'argv0': '/public/Python.app/Contents/MacOS/Python',
+                        'exe': '/public/Python.app/Contents/MacOS/Python',
+                        'launcher_sha256': 'a'*64, 'exe_sha256': 'b'*64}
+        self.pair = {'schema': 'hud_remote_pair_v2', 'sha': 'a'*40, 'candidate': self.p['candidate'],
                      'grant': 'b'*32, 'run_id': '1', 'result': 'EXECUTION_COMPLETE_PENDING_ANALYSIS',
                      'arms': [{'arm': a, 'result': 'EXECUTION_COMPLETE_PENDING_ANALYSIS'} for a in self.p['arms']],
                      'tool_start': self.tools, 'tool_end': self.tools, 'seconds': 4800,
@@ -254,7 +261,8 @@ class EvidenceModel(unittest.TestCase):
                          'fastapi': '1', 'uvicorn': '1', 'starlette': '1'}},
                      'memory_risk': 'WARN_NOT_ACCEPTED', 'public_release': 'BLOCK',
                      'public_source_start': {'count': 1, 'sha256': 'a'*64},
-                     'public_source_end': {'count': 1, 'sha256': 'a'*64}}
+                    'public_source_end': {'count': 1, 'sha256': 'a'*64},
+                    'interpreter_binding': self.binding, 'interpreter_binding_end': dict(self.binding)}
         self.arms = {}
         for arm in self.p['arms']:
             out = self.root/arm/'evidence'
@@ -280,18 +288,21 @@ class EvidenceModel(unittest.TestCase):
                     at += 30
             identity = {'pid': 1 if arm == 'sham' else 2, 'birth': 1.,
                 'cwd': str(self.root/arm/'synthetic-home'),
-                'argv': [str(self.root/'venv/bin/python'), '-I', '-B', str(common.HERE/'observer.py'),
-                         'dashboard', '--host', '127.0.0.1', '--port', '1234', '--no-open', '--skip-build']}
+                'argv': [self.binding['argv0'], '-I', '-B', str(common.HERE/'observer.py'),
+                         'dashboard', '--host', '127.0.0.1', '--port', '1234', '--no-open', '--skip-build'],
+                'exe': self.binding['exe']}
             common.atomic(out/'identity.json', identity)
-            r = {'schema': 'hud_remote_arm_v1', 'arm': arm, 'result': 'EXECUTION_COMPLETE_PENDING_ANALYSIS',
+            r = {'schema': 'hud_remote_arm_v2', 'arm': arm, 'result': 'EXECUTION_COMPLETE_PENDING_ANALYSIS',
                  'error': None, 'phases': phases, 'operations': ops,
-                 'cleanup': {'identity_matched': True, 'alive': False, 'exit_code': -15, 'error': None},
+                 'cleanup': {'identity_matched': True, 'alive': False, 'exit_code': -15, 'error': None,
+                             'diagnostic': ident.diagnostic('pre_term', identity, identity)},
                  'fixture': {'counts': self.p['fixture_counts'], 'schema_source_sha256': 'd'*64,
                     'source_hashes': {'state.db': 'e'*64, 'job-ledger/jobs.jsonl': 'f'*64},
                     'query_only': True, 'native_ddl': 'fresh pinned distribution SCHEMA_SQL; required fields not patched',
                     'timeline_total': None}, 'sources_end': {'state.db': 'e'*64, 'job-ledger/jobs.jsonl': 'f'*64},
                  'counts_end': self.p['fixture_counts'], 'tool_end': self.tools,
-                 'start': 0., 'seconds': 2500., 'identity': identity}
+                 'start': 0., 'seconds': 2500., 'identity': identity,
+                 'identity_diagnostic': ident.diagnostic('loop', identity, identity)}
             self.arms[arm] = r
             common.atomic(out/'result.json', r)
             (out/'samples.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows))
