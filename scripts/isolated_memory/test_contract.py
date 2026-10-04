@@ -370,6 +370,28 @@ class EvidenceModel(unittest.TestCase):
         path.write_text('\n'.join(rows)+'\n')
         self.assertRaises(common.Refused, analyze.analyze, self.root)
 
+    def test_partial_failure_safe_projection(self):
+        self.arms['sham']['error'] = 'resource'
+        self.arms['sham']['result'] = 'FAIL'
+        self.seal()
+        r = analyze.diagnostic(self.root)
+        self.assertEqual(r[0]['result'], 'DIAGNOSTIC_ONLY')
+        self.assertEqual(r[0]['error'], 'resource')
+        self.assertGreater(len(r[0]['samples']), 0)
+
+    def test_partial_failure_no_raw_error_export(self):
+        self.arms['sham']['error'] = 'SECRET_SENTINEL'
+        self.arms['sham']['raw'] = 'SECRET_SENTINEL'
+        self.seal()
+        self.assertNotIn('SECRET_SENTINEL', json.dumps(analyze.diagnostic(self.root)))
+
+    def test_invalid_partial_sample_not_exported(self):
+        path = self.root/'sham/evidence/samples.jsonl'
+        path.write_text('{"raw":"SECRET_SENTINEL"}\n')
+        r = analyze.diagnostic(self.root)
+        self.assertEqual(r[0]['samples'], [])
+        self.assertNotIn('SECRET_SENTINEL', json.dumps(r))
+
 
 MUTATIONS = {
     'fail_never_upgrade': lambda s: s.pair.update(result='FAIL'),

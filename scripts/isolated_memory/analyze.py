@@ -178,6 +178,42 @@ def analyze(root):
                 'No risk acceptance, long-term no-leak proof, final product SHA or public release PASS.']}
 
 
+def diagnostic(root):
+    """Preserve valid partial scalars on FAIL, never export an arbitrary payload."""
+    result = []
+    allowed_errors = {'start_resource', 'fixture_counts', 'port', 'host_identity', 'observer_failed',
+        'resource', 'sampler_guard', 'operation_budget', 'pair_budget', 'arm_budget', 'phase_ack',
+        'http', 'http_schema', 'ws_schema', 'ws_early_exit', 'load', 'startup_budget', 'observer_ready',
+        'operation_ack', 'clock', 'internal', 'cleanup_failed', 'final_readback', 'source_changed', 'tool_drift'}
+    for arm in protocol()['arms']:
+        out = root/arm/'evidence'
+        if not (out/'result.json').is_file():
+            continue
+        values = {'arm': arm, 'result': 'DIAGNOSTIC_ONLY', 'error': 'unclassified',
+                  'cleanup': None, 'seconds': None, 'samples': [], 'observer_failure_recorded': False}
+        try:
+            r = read(out/'result.json')
+            if r.get('error') in allowed_errors:
+                values['error'] = r['error']
+            if number(r.get('seconds')) and 0 <= r['seconds'] < 10000:
+                values['seconds'] = r['seconds']
+            c = r.get('cleanup')
+            if (type(c) is dict and set(c) == {'identity_matched', 'alive', 'exit_code', 'error'}
+                and type(c['identity_matched']) is bool and (c['alive'] is None or type(c['alive']) is bool)
+                and (c['exit_code'] is None or type(c['exit_code']) is int and abs(c['exit_code']) < 10000)
+                and c['error'] in (None, 'unexpected_exit', 'cleanup_failed')):
+                values['cleanup'] = c
+            values['observer_failure_recorded'] = (out/'observer-failure.json').is_file()
+        except BaseException:
+            pass
+        try:
+            values['samples'] = samples_read(out/'samples.jsonl')
+        except BaseException:
+            pass  # Invalid/raw-containing samples are not exported and never validate.
+        result.append(values)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('root', type=Path)
@@ -192,7 +228,8 @@ def main():
         code = 0
     except BaseException:
         summary = {'result': 'DIAGNOSTIC_ONLY_NOT_VERIFIED', 'memory_risk': 'WARN_NOT_ACCEPTED',
-                   'public_release': 'BLOCK', 'error': 'evidence_invalid_or_execution_failed'}
+                   'public_release': 'BLOCK', 'error': 'evidence_invalid_or_execution_failed',
+                   'partial_aggregate_diagnostics': diagnostic(root)}
         code = 2
     (output/'analysis.json').write_text(json.dumps(summary, sort_keys=True, indent=2)+'\n')
     # Deliberately only validated/projection scalars, not homes, logs, HTML, config,
