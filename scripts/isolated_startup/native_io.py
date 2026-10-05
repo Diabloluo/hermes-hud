@@ -16,6 +16,7 @@ import urllib.request
 from common import atomic,atomic_bytes,bounded,read,require,digest
 import fixture
 import identity_contract as identity
+import identity_diagnostics as diagnostics
 from lifecycle import identity_valid,transport_valid,child_valid,GRANT,HEX
 from source_contract import capture,manifest_valid
 
@@ -68,6 +69,7 @@ class NativeIO:
         self.manifest=None;self.site=None
         self.argv=None
         self._claimed=False;self._spawn_wall=None
+        self._first_identity_failure=None
         self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 
     def clock(self):return time.monotonic()
@@ -135,20 +137,45 @@ class NativeIO:
 
     def inspect(self,proc):return identity.inspect(proc)
 
+    def _identity_note(self,site,saved=None,actual=None,code=None,inspection_error=None,birth=None):
+        if self._first_identity_failure is None:
+            self._first_identity_failure=diagnostics.project(site,saved,actual,code,inspection_error,birth)
+
+    def identity_diagnostic(self):
+        return diagnostics.snapshot(self._first_identity_failure)
+
     def expected(self,proc):
         # Birth captured once; argv0/exe authority comes from the trusted parent.
-        require(self.saved is None and proc.poll() is None,'identity')
-        actual=self.inspect(proc)
-        require(identity_valid(actual) and self._spawn_wall-1<=actual['birth']<=time.time()+1,'identity')
-        self.saved=identity.expected(self.argv,self.home,proc.pid,actual['birth'],self.binding)
-        require(identity.matches(self.saved,actual),'identity')
+        site='initial_poll';code=None;actual=None;birth=None
+        try:
+            require(self.saved is None,'identity')
+            code=proc.poll();require(code is None,'identity')
+            site='initial_inspect';actual=self.inspect(proc)
+            site='initial_schema';require(identity_valid(actual),'identity')
+            site='initial_birth';birth=self._spawn_wall-1<=actual['birth']<=time.time()+1
+            require(birth,'identity')
+            site='initial_expected'
+            self.saved=identity.expected(self.argv,self.home,proc.pid,actual['birth'],self.binding)
+            site='initial_match';require(identity.matches(self.saved,actual),'identity')
+        except BaseException as error:
+            classification=identity.exception_code(error) if site=='initial_inspect' else None
+            self._identity_note(site,self.saved,actual,code,classification,birth)
+            raise
         atomic(self.out/'identity.json',self.saved)
         return self.saved
 
     def check(self,proc,expected):
         import psutil
         require(time.monotonic()-self.begin<280,'budget')
-        require(proc.poll() is None and identity.matches(expected,self.inspect(proc)),'identity')
+        site='loop_poll';code=None;actual=None
+        try:
+            code=proc.poll();require(code is None,'identity')
+            site='loop_inspect';actual=self.inspect(proc)
+            site='loop_match';require(identity.matches(expected,actual),'identity')
+        except BaseException as error:
+            classification=identity.exception_code(error) if site=='loop_inspect' else None
+            self._identity_note(site,expected,actual,code,classification)
+            raise
         require(not (self.out/'observer-failure.json').exists(),'boundary')
         require(psutil.virtual_memory().available>=512*1024**2
                 and psutil.disk_usage(self.out).free>=1024**3

@@ -8,15 +8,17 @@ import subprocess
 
 from boundary_policy import BoundaryRefused
 from guard_stack import clean_state, stack_valid
+import identity_contract as identity
+import identity_diagnostics as diagnostics
 
 HEX = re.compile(r'^[0-9a-f]{64}$')
 GRANT = re.compile(r'^[0-9a-f]{32}$')
-SCHEMA = 'hud_short_startup_backend_v1'
+SCHEMA = 'hud_short_startup_backend_v2'
 SCOPE = 'one_owned_startup_300s_http1_ws1_no_retry_no_risk_acceptance'
 CHECKPOINTS = ('ready', 'http', 'ws', 'finish')
 ERRORS = {'prepared', 'authority', 'active', 'resource', 'claim', 'initialization',
           'source', 'spawn', 'identity', 'ready', 'http', 'ws', 'boundary', 'budget',
-          'finish', 'cleanup', 'seal', 'internal'}
+          'finish', 'cleanup', 'seal', 'internal', 'diagnostic'}
 LIMITS = ['SELF_REPORTED_TRANSPORT_NOT_OS_ATTESTATION', 'RESTRICTED_SYNTHETIC_ENVIRONMENT',
           'NOT_OS_CONTAINMENT', 'NOT_UI_ACCEPTANCE', 'NOT_MEMORY_ACCEPTANCE',
           'RECORD_CONSISTENCY_NOT_OS_ATTESTATION', 'NONDETERMINISTIC_IO_DEADLINE']
@@ -173,18 +175,23 @@ def execute_model_io(io, authority, freeze, review):
     parent-bound identity. token/raw transport must never enter acknowledgments.
     """
     started, proc, expected, stage = io.clock(), None, None, 'prepared'
+    failure_site='prepared'
     row = {'schema': SCHEMA, 'result': 'PENDING_TERMINAL_SEAL', 'candidate': 'FAIL',
            'error': None, 'cleanup_error': None, 'authority_id': None,
            'source_start': None, 'source_end': None, 'checkpoints': [],
            'http_calls': 0, 'ws_calls': 0, 'child': None, 'cleanup': None,
            'seconds': None, 'limits': LIMITS[:], 'memory_risk': 'WARN_NOT_ACCEPTED',
            'public_release': 'BLOCK', 'execution_kind':getattr(io,'execution_kind','MODEL'),
-           'transport':None}
+           'transport':None, 'failure_stage':None, 'identity_diagnostic':None,
+           'cleanup_diagnostic':None, 'handle_observation':None}
     def budget(reserve=20):
         now = io.clock()
         require(finite(now) and finite(started) and 0<=now-started<300-reserve, 'budget')
     def checkpoint(label):
+        nonlocal failure_site
+        failure_site='check_'+label
         io.check(proc, expected)  # Full identity and running resources before every operation.
+        failure_site='ack_'+label
         ack = io.acknowledge(label)
         require(type(ack) is dict and set(ack) == {'label', 'state'}
                 and ack['label'] == label and clean_state(ack['state']), 'boundary')
@@ -193,71 +200,112 @@ def execute_model_io(io, authority, freeze, review):
         require(row['execution_kind'] in ('MODEL','NATIVE'), 'prepared')
         require(io.prepared(freeze) is True, 'prepared')
         stage = 'authority'
+        failure_site=stage
         require(authority_valid(authority, io.wall(), freeze, review), 'authority')
         stage = 'active'
+        failure_site=stage
         require(io.no_active() is True, 'active')
         stage = 'resource'
+        failure_site=stage
         require(io.resources() is True, 'resource')
         budget()
         stage = 'claim'
+        failure_site=stage
         io.claim(authority['id'])
         row['authority_id'] = authority['id']
         stage = 'initialization'
+        failure_site=stage
         io.initialize()
         stage = 'source'
+        failure_site=stage
         source = io.sources()
         require(sources_valid(source), 'source')
         row['source_start'] = copy.deepcopy(source)
         budget()
         stage = 'spawn'
+        failure_site=stage
         proc = io.spawn()
         # Retain the handle BEFORE binding. An exception while binding cannot
         # discard ownership; cleanup receives no authority and sends no signal.
+        failure_site='expected'
         expected = io.expected(proc)
         stage = 'identity'
+        failure_site=stage
         require(identity_valid(expected), 'identity')
         io.check(proc, expected)
         stage = 'ready'
+        failure_site=stage
         io.ready(proc, expected)
         checkpoint('ready')
         budget()
         stage = 'http'
+        failure_site=stage
         row['http_calls'] = 1  # Attempts, including failures, never successes-only counters.
         io.http_once()
         checkpoint('http')
         budget()
         stage = 'ws'
+        failure_site=stage
         row['ws_calls'] = 1
         io.ws_once()
         checkpoint('ws')
         if row['execution_kind']=='NATIVE':
+            failure_site='transport'
             transport=io.transport()
             require(transport_valid(transport),'ws')
             row['transport']=copy.deepcopy(transport)
         budget()
         stage = 'finish'
+        failure_site=stage
         checkpoint('finish')
-        io.request_finish()
+        failure_site='finish';io.request_finish()
     except BaseException as error:
+        row['failure_stage']=failure_site
         row['error'] = (error.args[0] if type(error) is BoundaryRefused and len(error.args)==1
                         and type(error.args[0]) is str and error.args[0] in ERRORS else stage)
     finally:
         if proc is not None:
-            row['cleanup'] = close_owned(proc, expected, io.inspect)
+            inspections=[0]
+            def cleanup_inspect(handle):
+                inspections[0]+=1
+                prefix='pre_term' if inspections[0]==1 else 'pre_kill'
+                try:
+                    actual=io.inspect(handle)
+                except BaseException as error:
+                    if row['cleanup_diagnostic'] is None:
+                        row['cleanup_diagnostic']=diagnostics.project(prefix+'_inspect',
+                            inspection_error=identity.exception_code(error))
+                    raise
+                if not identity_valid(expected) or not identity_valid(actual) or actual!=expected:
+                    if row['cleanup_diagnostic'] is None:
+                        row['cleanup_diagnostic']=diagnostics.project(prefix+'_match',expected,actual)
+                return actual
+            row['cleanup'] = close_owned(proc, expected, cleanup_inspect)
             if not (cleanup_valid(row['cleanup']) and row['cleanup']['identity_matched'] is True
                     and row['cleanup']['alive'] is False and row['cleanup']['error'] is None):
                 row['cleanup_error'] = 'cleanup'
+                if row['failure_stage'] is None:row['failure_stage']='cleanup'
+        row['handle_observation']=diagnostics.observe_handle(proc)
+        try:
+            getter=getattr(io,'identity_diagnostic',None)
+            row['identity_diagnostic']=diagnostics.snapshot(getter() if callable(getter) else None)
+        except BaseException:
+            if row['error'] is None:row['error']='diagnostic'
+            if row['failure_stage'] is None:row['failure_stage']='diagnostic'
         try:
             if proc is not None:
+                failure_site='child_terminal'
                 terminal = io.child_terminal()
                 require(child_valid(terminal), 'finish')
                 row['child'] = copy.deepcopy(terminal)
             if row['source_start'] is not None:
+                failure_site='source_end'
                 source = io.sources()
                 require(sources_valid(source), 'source')
                 row['source_end'] = copy.deepcopy(source)
                 require(row['source_start'] == row['source_end'], 'source')
             if row['error'] is None and row['cleanup_error'] is None:
+                failure_site='acceptance'
                 child = row['child']
                 require(child_valid(child) and child['candidate']=='PASS'
                         and clean_state(child['state']) and child['commanded_exit'] is True
@@ -267,11 +315,17 @@ def execute_model_io(io, authority, freeze, review):
                 actual_exit = row['cleanup']['exit_code']
                 require(type(actual_exit) is int and actual_exit == 0
                         and actual_exit == child['exit_code'], 'finish')
+                require(all(row[k] is None for k in
+                            ('failure_stage','identity_diagnostic','cleanup_diagnostic'))
+                        and diagnostics.handle_valid(row['handle_observation'])
+                        and row['handle_observation']=={'alive':False,'exit_code':0,'error':None}
+                        and type(row['handle_observation']['exit_code']) is int, 'diagnostic')
                 require(io.prepared(freeze) is True, 'prepared')
                 budget(0)
                 row['candidate'] = 'PASS'
         except BaseException as error:
             if row['error'] is None:
+                if row['failure_stage'] is None:row['failure_stage']=failure_site
                 row['error'] = error.args[0] if type(error) is BoundaryRefused and error.args[0] in ERRORS else 'seal'
             row['candidate'] = 'FAIL'
         now = io.clock()
@@ -284,7 +338,7 @@ def execute_model_io(io, authority, freeze, review):
         require(io.read_payload() == payload, 'seal')
         require(io.prepared(freeze) is True, 'prepared')
         budget(0)
-        completion = {'schema': 'hud_short_completion_v1', 'payload_sha256': sha(payload),
+        completion = {'schema': 'hud_short_completion_v2', 'payload_sha256': sha(payload),
                       'verdict': row['candidate'] if row['error'] is None
                                   and row['cleanup_error'] is None else 'FAIL',
                       'freeze_sha256': freeze, 'review_sha256': review,

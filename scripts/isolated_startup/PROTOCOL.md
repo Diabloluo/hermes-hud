@@ -162,3 +162,22 @@ kernel containment, dependency closure or risk acceptance is claimed here.
 Always retained: HOST/HTTP/WS/CI NOT VERIFIED; MEMORY NOT CLOSED /
 WARN_NOT_ACCEPTED; PUBLIC RELEASE BLOCK. No memory attribution claim, risk
 acceptance, version stamp or product/public PASS follows from this preparation.
+
+## Diagnostic v2 superseding delta (offline only)
+
+The preceding B1 history remains preserved. This directory is a new v2 backend,
+completion and freeze schema; child-terminal schema remains v1. See the frozen
+DIAGNOSTICS_DELTA.md for bounded first-failure sites, comparison booleans and
+original-handle observation. No raw identity values or exception text are exported.
+close_owned is byte-identical; no new signal authority or identity inspection is
+added. One extra poll of the original handle is a separate observation, not an
+identity match and not a substituted transport or cleanup exit code. Parent and
+analyzer both reject successful candidates with diagnostics or a nonzero/unknown
+final handle observation. All B1 actual-exit conditions remain enforced.
+
+This preparation creates no gates and authorizes no native run or push. Future
+materialization, only after separate concrete owner authority, must bind the new
+freeze and a byte-identical accepted DOT_REMOTE_SHORT_STARTUP_DIAGNOSTICS_V2_REVIEW.md
+at HERE. Old consumed grants/claims are never reusable. Old v1 failures require
+the old analyzer. Historical root cause remains UNKNOWN; current host compatibility,
+memory risk closure and public release are not verified by these offline models.

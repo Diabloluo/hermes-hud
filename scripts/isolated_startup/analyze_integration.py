@@ -9,19 +9,21 @@ import sys
 if __name__=='__main__':sys.path.insert(0,str(Path(__file__).resolve().parent))
 
 from guard_stack import stack_valid, clean_state
+import identity_diagnostics as diagnostics
 
 HEX = re.compile(r'^[0-9a-f]{64}$')
 GRANT = re.compile(r'^[0-9a-f]{32}$')
 LABELS = ('ready', 'http', 'ws', 'finish')
 ERRORS = {'prepared', 'authority', 'active', 'resource', 'claim', 'initialization',
           'source', 'spawn', 'identity', 'ready', 'http', 'ws', 'boundary', 'budget',
-          'finish', 'cleanup', 'seal', 'internal'}
+          'finish', 'cleanup', 'seal', 'internal', 'diagnostic'}
 LIMITS = ['SELF_REPORTED_TRANSPORT_NOT_OS_ATTESTATION', 'RESTRICTED_SYNTHETIC_ENVIRONMENT',
           'NOT_OS_CONTAINMENT', 'NOT_UI_ACCEPTANCE', 'NOT_MEMORY_ACCEPTANCE',
           'RECORD_CONSISTENCY_NOT_OS_ATTESTATION', 'NONDETERMINISTIC_IO_DEADLINE']
 KEYS = {'schema', 'result', 'candidate', 'error', 'cleanup_error', 'authority_id',
         'source_start', 'source_end', 'checkpoints', 'http_calls', 'ws_calls',
-        'child', 'cleanup', 'seconds', 'limits', 'memory_risk', 'public_release','execution_kind','transport'}
+        'child', 'cleanup', 'seconds', 'limits', 'memory_risk', 'public_release','execution_kind','transport',
+        'failure_stage','identity_diagnostic','cleanup_diagnostic','handle_observation'}
 
 
 def finite(x):
@@ -52,7 +54,12 @@ def child(x):
 
 
 def valid(x):
-    if not (type(x) is dict and set(x)==KEYS and x['schema']=='hud_short_startup_backend_v1'
+    if not (type(x) is dict and set(x)==KEYS and x['schema']=='hud_short_startup_backend_v2'
+            and (x['failure_stage'] is None or type(x['failure_stage']) is str
+                 and x['failure_stage'] in diagnostics.STAGES)
+            and all(x[k] is None or diagnostics.valid(x[k])
+                    for k in ('identity_diagnostic','cleanup_diagnostic'))
+            and diagnostics.handle_valid(x['handle_observation'])
             and x['execution_kind'] in ('MODEL','NATIVE')
             and (x['transport'] is None or transport_valid(x['transport']))
             and x['result']=='PENDING_TERMINAL_SEAL' and x['candidate'] in ('PASS','FAIL')
@@ -87,6 +94,10 @@ def valid(x):
 
 def pass_conditions(x):
     if not valid(x) or x['candidate']!='PASS' or x['error'] is not None or x['cleanup_error'] is not None:
+        return False
+    if (any(x[k] is not None for k in ('failure_stage','identity_diagnostic','cleanup_diagnostic'))
+            or x['handle_observation']!={'alive':False,'exit_code':0,'error':None}
+            or type(x['handle_observation']['exit_code']) is not int):
         return False
     c, end = x['child'], x['cleanup']
     return ((x['execution_kind']=='MODEL' and x['transport'] is None or
@@ -126,7 +137,7 @@ def analyze(payload, completion, freeze, review):
     try:
         if not (type(payload) is bytes and len(payload)<=65536 and type(completion) is dict
                 and set(completion)=={'schema','payload_sha256','verdict','freeze_sha256','review_sha256','seconds_at_seal'}
-                and completion['schema']=='hud_short_completion_v1'
+                and completion['schema']=='hud_short_completion_v2'
                 and completion['verdict'] in ('PASS','FAIL')
                 and type(freeze) is str and HEX.fullmatch(freeze) is not None
                 and type(review) is str and HEX.fullmatch(review) is not None
