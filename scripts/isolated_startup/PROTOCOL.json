@@ -1,0 +1,23 @@
+{
+  "schema": "hud_remote_short_startup_protocol_v1",
+  "candidate_commit": "c9f90b3ca0559221859f26bb2e35da9c2e72116d",
+  "repository": "Diabloluo/hermes-hud",
+  "branch": "test/v2-isolated-memory-20261003",
+  "setup_seconds": 1800,
+  "startup_seconds": 300,
+  "cleanup_reserve_seconds": 20,
+  "http_attempts": 1,
+  "ws_handshakes": 1,
+  "ws_frames": 1,
+  "host_version": "0.19.0",
+  "psutil_version": "7.2.2",
+  "websockets_version": "15.0.1",
+  "max_runs": 1,
+  "retry": false,
+  "forced_gc": false,
+  "tracemalloc": false,
+  "vmmap": false,
+  "growth_acceptance_budget": null,
+  "memory_risk": "WARN_NOT_ACCEPTED",
+  "public_release": "BLOCK"
+}

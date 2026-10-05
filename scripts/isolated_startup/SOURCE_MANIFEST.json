@@ -1,0 +1,115 @@
+{
+  "schema": "hud_short_source_manifest_v1",
+  "candidate_commit": "c9f90b3ca0559221859f26bb2e35da9c2e72116d",
+  "candidate": [
+    {
+      "name": "dashboard/dist/index.js",
+      "bytes": 153896,
+      "sha256": "8fbfb94293435643ebd64dfb0c13d488e642a1cfc1ebe31de8b6f2ade838ca72"
+    },
+    {
+      "name": "dashboard/dist/style.css",
+      "bytes": 4922,
+      "sha256": "5d931e9f96cc6e87340bc528fab789a8cc14d85a2b1ac2fb5fb22983cab3f280"
+    },
+    {
+      "name": "dashboard/hud/__init__.py",
+      "bytes": 34,
+      "sha256": "b362c1bb46c64140ffe0d5b9202cfffbc771ad581c576bc31dc0781653a2eabe"
+    },
+    {
+      "name": "dashboard/hud/collectors.py",
+      "bytes": 58536,
+      "sha256": "bc19bab73822ed4e24657dfb442621b1e0b01243c4a83fb26714175d2460902b"
+    },
+    {
+      "name": "dashboard/hud/cost.py",
+      "bytes": 19351,
+      "sha256": "481d8b9e2e5093aadd51c7d7771aac0e8304f805fbc3d871c3e502e3cce0a05c"
+    },
+    {
+      "name": "dashboard/hud/i18n.py",
+      "bytes": 19999,
+      "sha256": "a5606c6db1aefc3c974a0f7b8b4165491df316ec50fca28158ffc60d08acb50d"
+    },
+    {
+      "name": "dashboard/hud/redaction.py",
+      "bytes": 8444,
+      "sha256": "82a99c40e0f7297ce2324ea1a6a2bb82076109e86aefdc62cfca37076fef81fd"
+    },
+    {
+      "name": "dashboard/hud/rules.py",
+      "bytes": 17860,
+      "sha256": "03fc2a57016e225dae785ff275f160c0b96236946112c306dd50e1749d1813fa"
+    },
+    {
+      "name": "dashboard/hud/sampling.py",
+      "bytes": 4490,
+      "sha256": "734192c9b46649800acb55c77b99532b0bb42251194dc9b1bae6e36c0a8aabf2"
+    },
+    {
+      "name": "dashboard/hud/skill_analytics.py",
+      "bytes": 11754,
+      "sha256": "33afe770c0a3c343e32438e6ac6b028f7b65d96816110d6d8d8c650b2f0f346c"
+    },
+    {
+      "name": "dashboard/hud/storage.py",
+      "bytes": 23039,
+      "sha256": "a97b3522a12d4b4b3cdc6645b46a4fd71f528af4b0a818857764f317b60544b2"
+    },
+    {
+      "name": "dashboard/hud/timeline.py",
+      "bytes": 19671,
+      "sha256": "7604707e5139d26b3ae372341c729e20f077610d0df376330a4f48b9c5a9a319"
+    },
+    {
+      "name": "dashboard/hud/version.py",
+      "bytes": 1142,
+      "sha256": "12964d55f61cdd2bbb37d977081190decbb0c88c8d5ae638e5b725e7cbeb89c3"
+    },
+    {
+      "name": "dashboard/hud/ws_auth.py",
+      "bytes": 1183,
+      "sha256": "e4b6e73f5608f2ae8be72d4010da9a063ee809908fcfdd3aaf20602976bb6eb8"
+    },
+    {
+      "name": "dashboard/manifest.json",
+      "bytes": 517,
+      "sha256": "dab5ca464d569753cb94e351a871f6856d5de4c3211c037fde083b6d131fa16e"
+    },
+    {
+      "name": "dashboard/plugin_api.py",
+      "bytes": 24609,
+      "sha256": "e4e3e35ea40eff4d3a42476cabdc9b5db052e8663f1e0e035c15ec883877e0f2"
+    }
+  ],
+  "public": [
+    {
+      "name": "hermes_constants.py",
+      "bytes": 48037,
+      "sha256": "dacf56fbaf53871057044131922ba0040ce144d10c0ac19c843e091e2f4547b5"
+    },
+    {
+      "name": "hermes_cli/main.py",
+      "bytes": 627717,
+      "sha256": "d6bf89a33fb708376a7ab354cff8081a3c3726dbfb91d84bbb679cd667db596c"
+    },
+    {
+      "name": "hermes_cli/config.py",
+      "bytes": 427475,
+      "sha256": "172b78ecb923048859ca177d96f5b010b44ec74bb1d13553577ff49bde1a071d"
+    },
+    {
+      "name": "hermes_cli/web_server.py",
+      "bytes": 772480,
+      "sha256": "0bf9d4dd17a1b7c3d96c94dacea9884426e7bbb5c8818685b43ef68f2465b3f2"
+    },
+    {
+      "name": "hermes_state.py",
+      "bytes": 345632,
+      "sha256": "0c6bc23bf4bfbc3c9410765cd49e65b7aee40e9e01eb733372f0fe7ac9bd64ef"
+    }
+  ],
+  "public_version": "0.19.0",
+  "scope": "EXACT_CANDIDATE_RUNTIME_AND_FIVE_PUBLIC_FILES_NOT_FULL_DEPENDENCY_CLOSURE"
+}
