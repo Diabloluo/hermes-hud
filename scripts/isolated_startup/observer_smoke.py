@@ -14,6 +14,7 @@ from boundary_policy import FilePolicy,BoundFrames,SOURCE_SHA
 from guard_stack import GuardStack,clean_state
 from lifecycle import ChildLifecycle,sources_valid,GRANT
 from source_contract import capture,manifest_valid
+from identity_contract import child_context
 
 HERE=Path(__file__).resolve().parent
 
@@ -27,6 +28,8 @@ def boot():
             and out==home.parent/'evidence' and home.parent.name=='run'
             and home.parent.parent.name=='hud-short-startup-owned'
             and 1024<=port<=65535 and port!=9119,'authority')
+    require(child_context(home.parent.parent,sys.executable,str(Path(sys.prefix).resolve()),
+                          sys.orig_argv,sys.flags.isolated,sys.dont_write_bytecode),'authority')
     # Dependency imports only, before the audit hook; no real-user env inherited.
     import psutil  # noqa: F401
     import urllib3  # noqa: F401  optional IPv6 capability preload, unchanged from old remote runner.

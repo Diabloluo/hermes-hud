@@ -1,5 +1,6 @@
 """Remote-only fixed transport. Import is inert; constructor is still not authority."""
 import asyncio
+import copy
 import fcntl
 import importlib.metadata
 import importlib.util
@@ -70,6 +71,8 @@ class NativeIO:
         self.argv=None
         self._claimed=False;self._spawn_wall=None
         self._first_identity_failure=None
+        self._cleanup_seed=None
+        self._bound_birth=None
         self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 
     def clock(self):return time.monotonic()
@@ -128,10 +131,15 @@ class NativeIO:
     def spawn(self):
         require(self._claimed is True and self.proc is None and self.binding is not None
                 and self.argv[0]==self.binding['launcher'],'identity')
+        require(identity.revalidate_binding(self.binding,self.root) is True,'identity')
+        spec=identity.direct_launch(self.argv,self.home,self.binding,self.root)
+        env=child_environment(self.home,self.out,self.repo,self.port,self.grant,
+                              self.freeze,self.begin,self.token)
+        env['__PYVENV_LAUNCHER__']=spec['venv_launcher']
+        require(0<=time.monotonic()-self.begin<280,'budget')
         self._spawn_wall=time.time()
-        self.proc=subprocess.Popen(self.argv,cwd=self.home,
-            env=child_environment(self.home,self.out,self.repo,self.port,self.grant,
-                                  self.freeze,self.begin,self.token),
+        self.proc=subprocess.Popen(spec['argv'],executable=spec['executable'],cwd=self.home,
+            env=env,
             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         return self.proc
 
@@ -156,6 +164,11 @@ class NativeIO:
             require(birth,'identity')
             site='initial_expected'
             self.saved=identity.expected(self.argv,self.home,proc.pid,actual['birth'],self.binding)
+            # Only PID/birth are observed from the original handle. Command,
+            # image and cwd remain entirely prebound; no unknown image adoption.
+            if actual['pid']==proc.pid:
+                self._bound_birth=actual['birth']
+                self._cleanup_seed=copy.deepcopy(self.saved)
             site='initial_match';require(identity.matches(self.saved,actual),'identity')
         except BaseException as error:
             classification=identity.exception_code(error) if site=='initial_inspect' else None
@@ -163,6 +176,17 @@ class NativeIO:
             raise
         atomic(self.out/'identity.json',self.saved)
         return self.saved
+
+    def cleanup_expected(self,proc):
+        # A failed expected() may not return to lifecycle. Recover only this
+        # original handle's independently reconstructed prebound identity.
+        seed=self._cleanup_seed
+        if (proc is not self.proc or not identity.valid(seed)
+                or seed['pid']!=proc.pid or self.binding is None
+                or type(self._bound_birth) is not float or self._bound_birth<=0):
+            return None
+        bound=identity.expected(self.argv,self.home,proc.pid,self._bound_birth,self.binding)
+        return copy.deepcopy(seed) if identity.matches(seed,bound) else None
 
     def check(self,proc,expected):
         import psutil

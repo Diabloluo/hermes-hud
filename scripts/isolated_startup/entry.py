@@ -22,7 +22,8 @@ FILES=('boundary_policy.py','audit_adapter.py','failure_projection.py','guard_st
        'SOURCE_MANIFEST.json','PROTOCOL.json','PROTOCOL.md','DRAFT_WORKFLOW.yml',
        'test_repair.py','test_integration.py','test_backend.py','readback.py',
        'test_exit_status.py','EXIT_STATUS_REPAIR.md','identity_diagnostics.py',
-       'test_diagnostics.py','DIAGNOSTICS_DELTA.md')
+       'test_diagnostics.py','DIAGNOSTICS_DELTA.md','test_direct_launch.py',
+       'DIRECT_IMAGE_DELTA.md','DIRECT_SOURCE_REFERENCES.json')
 
 
 def freeze_check(expected):
@@ -30,7 +31,7 @@ def freeze_check(expected):
             and digest(HERE/'FREEZE.json')==expected,'prepared')
     value=read(HERE/'FREEZE.json')
     require(type(value) is dict and set(value)=={'schema','files'}
-            and value['schema']=='hud_remote_short_tool_freeze_v2'
+            and value['schema']=='hud_remote_short_tool_freeze_v3'
             and type(value['files']) is dict and set(value['files'])==set(FILES),'prepared')
     require(all(digest(HERE/n)==value['files'][n] for n in FILES),'prepared')
     return True

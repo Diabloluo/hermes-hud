@@ -1,5 +1,39 @@
 # Remote single short startup backend — preparation only
 
+## Current direct interpreter correction
+
+This is the 2026-10-06 private v3 preparation, not a product version or run.
+DIRECT_IMAGE_DELTA.md is the authoritative current implementation delta. The
+older B1/v2 paragraphs below preserve inherited contracts and history; old
+report names and test totals there are not current materialization instructions.
+The only future accepted-report name is
+DOT_REMOTE_SHORT_STARTUP_DIRECT_INTERPRETER_REVIEW.md at this directory, copied
+byte-identically from the independent review original after owner acceptance.
+controller.REPORT enforces that name. Current backend/completion/freeze and
+interpreter binding use v3; child-terminal remains v1. The current authority
+scope is one_owned_direct_interpreter_startup_300s_http1_ws1_no_retry_no_risk_acceptance.
+Old v2 authorities, seals and consumed claims cannot be reused.
+
+The host still has one Popen only, but its executable is the prebound parent OS
+image rather than the venv wrapper. argv0 is the prebound parent OS argv0; all
+ten remaining arguments stay fixed. The minimal environment additionally sets
+__PYVENV_LAUNCHER__ to the owned prebound venv launcher, never inherited caller
+data. Launcher and image digests are revalidated before Popen; child venv prefix,
+sys.executable and -I/-B context are checked before third-party/host imports.
+This contract has only model coverage, not real Python3.13/CI compatibility.
+
+Initial binding failure remains fatal. Cleanup may recover only the original
+handle's seed with one captured birth and prebound command/image/cwd, never an
+unknown observed image. The untouched close_owned implementation still matches
+all five live fields before TERM and again before KILL. Natural exit never
+fabricates matched cleanup; recovery cannot upgrade the failed startup. Full
+identity checks remain before readiness, HTTP/WS and cleanup.
+
+No gates, accepted-report copy, dispatch, signal, native test, branch push or
+product/main/version change is created in this preparation. The new suite and
+actual readback evidence are recorded separately, not replaced by historical
+counts. Future concrete authorization is still required after this review.
+
 This directory is a private diagnostic tool, not a product version. Current state:
 IMPLEMENTED_OFFLINE / NATIVE_NOT_RUN. No gate, permit, claim, accepted-report copy,
 remote branch update or execution is created by this preparation. This is the

@@ -1,5 +1,9 @@
 {
-  "schema": "hud_remote_short_startup_protocol_v1",
+  "schema": "hud_remote_short_startup_protocol_v2",
+  "interpreter_launch": "DIRECT_PREBOUND_PARENT_OS_IMAGE",
+  "venv_context_required": true,
+  "initial_identity_mismatch": "FAIL_NO_RETRY",
+  "cleanup_seed": "ORIGINAL_HANDLE_PREBOUND_COMMAND_IMAGE_CWD_CAPTURED_BIRTH",
   "candidate_commit": "c9f90b3ca0559221859f26bb2e35da9c2e72116d",
   "repository": "Diabloluo/hermes-hud",
   "branch": "test/v2-isolated-memory-20261003",

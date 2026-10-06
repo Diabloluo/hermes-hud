@@ -50,9 +50,11 @@ def native():
         obj=n.NativeIO(ROOT,REPO,'e'*32,F,lambda x:True)
     obj.port=50123;obj.token='SYNTHETIC_SECRET';obj._claimed=True
     obj._spawn_wall=100.0
-    obj.argv=['/MODEL/venv/bin/python','-I','-B',str(HERE/'observer_smoke.py'),'dashboard',
+    obj.argv=[str(ROOT/'venv/bin/python'),'-I','-B',str(HERE/'observer_smoke.py'),'dashboard',
               '--host','127.0.0.1','--port','50123','--no-open','--skip-build']
-    obj.binding={'launcher':obj.argv[0],'argv0':'/MODEL/python','exe':'/MODEL/python'}
+    obj.binding={'schema':'hud_remote_interpreter_v3','launcher':obj.argv[0],
+                 'prefix':str(ROOT/'venv'),'argv0':'/MODEL/python','exe':'/MODEL/python',
+                 'launcher_sha256':'1'*64,'exe_sha256':'2'*64}
     return obj
 
 
@@ -161,7 +163,8 @@ class IdentityTests(unittest.TestCase):
         self.assertRaises(l.BoundaryRefused,obj.expected,proc);obj.inspect.assert_not_called()
     def test_one_popen_and_explicit_env(self):
         obj=native();proc=regression.Process()
-        with patch.object(n.subprocess,'Popen',return_value=proc) as popen:
+        with patch.object(n.identity,'revalidate_binding',return_value=True),\
+             patch.object(n.subprocess,'Popen',return_value=proc) as popen:
             self.assertIs(obj.spawn(),proc)
             self.assertRaises(l.BoundaryRefused,obj.spawn)
         self.assertEqual(popen.call_count,1)

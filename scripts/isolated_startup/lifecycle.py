@@ -13,8 +13,8 @@ import identity_diagnostics as diagnostics
 
 HEX = re.compile(r'^[0-9a-f]{64}$')
 GRANT = re.compile(r'^[0-9a-f]{32}$')
-SCHEMA = 'hud_short_startup_backend_v2'
-SCOPE = 'one_owned_startup_300s_http1_ws1_no_retry_no_risk_acceptance'
+SCHEMA = 'hud_short_startup_backend_v3'
+SCOPE = 'one_owned_direct_interpreter_startup_300s_http1_ws1_no_retry_no_risk_acceptance'
 CHECKPOINTS = ('ready', 'http', 'ws', 'finish')
 ERRORS = {'prepared', 'authority', 'active', 'resource', 'claim', 'initialization',
           'source', 'spawn', 'identity', 'ready', 'http', 'ws', 'boundary', 'budget',
@@ -265,6 +265,16 @@ def execute_model_io(io, authority, freeze, review):
                         and type(error.args[0]) is str and error.args[0] in ERRORS else stage)
     finally:
         if proc is not None:
+            # Binding failure must not discard a prebound original-handle
+            # cleanup seed. This does not authorize an unverified signal:
+            # close_owned still requires an exact live five-field match.
+            cleanup_expected=expected
+            if not identity_valid(cleanup_expected):
+                try:
+                    getter=getattr(io,'cleanup_expected',None)
+                    cleanup_expected=getter(proc) if callable(getter) else None
+                except BaseException:
+                    cleanup_expected=None
             inspections=[0]
             def cleanup_inspect(handle):
                 inspections[0]+=1
@@ -276,11 +286,11 @@ def execute_model_io(io, authority, freeze, review):
                         row['cleanup_diagnostic']=diagnostics.project(prefix+'_inspect',
                             inspection_error=identity.exception_code(error))
                     raise
-                if not identity_valid(expected) or not identity_valid(actual) or actual!=expected:
+                if not identity_valid(cleanup_expected) or not identity_valid(actual) or actual!=cleanup_expected:
                     if row['cleanup_diagnostic'] is None:
-                        row['cleanup_diagnostic']=diagnostics.project(prefix+'_match',expected,actual)
+                        row['cleanup_diagnostic']=diagnostics.project(prefix+'_match',cleanup_expected,actual)
                 return actual
-            row['cleanup'] = close_owned(proc, expected, cleanup_inspect)
+            row['cleanup'] = close_owned(proc, cleanup_expected, cleanup_inspect)
             if not (cleanup_valid(row['cleanup']) and row['cleanup']['identity_matched'] is True
                     and row['cleanup']['alive'] is False and row['cleanup']['error'] is None):
                 row['cleanup_error'] = 'cleanup'
@@ -338,7 +348,7 @@ def execute_model_io(io, authority, freeze, review):
         require(io.read_payload() == payload, 'seal')
         require(io.prepared(freeze) is True, 'prepared')
         budget(0)
-        completion = {'schema': 'hud_short_completion_v2', 'payload_sha256': sha(payload),
+        completion = {'schema': 'hud_short_completion_v3', 'payload_sha256': sha(payload),
                       'verdict': row['candidate'] if row['error'] is None
                                   and row['cleanup_error'] is None else 'FAIL',
                       'freeze_sha256': freeze, 'review_sha256': review,

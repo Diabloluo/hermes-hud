@@ -54,7 +54,7 @@ def child(x):
 
 
 def valid(x):
-    if not (type(x) is dict and set(x)==KEYS and x['schema']=='hud_short_startup_backend_v2'
+    if not (type(x) is dict and set(x)==KEYS and x['schema']=='hud_short_startup_backend_v3'
             and (x['failure_stage'] is None or type(x['failure_stage']) is str
                  and x['failure_stage'] in diagnostics.STAGES)
             and all(x[k] is None or diagnostics.valid(x[k])
@@ -137,7 +137,7 @@ def analyze(payload, completion, freeze, review):
     try:
         if not (type(payload) is bytes and len(payload)<=65536 and type(completion) is dict
                 and set(completion)=={'schema','payload_sha256','verdict','freeze_sha256','review_sha256','seconds_at_seal'}
-                and completion['schema']=='hud_short_completion_v2'
+                and completion['schema']=='hud_short_completion_v3'
                 and completion['verdict'] in ('PASS','FAIL')
                 and type(freeze) is str and HEX.fullmatch(freeze) is not None
                 and type(review) is str and HEX.fullmatch(review) is not None

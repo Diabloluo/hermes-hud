@@ -1,0 +1,15 @@
+{
+  "retrieved": "2026-10-06",
+  "actor": "Codex web read of primary CPython source",
+  "reference_tag": "v3.13.0",
+  "actual_ci_build": "UNKNOWN_NOT_ATTESTED",
+  "native_execution": "NOT_RUN",
+  "references": [
+    {"url": "https://raw.githubusercontent.com/python/cpython/v3.13.0/Modules/getpath.py", "lines": "265-284", "support": "launcher hint determines sys.executable and venv search; framework stub is not the real image"},
+    {"url": "https://raw.githubusercontent.com/python/cpython/v3.13.0/Modules/getpath.c", "lines": "645-695,898-903", "support": "getpath directly loads and clears __PYVENV_LAUNCHER__; not proof of actual runner compatibility"},
+    {"url": "https://raw.githubusercontent.com/python/cpython/v3.13.0/Mac/Tools/pythonw.c", "lines": "132-221", "support": "framework launcher rewrites argv0 and execs the real interpreter; historical failure cause not proven"}
+  ],
+  "implementation_inference": "direct execution of the prebound real image with a fixed owned launcher hint can avoid a wrapper handoff; child context rejects unsupported venv behavior",
+  "risk_acceptance": false,
+  "public_release": "BLOCK"
+}
