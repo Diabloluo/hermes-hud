@@ -1,22 +1,22 @@
 {
-  "schema": "hud_remote_same_trace_memory_freeze_v2",
+  "schema": "hud_remote_same_trace_memory_freeze_v3",
   "files": {
     "boundary_policy.py": "e38b157c91384660642fe76b48f09b154ecb6a9b4bd02ca6f2b0c4e1b7a51b81",
     "audit_adapter.py": "e91849742d1058beecef3fba354f368e1e7225376ad3249953267f0ac6ba1b95",
     "failure_projection.py": "9342f32c7e3c3b5cc4b3f0794c80ec52f154e1b691404df3542aacaff20820d0",
     "guard_stack.py": "de3b99c509b4e48f9f0a4f3db1c88f7840e60f10a419bb771b458ca317a30980",
-    "lifecycle.py": "73a3dbe7c461903bbec9764a94cff1f314aa4af8712eacdf9f6c06683dac4779",
+    "lifecycle.py": "68ca9b0881e6212563d3dd8c3cb37fbfb35baa1758d394a95648c32e5db70105",
     "common.py": "9c1b96a6015496c1076f785d070e484c4a347fc4873a84ffb5f2063ad7e051d3",
     "fixture.py": "695b7f5e25906241321a78b3105fd9180d762fecc26757a801bc64032d75dce9",
     "identity_contract.py": "75d151998cde889ff7696ca14bd755ec42539390c450bf45bab1cc672a3dd9fb",
     "source_contract.py": "38a8be0cc0ca947e5e0b67b808b49f76f6fc860658919d218a2bdda5bc20e8d3",
     "native_io.py": "95edaad27b5fd27fe5439dbb317434892fd5a20191a5ddeb15f5d3bd66903351",
     "observer_smoke.py": "d1a54c92bf6688800badedeaeb0deb1f3f4d09aeda77fa984f99e7d7034731cd",
-    "entry.py": "ce46bde7bf422935cf1ccbae42528240b585d5939655ce0e89959c50471717de",
-    "controller.py": "24d290ae82c586c37d087d0e126867661ce3370aac5126099a1f6bd52d339a32",
+    "entry.py": "4f52a2b09bde9537d8e7bc158feebcd543c70b21a3905a28c808dae907eb4815",
+    "controller.py": "47c6aaaa12c645ed622b84cff80559a417ea6a6499f5a65ce5fa90ba6ac18e95",
     "SOURCE_MANIFEST.json": "93d00179cd37e5d90f9e9903bcfdfea4d46b12843ecc32898cab136a2e9186a0",
-    "PROTOCOL.md": "36b46b6828eefe432383dc2eee8808de54265f11b6b60f32c098d5298dc7e92d",
-    "DRAFT_WORKFLOW.yml": "8265d043b1374c8528e4fb2f19f15573a934b312f43525274372ea3adf15c0c9",
+    "PROTOCOL.md": "9018965a77e569e3964a04172692f45d6926053621f30127cb8fc14a5294de73",
+    "DRAFT_WORKFLOW.yml": "dafa0076fb702058a808dad1b5f75e7377843bc3b5f926199eabbcf7dcce8cb1",
     "identity_diagnostics.py": "6bca47a1509ec28df901a6131ac9e7d75969811a9d283bbbfd16ab7101bc9d81",
     "optional_process.py": "754a2f9e0210ed042f9e9197e3c5a253c32a37657276035727f4924e44bda503",
     "resource_diagnostics.py": "0355a8164433a16983583554d3cb5ac46c4239877cef81eb98c8d67c73b37f30",
@@ -26,9 +26,10 @@
     "runner.py": "926522f1a0d16742dba010953a0b40d1f37336dcb37ce1abd527642623679f78",
     "analyze.py": "f77dfa79c886822bdf50bbe9662aff2b3737797d6827b586f5b2d8c4a104f16e",
     "test_pair.py": "4c79e78ea0bd36cc4990e7189731b3554fb52a8a29a89987adc39feb76c2fa79",
-    "offline_checks.py": "a79c87c51f00163f6c53244f114ee5786e729159cd8888f4b943952d5c00afad",
+    "offline_checks.py": "6a3223cc21dfdd55f835708446adcc320252c4231336bef039f645ba9a702e37",
     "execution_diagnostics.py": "a35f3747d8794b1bcf9aab3837866a10979185fee14a24b8ac9d0d03c53b318c",
     "test_async_loop.py": "e986860217383ab98a5e353b3178e1560b4b7f7a552ce8fa8cb2dacdff284c58",
-    "real_loop_checks.py": "ef7799dfd385fefa4ed34f7a7bb76744e4a95b421f4292b10e697b37543dedb8"
+    "real_loop_checks.py": "ef7799dfd385fefa4ed34f7a7bb76744e4a95b421f4292b10e697b37543dedb8",
+    "test_runner_profile.py": "24ae583440a4665b2ebbefadaaf70d857d039615c3be73bc66f7a9568ac042bd"
   }
 }

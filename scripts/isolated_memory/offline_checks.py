@@ -9,6 +9,7 @@ import sys
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import test_pair
+import test_runner_profile
 import observer_smoke
 import ctypes
 import sqlite3
@@ -42,7 +43,7 @@ sources={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
 for p in inputs:
     if p.suffix=='.py':ast.parse(p.read_bytes())
 output=io.StringIO()
-result=unittest.TextTestRunner(stream=output,verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(test_pair))
+result=unittest.TextTestRunner(stream=output,verbosity=2).run(unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromModule(m) for m in (test_pair,test_runner_profile)]))
 record={'schema':'hud_same_trace_pair_offline_receipt_v1','tests':result.testsRun,
  'python_version':sys.version,
  'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),

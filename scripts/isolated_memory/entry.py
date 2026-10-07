@@ -3,6 +3,7 @@ import argparse
 import importlib.metadata
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import subprocess
@@ -17,7 +18,7 @@ import asyncio
 from runner import pair
 
 HERE=Path(__file__).resolve().parent
-FILES=("boundary_policy.py","audit_adapter.py","failure_projection.py","guard_stack.py","lifecycle.py","common.py","fixture.py","identity_contract.py","source_contract.py","native_io.py","observer_smoke.py","entry.py","controller.py","SOURCE_MANIFEST.json","PROTOCOL.md","DRAFT_WORKFLOW.yml","identity_diagnostics.py","optional_process.py","resource_diagnostics.py","pair_contract.py","memory_sampling.py","pair_record.py","runner.py","analyze.py","test_pair.py","offline_checks.py","execution_diagnostics.py","test_async_loop.py","real_loop_checks.py")
+FILES=("boundary_policy.py","audit_adapter.py","failure_projection.py","guard_stack.py","lifecycle.py","common.py","fixture.py","identity_contract.py","source_contract.py","native_io.py","observer_smoke.py","entry.py","controller.py","SOURCE_MANIFEST.json","PROTOCOL.md","DRAFT_WORKFLOW.yml","identity_diagnostics.py","optional_process.py","resource_diagnostics.py","pair_contract.py","memory_sampling.py","pair_record.py","runner.py","analyze.py","test_pair.py","offline_checks.py","execution_diagnostics.py","test_async_loop.py","real_loop_checks.py","test_runner_profile.py")
 
 
 def freeze_check(expected):
@@ -25,7 +26,7 @@ def freeze_check(expected):
             and digest(HERE/'FREEZE.json')==expected,'prepared')
     value=read(HERE/'FREEZE.json')
     require(type(value) is dict and set(value)=={'schema','files'}
-            and value['schema']=='hud_remote_same_trace_memory_freeze_v2'
+            and value['schema']=='hud_remote_same_trace_memory_freeze_v3'
             and type(value['files']) is dict and set(value['files'])==set(FILES),'prepared')
     require(all(digest(HERE/n)==value['files'][n] for n in FILES),'prepared')
     return True
@@ -43,9 +44,18 @@ def workflow_authority(env,sha,grant,issued,expires,review,now):
     require(authority_valid(probe,now,'0'*64,review),'authority')
 
 
+def runner_profile_valid(env,platform_name,machine,version):
+    # Label binding is additionally enforced by remote_gate's workflow hash.
+    # This is process-observed metadata, not a hardware attestation or RAM promise.
+    return (type(env) is dict and env.get('RUNNER_OS')=='macOS'
+            and env.get('RUNNER_ARCH')=='X64' and platform_name=='darwin'
+            and machine=='x86_64' and type(version) is tuple and len(version)==2
+            and all(type(v) is int for v in version) and version==(3,13))
+
+
 def remote_gate(args):
     workflow_authority(os.environ,args.sha,args.grant,args.issued,args.expires,args.review,time.time())
-    require(sys.platform=='darwin' and sys.version_info[:2]==(3,13),'prepared')
+    require(runner_profile_valid(dict(os.environ),sys.platform,platform.machine(),sys.version_info[:2]),'prepared')
     require(Path(os.environ['GITHUB_WORKSPACE']).resolve()==HERE.parents[1],'prepared')
     require(digest(HERE.parents[1]/'.github/workflows/fresh-install.yml')==digest(HERE/'DRAFT_WORKFLOW.yml'),'prepared')
     return freeze_check(args.freeze)

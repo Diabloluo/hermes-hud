@@ -12,7 +12,7 @@ from common import require,read,digest,atomic
 from lifecycle import SCHEMA,SCOPE,authority_valid
 
 HERE=Path(__file__).resolve().parent
-REPORT='WORKBUDDY_REMOTE_FINITE_MEMORY_ASYNC_REPAIR_REVIEW.md'
+REPORT='WORKBUDDY_REMOTE_FINITE_MEMORY_RUNNER_CAPACITY_REVIEW.md'
 
 
 def gates(a,accepted,freeze,report,now):
@@ -22,7 +22,7 @@ def gates(a,accepted,freeze,report,now):
     require(authority_valid(run,now,freeze,report) and re.fullmatch('[a-f0-9]{40}',a['sha']) is not None
             and a['repository']=='Diabloluo/hermes-hud'
             and a['branch']=='test/v2-isolated-memory-20261003','authority')
-    require(accepted=={'schema':'hud_memory_pair_review_acceptance_v2','sha':a['sha'],
+    require(accepted=={'schema':'hud_memory_pair_review_acceptance_v3','sha':a['sha'],
             'freeze_sha256':freeze,'report_sha256':report,'safety':'PASS','scope':SCOPE},'authority')
 
 

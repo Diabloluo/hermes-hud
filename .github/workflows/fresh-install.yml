@@ -29,7 +29,7 @@ concurrency:
 jobs:
   pair:
     if: github.repository == 'Diabloluo/hermes-hud' && github.ref == 'refs/heads/test/v2-isolated-memory-20261003' && github.run_attempt == 1 && github.sha == inputs.reviewed_sha
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     timeout-minutes: 135
     env:
       REVIEWED_SHA: ${{ inputs.reviewed_sha }}

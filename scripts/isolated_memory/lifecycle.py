@@ -15,7 +15,7 @@ import resource_diagnostics as resources
 HEX = re.compile(r'^[0-9a-f]{64}$')
 GRANT = re.compile(r'^[0-9a-f]{32}$')
 SCHEMA = 'hud_finite_attribution_pair_v2'
-SCOPE = 'one_remote_same_trace_pair_async_v2_100min_no_retry_no_risk_acceptance'
+SCOPE = 'one_remote_same_trace_pair_intel_v3_100min_no_retry_no_risk_acceptance'
 CHECKPOINTS = ('ready', 'http', 'ws', 'finish')
 ERRORS = {'prepared', 'authority', 'active', 'resource', 'claim', 'initialization',
           'source', 'spawn', 'identity', 'ready', 'http', 'ws', 'boundary', 'budget',

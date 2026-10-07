@@ -1,3 +1,33 @@
+# 远端容量修订：Intel 平台限定离线准备
+
+本节为当前唯一生效增量；下方旧 v2/v1 全文是历史合同，不是新授权。
+状态 OFFLINE_PREPARATION_ONLY / NOT_AUTHORIZED / NOT_PUSHED / NOT_RUN。
+私有工具修订 v3 不是产品 v2.0.0。MEMORY NOT CLOSED / WARN_NOT_ACCEPTED，PUBLIC RELEASE BLOCK。
+
+## 解决的具体阻断与取舍
+
+run37590410497 的 snapshot 臂初始可用内存 3209052160B，低于固定 3221225472B 门槛 12173312B（11.609375MiB），在宿主 spawn 前停止。该判定基于已回收的安全聚合摘要与冻结源码；原 analysis.json 尚未本地归档，不能冒称完整原件复审。第一臂及旧 FAIL 不升级，历史55.781/189.672MiB与旧根因UNKNOWN保留。
+
+只将待部署 workflow 的 runs-on 从 macos-latest 改为 macos-15-intel；两臂仍同一新鲜 runner、顺序执行、同一追踪起点/深度/阶段/源/阈值。GitHub 官方规格将前者列为 7 GB ARM64，后者列为 14 GB Intel 标准 runner；2026-10-07 API 确认仓库 public。不是付费 larger runner，不创建账单/runner资源。标称总RAM不保证可用RAM，更不保证第二臂通过；每臂原有3GiB/5GiB准入、运行资源检查全保留。禁止降低门槛、等待资源回升后重试、GC/trim、拆臂换机器或延长实验。此次仅准备，Intel 的选择仍须在下一单次授权中显式确认。
+
+这是实验平台更换，不是仅给原 ARM64 机器加内存。即使成功，最多是 Intel/macOS15 限定的有限实验执行证据，不能证明 Apple Silicon/原生产环境无泄漏，不能与旧ARM64绝对内存值直接比较。若用户必须验证 ARM64，应该另选受明确费用授权的同架构资源；本目录不会自动选择或付费。新标签固定OS大版本但不固定具体镜像build；Mach/依赖/psutil Intel兼容仍未实际验证，失败即停止，不回退 ARM64 或旧入口。
+
+## 代码与门控边界
+
+运行协议的 payload/terminal/diagnostic 仍为 v2/v2/v1，分析器逐字不变；未改变其结果语义。必须连同本次freeze/review/SHA解释，脱离绑定的泛化PASS不得称Intel平台或硬件认证。新 freeze schema hud_remote_same_trace_memory_freeze_v3，验收 schema hud_memory_pair_review_acceptance_v3；新 scope one_remote_same_trace_pair_intel_v3_100min_no_retry_no_risk_acceptance。旧授权即使未过期也被 scope/freeze 拒绝。
+
+entry增加纯判定函数 runner_profile_valid，并在 setup/run 原生入口要求 RUNNER_OS=macOS、RUNNER_ARCH=X64、sys.platform=darwin、platform.machine()=x86_64、Python3.13严格整数元组；再保留原workflow摘要/全冻结校验。环境与进程元数据不是硬件证明；本函数模型不调用本机uname或任何Mach/psutil。平台不符在setup创建root之前拒绝。无新原生诊断程序、无资源阈值变更、无额外HTTP/WS/进程权限。platform.machine仅父入口使用，不把完整父环境传给子进程；子端原最小环境不变。
+
+报告名 WORKBUDDY_REMOTE_FINITE_MEMORY_RUNNER_CAPACITY_REVIEW.md。未来复审通过且用户对Intel范围明确新授权后，才同名逐字复制报告到HERE、物化新acceptance/grant/SHA/freeze并单次派发。此次均不创建。失败或结果不明不重试，安装≤30min、pair≤100min、job135min不变；无需重复另做短启动。
+
+## 验证与交付限制
+
+新20项纯模型测试：6直接门控/范围测试+14平台负向；与原153项合计173项，实际结果以本目录回执为准。真实标准库循环16项另列，不等于OS管道/网络/原生兼容。新冻结包含30项，原29中6件改变与1新增（最终分类以机械回读为准）；测试/harness变更不扩原生路径。依赖预载与解释器启动在hook之前，禁用计数不可代替源码审读。真实prepared/read仅读精确本轮+对比源，不创建gate、不调用controller/entry.main。
+
+旧本地artifact RAM导出会话53514的stdin曾被审批策略拒绝，未通过其它接口绕过，原件仍缺；本轮不追加artifact GET或读取ZIP/DB/home/log。回读摘要与RUN_METADATA是上轮留存，执行事实按请求方记录，不冒称此次重新从GitHub原件独立复算。只读仓库元数据与官方规格查询不等于原实验硬件取证。后续原件可由用户提供已解包analysis.json；不需要原生重跑。
+
+## 历史 v2/v1 合同逐字保留
+
 # 同追踪双臂异步修复准备合同
 
 本轮仅获授权集中离线修复与真实事件循环合成回归。NOT_AUTHORIZED_FOR_NATIVE_RUN、NOT_PUSHED、NOT_DISPATCHED。这是私有工具修订，不是产品版本。MEMORY NOT CLOSED / WARN_NOT_ACCEPTED，PUBLIC RELEASE BLOCK。
