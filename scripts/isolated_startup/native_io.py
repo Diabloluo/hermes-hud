@@ -18,6 +18,7 @@ from common import atomic,atomic_bytes,bounded,read,require,digest
 import fixture
 import identity_contract as identity
 import identity_diagnostics as diagnostics
+import resource_diagnostics
 from lifecycle import identity_valid,transport_valid,child_valid,GRANT,HEX
 from source_contract import capture,manifest_valid
 
@@ -93,9 +94,15 @@ class NativeIO:
         self.token=None
 
     def resources(self):
-        import psutil
-        return (psutil.virtual_memory().available>=3*1024**3
-                and psutil.disk_usage(self.root).free>=5*1024**3)
+        def load():
+            import psutil
+            return psutil
+        self._resource_diagnostic = resource_diagnostics.collect(load, self.root)
+        return resource_diagnostics.passed(self._resource_diagnostic)
+
+    def resource_diagnostic(self):
+        value = getattr(self, '_resource_diagnostic', None)
+        return None if value is None else resource_diagnostics.snapshot(value)
 
     def claim(self,grant):
         require(grant==self.grant,'claim')

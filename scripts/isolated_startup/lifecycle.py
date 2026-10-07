@@ -10,11 +10,12 @@ from boundary_policy import BoundaryRefused
 from guard_stack import clean_state, stack_valid
 import identity_contract as identity
 import identity_diagnostics as diagnostics
+import resource_diagnostics as resources
 
 HEX = re.compile(r'^[0-9a-f]{64}$')
 GRANT = re.compile(r'^[0-9a-f]{32}$')
-SCHEMA = 'hud_short_startup_backend_v5'
-SCOPE = 'one_owned_optional_launchd_absence_startup_300s_http1_ws1_no_retry_no_risk_acceptance'
+SCHEMA = 'hud_short_startup_backend_v6'
+SCOPE = 'one_owned_resource_diagnostic_startup_300s_http1_ws1_no_retry_no_risk_acceptance'
 CHECKPOINTS = ('ready', 'http', 'ws', 'finish')
 ERRORS = {'prepared', 'authority', 'active', 'resource', 'claim', 'initialization',
           'source', 'spawn', 'identity', 'ready', 'http', 'ws', 'boundary', 'budget',
@@ -183,7 +184,8 @@ def execute_model_io(io, authority, freeze, review):
            'seconds': None, 'limits': LIMITS[:], 'memory_risk': 'WARN_NOT_ACCEPTED',
            'public_release': 'BLOCK', 'execution_kind':getattr(io,'execution_kind','MODEL'),
            'transport':None, 'failure_stage':None, 'identity_diagnostic':None,
-           'cleanup_diagnostic':None, 'handle_observation':None}
+           'cleanup_diagnostic':None, 'handle_observation':None,
+           'resource_diagnostic':None, 'resource_diagnostic_error':None}
     def budget(reserve=20):
         now = io.clock()
         require(finite(now) and finite(started) and 0<=now-started<300-reserve, 'budget')
@@ -207,7 +209,28 @@ def execute_model_io(io, authority, freeze, review):
         require(io.no_active() is True, 'active')
         stage = 'resource'
         failure_site=stage
-        require(io.resources() is True, 'resource')
+        resource_ok = None
+        try:
+            resource_ok = io.resources()
+        finally:
+            # Cached projection only, even after a failed/raising measurement.
+            try:
+                getter = getattr(io, 'resource_diagnostic', None)
+                value = getter() if callable(getter) else None
+                if value is None:
+                    if row['execution_kind'] == 'NATIVE':
+                        row['resource_diagnostic_error'] = 'unavailable'
+                elif not resources.valid(value):
+                    row['resource_diagnostic_error'] = 'invalid'
+                else:
+                    row['resource_diagnostic'] = resources.snapshot(value)
+                    if type(resource_ok) is not bool or resources.passed(value) != resource_ok:
+                        row['resource_diagnostic_error'] = 'outcome_mismatch'
+            except BaseException:
+                row['resource_diagnostic_error'] = 'read_failed'
+        require(resource_ok is True, 'resource')
+        require(resources.success_valid(row['execution_kind'], row['resource_diagnostic'],
+                                        row['resource_diagnostic_error']), 'diagnostic')
         budget()
         stage = 'claim'
         failure_site=stage
@@ -320,6 +343,8 @@ def execute_model_io(io, authority, freeze, review):
                 require(child_valid(child) and child['candidate']=='PASS'
                         and clean_state(child['state']) and child['commanded_exit'] is True
                         and child['exit_code']==0 and child['source_end']==row['source_end'], 'finish')
+                require(resources.success_valid(row['execution_kind'], row['resource_diagnostic'],
+                                                row['resource_diagnostic_error']), 'diagnostic')
                 # Child records host-main status before final interpreter exit.
                 # Safe cleanup alone (including KILL) is not startup acceptance.
                 actual_exit = row['cleanup']['exit_code']
@@ -348,7 +373,7 @@ def execute_model_io(io, authority, freeze, review):
         require(io.read_payload() == payload, 'seal')
         require(io.prepared(freeze) is True, 'prepared')
         budget(0)
-        completion = {'schema': 'hud_short_completion_v5', 'payload_sha256': sha(payload),
+        completion = {'schema': 'hud_short_completion_v6', 'payload_sha256': sha(payload),
                       'verdict': row['candidate'] if row['error'] is None
                                   and row['cleanup_error'] is None else 'FAIL',
                       'freeze_sha256': freeze, 'review_sha256': review,

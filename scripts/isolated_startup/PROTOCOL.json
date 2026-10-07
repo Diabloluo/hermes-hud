@@ -1,5 +1,5 @@
 {
-  "schema": "hud_remote_short_startup_protocol_v4",
+  "schema": "hud_remote_short_startup_protocol_v5",
   "optional_process_contract": "EXACT_COLLECTOR_933_BACKGROUND_397_LAUNCHCTL_PRINT_UID_SYNTHETIC_ABSENCE_ONLY",
   "launchctl_design_cap": 16,
   "launchctl_cap_is_observed_demand": false,
@@ -32,5 +32,9 @@
   "vmmap": false,
   "growth_acceptance_budget": null,
   "memory_risk": "WARN_NOT_ACCEPTED",
-  "public_release": "BLOCK"
+  "public_release": "BLOCK",
+  "initial_resource_diagnostic": "ONE_MEMORY_THEN_AT_MOST_ONE_DISK_QUERY_FIXED_SCALARS_ONLY",
+  "initial_memory_min_bytes": 3221225472,
+  "initial_disk_min_bytes": 5368709120,
+  "initial_resource_queries_retried": false
 }

@@ -304,6 +304,10 @@ class NativeEvidenceTests(unittest.TestCase):
     def value(self):
         obj,row,seal,_=regression.run()
         row['execution_kind']='NATIVE'
+        import resource_diagnostics as rd
+        row['resource_diagnostic']=rd.collect(lambda:SimpleNamespace(
+            virtual_memory=lambda:SimpleNamespace(available=rd.MEMORY_MIN),
+            disk_usage=lambda _:SimpleNamespace(free=rd.DISK_MIN)),ROOT)
         row['transport']={'port':50123,'http_status':200,'http_bytes':24,'http_schema':1,
                          'ws_frames':1,'ws_bytes':20,'ws_schema':1,'handshakes':1}
         payload=l.encode(row);seal['payload_sha256']=hashlib.sha256(payload).hexdigest()
@@ -454,6 +458,10 @@ class EntryTests(unittest.TestCase):
         backend.release.assert_called_once()
     def test_native_adapter_through_real_core_and_independent_analysis(self):
         model=regression.IO();model.execution_kind='NATIVE';obj=native();obj.opener=MagicMock()
+        import resource_diagnostics as rd
+        model.resource_diagnostic=lambda:rd.collect(lambda:SimpleNamespace(
+            virtual_memory=lambda:SimpleNamespace(available=rd.MEMORY_MIN),
+            disk_usage=lambda _:SimpleNamespace(free=rd.DISK_MIN)),ROOT)
         obj.opener.open.return_value=Response()
         model.http_once=obj.http_once
         def ws():

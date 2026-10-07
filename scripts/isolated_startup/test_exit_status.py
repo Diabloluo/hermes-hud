@@ -35,6 +35,13 @@ class TerminalFirstIO(regression.IO):
     def __init__(self,code=0,kill=False,kind='MODEL'):
         super().__init__();self.proc=FinalExitProcess(code,kill);self.execution_kind=kind
         self.early=None
+    def resource_diagnostic(self):
+        # New initial diagnostic is a synthetic fixture, never real measurement.
+        import resource_diagnostics as rd
+        from types import SimpleNamespace
+        return rd.collect(lambda:SimpleNamespace(
+            virtual_memory=lambda:SimpleNamespace(available=rd.MEMORY_MIN),
+            disk_usage=lambda _:SimpleNamespace(free=rd.DISK_MIN)), '/MODEL/owned')
     def request_finish(self):
         super().request_finish()
         self.early=self.child.terminal(regression.SOURCE,True,0)

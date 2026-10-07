@@ -1,3 +1,23 @@
+# Remote short startup resource diagnostic preparation
+
+## Current resource diagnostic preparation
+
+Private v6 increment governed by RESOURCE_DIAGNOSTICS_DELTA.md.
+Backend/completion/freeze v6; guard/child v3, file boundary v2, interpreter v3.
+Report: WORKBUDDY_REMOTE_SHORT_STARTUP_RESOURCE_DIAGNOSTICS_REVIEW.md.
+Scope: one_owned_resource_diagnostic_startup_300s_http1_ws1_no_retry_no_risk_acceptance.
+Byte-identical HERE report copy only after accepted review and separate concrete
+native grant; exact report/freeze/SHA, <=1h expiry, max_runs strict1 and exclusive
+claims unchanged. Preparation creates none. Initial thresholds stay3GiB/5GiB;
+query order/short circuit unchanged. Only bounded cached admission scalars and
+fixed status/errors added; running checks untouched. run37568873965 remains FAIL,
+reason UNKNOWN, historical fields never filled.
+
+Inherited paragraphs below are retained history. Their report names, schemas,
+counts and current-scope wording are NOT current instructions. All existing
+limitations remain except the explicit schema/diagnostic delta above. No unrelated
+contract is removed to shorten this record.
+
 # Remote single short startup backend — preparation only
 
 ## Current optional-process preparation (authoritative delta)

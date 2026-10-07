@@ -181,7 +181,7 @@ class TerminalTests(unittest.TestCase):
         for ack,count in zip(row['checkpoints'],(0,1,1,2)):ack['state']['launchctl_missing']=count
         row['child']['state']['launchctl_missing']=2
         self.assertTrue(a.pass_conditions(row))
-        payload=l.encode(row);seal={'schema':'hud_short_completion_v5','payload_sha256':l.sha(payload),
+        payload=l.encode(row);seal={'schema':'hud_short_completion_v6','payload_sha256':l.sha(payload),
             'verdict':'PASS','freeze_sha256':regression.F,'review_sha256':regression.R,'seconds_at_seal':100.}
         self.assertEqual(a.analyze(payload,seal,regression.F,regression.R)['result'],'VERIFIED_OFFLINE_LIFECYCLE_MODEL_ONLY')
     def test_checkpoint_reset_rejected(self):
