@@ -1,5 +1,9 @@
 {
-  "schema": "hud_remote_short_startup_protocol_v2",
+  "schema": "hud_remote_short_startup_protocol_v3",
+  "config_probe_contract": "EXACT_CONFIG_868_DIRECT_SECURE_FILE_886_SYNTHETIC_ABSENCE_ONLY",
+  "config_probe_design_cap": 64,
+  "config_cap_is_observed_demand": false,
+  "config_counter_monotonic": true,
   "interpreter_launch": "DIRECT_PREBOUND_PARENT_OS_IMAGE",
   "venv_context_required": true,
   "initial_identity_mismatch": "FAIL_NO_RETRY",

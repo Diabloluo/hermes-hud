@@ -1,0 +1,75 @@
+{
+  "schema": "hud_public_probe_static_facts_v1",
+  "sources": [
+    {
+      "name": "hermes_constants.py",
+      "bytes": 48037,
+      "sha256": "dacf56fbaf53871057044131922ba0040ce144d10c0ac19c843e091e2f4547b5",
+      "function": "is_container",
+      "cache_reference_present": true,
+      "open_sites": [
+        {
+          "line": 1161,
+          "path_literal": "/proc/1/cgroup",
+          "mode_literal": "r"
+        },
+        {
+          "line": 1172,
+          "path_literal": "/proc/self/mountinfo",
+          "mode_literal": "r"
+        }
+      ],
+      "selected_callers": [
+        {
+          "function": "get_subprocess_home",
+          "line": 818
+        }
+      ]
+    },
+    {
+      "name": "hermes_cli/config.py",
+      "bytes": 427475,
+      "sha256": "172b78ecb923048859ca177d96f5b010b44ec74bb1d13553577ff49bde1a071d",
+      "function": "_is_container",
+      "cache_reference_present": false,
+      "open_sites": [
+        {
+          "line": 868,
+          "path_literal": "/proc/1/cgroup",
+          "mode_literal": "r"
+        }
+      ],
+      "selected_callers": [
+        {
+          "function": "_secure_file",
+          "line": 886
+        },
+        {
+          "function": "_ensure_default_soul_md",
+          "line": 913
+        },
+        {
+          "function": "save_config",
+          "line": 7626
+        },
+        {
+          "function": "sanitize_env_file",
+          "line": 7876
+        },
+        {
+          "function": "save_env_value",
+          "line": 8038
+        },
+        {
+          "function": "remove_env_value",
+          "line": 8110
+        }
+      ]
+    }
+  ],
+  "config_design_cap": 64,
+  "cap_is_runtime_requirement": false,
+  "observation_actor": "Codex exact public-source hash and AST read",
+  "native_execution": "NOT_RUN",
+  "raw_user_data_read": false
+}

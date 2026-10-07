@@ -7,6 +7,9 @@ import re
 import threading
 
 SOURCE_SHA = 'dacf56fbaf53871057044131922ba0040ce144d10c0ac19c843e091e2f4547b5'
+CONFIG_SOURCE_SHA = '172b78ecb923048859ca177d96f5b010b44ec74bb1d13553577ff49bde1a071d'
+# Synthetic-contract design cap, NOT a measured host requirement or retry grant.
+CONFIG_PROBE_LIMIT = 64
 MISSING_SITES = {'/proc/1/cgroup': ('cgroup', 1161),
                  '/proc/self/mountinfo': ('mountinfo', 1172)}
 HEX = re.compile(r'^[0-9a-f]{64}$')
@@ -105,12 +108,13 @@ def within(path, root):
 
 
 def state_valid(row):
-    return (type(row) is dict and set(row) == {'schema', 'denied_count', 'missing', 'last_denial', 'scope'}
-            and row['schema'] == 'hud_startup_boundary_state_v1'
+    return (type(row) is dict and set(row) == {'schema', 'denied_count', 'missing', 'config_missing', 'last_denial', 'scope'}
+            and row['schema'] == 'hud_startup_boundary_state_v2'
             and row['scope'] == 'RESTRICTED_SYNTHETIC_ENVIRONMENT_NOT_NATIVE_HOST_COMPATIBILITY'
             and type(row['denied_count']) is int and 0 <= row['denied_count'] < 2**31
             and type(row['missing']) is dict and set(row['missing']) == {'cgroup', 'mountinfo'}
             and all(type(v) is int and v in (0, 1) for v in row['missing'].values())
+            and type(row['config_missing']) is int and 0 <= row['config_missing'] <= CONFIG_PROBE_LIMIT
             and (row['last_denial'] is None and row['denied_count'] == 0 or
                  row['denied_count'] > 0 and denial_valid(row['last_denial'])))
 
@@ -131,6 +135,7 @@ class FilePolicy:
             raise BoundaryRefused('policy_binding')
         self._home, self._out, self._roots, self._platform = home, out, roots, platform
         self._missing, self._denied, self._last = {'cgroup': 0, 'mountinfo': 0}, 0, None
+        self._config_missing = 0
         self._lock = threading.Lock()
 
     def check(self, requested, canonical, mode, flags, caller, immediate):
@@ -152,14 +157,23 @@ class FilePolicy:
             if (canonical == requested and self._platform == 'darwin' and access == 'read'
                     and not caller['truncated'] and type(immediate) is dict
                     and set(immediate) == {'source_sha256', 'line'}
-                    and immediate['source_sha256'] == SOURCE_SHA
-                    and type(immediate['line']) is int and immediate['line'] == line
+                    and type(immediate['line']) is int
                     and caller['frames'] and caller['frames'][0] == immediate):
-                with self._lock:
-                    if self._missing[key] == 0:
-                        self._missing[key] = 1
-                        # Fixed message; no filename, errno path or original text.
-                        raise FileNotFoundError('isolated_resource_unavailable') from None
+                if immediate['source_sha256'] == SOURCE_SHA and immediate['line'] == line:
+                    with self._lock:
+                        if self._missing[key] == 0:
+                            self._missing[key] = 1
+                            raise FileNotFoundError('isolated_resource_unavailable') from None
+                elif (key == 'cgroup' and immediate == {'source_sha256': CONFIG_SOURCE_SHA, 'line': 868}
+                      and len(caller['frames']) >= 2
+                      and caller['frames'][1] == {'source_sha256': CONFIG_SOURCE_SHA, 'line': 886}):
+                    # This uncached public helper is called through _secure_file.
+                    # Exact source, two-frame call chain and per-child finite cap;
+                    # NO filesystem open, arbitrary path, alias or general OSError.
+                    with self._lock:
+                        if type(self._config_missing) is int and 0 <= self._config_missing < CONFIG_PROBE_LIMIT:
+                            self._config_missing += 1
+                            raise FileNotFoundError('isolated_resource_unavailable') from None
             kind = 'linux_probe'
         if entry is None and (kind == 'owned' and access != 'unknown'
                               or kind == 'public' and access == 'read'):
@@ -175,8 +189,9 @@ class FilePolicy:
 
     def state(self):
         with self._lock:
-            return {'schema': 'hud_startup_boundary_state_v1', 'denied_count': self._denied,
-                    'missing': dict(self._missing), 'last_denial': copy.deepcopy(self._last),
+            return {'schema': 'hud_startup_boundary_state_v2', 'denied_count': self._denied,
+                    'missing': dict(self._missing), 'config_missing': self._config_missing,
+                    'last_denial': copy.deepcopy(self._last),
                     'scope': 'RESTRICTED_SYNTHETIC_ENVIRONMENT_NOT_NATIVE_HOST_COMPATIBILITY'}
 
     def ensure_clean(self):

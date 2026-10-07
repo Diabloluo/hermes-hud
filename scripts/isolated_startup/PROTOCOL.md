@@ -1,5 +1,22 @@
 # Remote single short startup backend — preparation only
 
+## Current config probe correction
+
+This is private v4 offline preparation dated2026-10-07, not a new native run.
+CONFIG_PROBE_DELTA.md governs the new fixed config.py868→886 synthetic missing
+model, independent strict config_missing0..64 and monotonic terminal checks.
+The64-call cap is a frozen design limit, NOT observed host demand or a retry
+grant. Boundary/guard/child schemas arev2; backend/completion/freeze arev4;
+unchanged interpreter binding remainsv3. Unknown callers/paths and exhausted
+cap are sticky fatal. No /proc reads, broad roots or host/env bypass is added.
+
+Current scope is one_owned_config_probe_startup_300s_http1_ws1_no_retry_no_risk_acceptance.
+The only future report is DOT_REMOTE_SHORT_STARTUP_CONFIG_PROBE_REVIEW.md,
+byte-identical at tool HERE only after accepted review and separate native
+authorization. The v3/v2 report names, schema claims and counts below are
+preserved history, NOT current materialization or runtime instructions.
+No native/gate/push is created by this preparation; run37479979359 remains FAIL.
+
 ## Current direct interpreter correction
 
 This is the 2026-10-06 private v3 preparation, not a product version or run.

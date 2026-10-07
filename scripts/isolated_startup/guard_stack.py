@@ -15,7 +15,7 @@ SIGNAL_EVENTS = {'os.kill', 'os.killpg'}
 
 def stack_valid(row):
     return (type(row) is dict and set(row) == {'schema', 'file', 'other_denials', 'last_error'}
-            and row['schema'] == 'hud_smoke_guard_stack_v1' and state_valid(row['file'])
+            and row['schema'] == 'hud_smoke_guard_stack_v2' and state_valid(row['file'])
             and type(row['other_denials']) is int and 0 <= row['other_denials'] < 2**31
             and (row['last_error'] is None and row['other_denials'] == 0 or
                  type(row['last_error']) is str and row['last_error'] in EVENT_ERRORS
@@ -82,7 +82,7 @@ class GuardStack:
 
     def state(self):
         with self._lock:
-            return {'schema': 'hud_smoke_guard_stack_v1',
+            return {'schema': 'hud_smoke_guard_stack_v2',
                     'file': self._adapter.policy.state(),
                     'other_denials': self._denials, 'last_error': self._last}
 
