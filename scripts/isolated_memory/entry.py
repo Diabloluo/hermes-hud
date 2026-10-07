@@ -17,7 +17,7 @@ import asyncio
 from runner import pair
 
 HERE=Path(__file__).resolve().parent
-FILES=("boundary_policy.py","audit_adapter.py","failure_projection.py","guard_stack.py","lifecycle.py","common.py","fixture.py","identity_contract.py","source_contract.py","native_io.py","observer_smoke.py","entry.py","controller.py","SOURCE_MANIFEST.json","PROTOCOL.md","DRAFT_WORKFLOW.yml","identity_diagnostics.py","optional_process.py","resource_diagnostics.py","pair_contract.py","memory_sampling.py","pair_record.py","runner.py","analyze.py","test_pair.py","offline_checks.py")
+FILES=("boundary_policy.py","audit_adapter.py","failure_projection.py","guard_stack.py","lifecycle.py","common.py","fixture.py","identity_contract.py","source_contract.py","native_io.py","observer_smoke.py","entry.py","controller.py","SOURCE_MANIFEST.json","PROTOCOL.md","DRAFT_WORKFLOW.yml","identity_diagnostics.py","optional_process.py","resource_diagnostics.py","pair_contract.py","memory_sampling.py","pair_record.py","runner.py","analyze.py","test_pair.py","offline_checks.py","execution_diagnostics.py","test_async_loop.py","real_loop_checks.py")
 
 
 def freeze_check(expected):
@@ -25,7 +25,7 @@ def freeze_check(expected):
             and digest(HERE/'FREEZE.json')==expected,'prepared')
     value=read(HERE/'FREEZE.json')
     require(type(value) is dict and set(value)=={'schema','files'}
-            and value['schema']=='hud_remote_same_trace_memory_freeze_v1'
+            and value['schema']=='hud_remote_same_trace_memory_freeze_v2'
             and type(value['files']) is dict and set(value['files'])==set(FILES),'prepared')
     require(all(digest(HERE/n)==value['files'][n] for n in FILES),'prepared')
     return True

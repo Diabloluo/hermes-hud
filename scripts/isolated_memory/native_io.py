@@ -303,9 +303,9 @@ class NativeIO:
                 self._transport.update(ws_frames=1,ws_bytes=size,ws_schema=1,handshakes=1)
         finally:raw=None
 
-    def ws_once(self):
+    async def ws_once_async(self):
         from websockets.asyncio.client import connect
-        asyncio.run(self._ws(connect))
+        await self._ws(connect)
 
     def transport(self):
         row=dict(self._transport,port=self.port)

@@ -44,6 +44,7 @@ for p in inputs:
 output=io.StringIO()
 result=unittest.TextTestRunner(stream=output,verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(test_pair))
 record={'schema':'hud_same_trace_pair_offline_receipt_v1','tests':result.testsRun,
+ 'python_version':sys.version,
  'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),
  'exit':0 if result.wasSuccessful() else 2,'inputs':sources,'attempts_after_hook':attempts,
  'audit_scope':'PRELOADED_IMPORTS_AND_INTERPRETER_STARTUP_NOT_COVERED_CTYPES_DENIED_AFTER_HOOK',

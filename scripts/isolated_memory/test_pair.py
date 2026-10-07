@@ -52,7 +52,7 @@ def arm(name):
         if label in c.LABELS:
             seq+=1;operations.append({'sequence':seq,'label':label,'at':at,
               'observed_seconds':.2,'window_seconds':30,'checkpoint':cp(seq,name)});at+=30
-    return {'arm':name,'candidate':'PASS','error':None,'seconds':2400,'resource':resource(),
+    return {'arm':name,'candidate':'PASS','error':None,'failure_diagnostic':None,'seconds':2400,'resource':resource(),
       'identity_diagnostic':None,'cleanup':{'identity_matched':True,'alive':False,'exit_code':0,'error':None},
       'handle':{'alive':False,'exit_code':0,'error':None},
       'child':{'schema':'hud_memory_child_terminal_v1','candidate':'PASS','source_end':source(),
@@ -62,13 +62,13 @@ def arm(name):
       'smoke':{'port':12001,'http_status':200,'http_bytes':100,'http_schema':1,
               'ws_frames':1,'ws_bytes':100,'ws_schema':1,'handshakes':1}}
 def pair(kind='MODEL'):
-    return {'schema':'hud_finite_attribution_pair_v1','result':'PENDING_TERMINAL_SEAL','candidate':'PASS',
-      'error':None,'grant':'e'*32,'sha':'f'*40,'run_id':'123','execution_kind':kind,
+    return {'schema':'hud_finite_attribution_pair_v2','result':'PENDING_TERMINAL_SEAL','candidate':'PASS',
+      'error':None,'failure_diagnostic':None,'grant':'e'*32,'sha':'f'*40,'run_id':'123','execution_kind':kind,
       'freeze_start':'a'*64,'freeze_end':'a'*64,'review':'b'*64,'arms':[arm('sham'),arm('snapshot')],
       'seconds':4900,'limits':c.LIMITS[:],'growth_acceptance_budget':None,
       'memory_risk':'WARN_NOT_ACCEPTED','public_release':'BLOCK'}
 def analyzed(x,verdict='PASS'):
-    payload=encode(x);seal={'schema':'hud_memory_pair_completion_v1',
+    payload=encode(x);seal={'schema':'hud_memory_pair_completion_v2',
       'payload_sha256':hashlib.sha256(payload).hexdigest(),'verdict':verdict,'freeze_sha256':'a'*64,
       'review_sha256':'b'*64,'seconds_at_seal':4901}
     return a.analyze(payload,seal,'a'*64,'b'*64)
@@ -168,7 +168,7 @@ for name,fn in MUTATIONS:setattr(MutationTests,'test_'+name,mutated(fn))
 
 class SealTests(unittest.TestCase):
     def test_fail_never_upgrade(self):
-        x=pair();x['candidate']='FAIL';x['error']='resource'
+        x=pair();x['candidate']='FAIL';x['error']='resource';x['failure_diagnostic']=__import__('execution_diagnostics').contract('resource')
         r=analyzed(x,'FAIL');self.assertEqual(r['error'],'execution_failed');self.assertEqual(r['ols_status'],'INCOMPLETE_NO_SLOPE')
     def test_fail_with_invalid_nested_discarded(self):
         x=pair();x['candidate']='FAIL';x['arms'][0]['samples'][0]['raw']='SECRET_SENTINEL'
@@ -303,7 +303,7 @@ class ExecutionModelTests(unittest.TestCase):
             def ready(self,*_):return None
             def acknowledge(self,label):self.calls.append(label);return None
             def http_once(self):self.calls.append('http_call')
-            def ws_once(self):self.calls.append('ws_call')
+            async def ws_once_async(self):self.calls.append('ws_call')
             def transport(self):return template['smoke']
             def request_finish(self):self.calls.append('finish_request')
             def inspect(self,_):
@@ -373,7 +373,7 @@ class PairLifecycleModelTests(unittest.TestCase):
             def __init__(self,root,repo,grant,freeze,prepared,name,epoch,begin):self.arm=name
         async def modeled_arm(io):
             calls.append(io.arm);r=arm(io.arm)
-            if fail_first and io.arm=='sham':r.update(candidate='FAIL',error='resource')
+            if fail_first and io.arm=='sham':r.update(candidate='FAIL',error='resource',failure_diagnostic=__import__('execution_diagnostics').contract('resource'))
             return r
         authority={'schema':lifecycle.SCHEMA,'id':'a'*32,'scope':lifecycle.SCOPE,
            'freeze_sha256':'a'*64,'review_sha256':'b'*64,'issued':100.,'expires':200.,
@@ -403,3 +403,69 @@ class PairLifecycleModelTests(unittest.TestCase):
     def test_replay_before_new_arm(self):
         result,calls,claims,data=self.run_pair(reuse=True)
         self.assertTrue(result);self.assertEqual(calls,['sham','snapshot']);self.assertEqual(len(claims),1)
+
+class ExecutionDiagnosticTests(unittest.TestCase):
+    def test_contract_rejection(self):
+        import execution_diagnostics as e
+        self.assertEqual(e.contract('acceptance'),{'schema':e.SCHEMA,'stage':'acceptance','kind':'contract_rejected'})
+    def test_pass_with_diagnostic_rejected(self):
+        x=pair();x['arms'][0]['failure_diagnostic']=__import__('execution_diagnostics').contract('acceptance')
+        self.assertEqual(analyzed(x)['arms'],[])
+    def test_old_pair_schema_rejected(self):
+        x=pair();x['schema']='hud_finite_attribution_pair_v1'
+        self.assertEqual(analyzed(x)['arms'],[])
+    def test_old_finite_scope_rejected(self):
+        g=GateTests().grant();g['scope']='one_remote_same_trace_pair_100min_no_retry_no_risk_acceptance'
+        self.assertFalse(lifecycle.authority_valid(g,101,'b'*64,'c'*64))
+    def test_async_method_has_no_nested_run(self):
+        tree=ast.parse((Path(__file__).parent/'native_io.py').read_text())
+        node=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='NativeIO')
+        method=next(n for n in node.body if isinstance(n,ast.AsyncFunctionDef) and n.name=='ws_once_async')
+        calls=[n for n in ast.walk(method) if isinstance(n,ast.Call)]
+        self.assertTrue(any(isinstance(n,ast.Await) for n in ast.walk(method)))
+        self.assertFalse(any(isinstance(n.func,ast.Attribute) and n.func.attr=='run' for n in calls))
+        self.assertFalse(any(isinstance(n,ast.FunctionDef) and n.name=='ws_once' for n in node.body))
+
+def diagnostic_mutation(target,name):
+    def test(self):
+        import execution_diagnostics as e
+        x=pair();x.update(candidate='FAIL',error='finish',failure_diagnostic=e.contract('pair_acceptance'))
+        x['arms']=x['arms'][:1];x['arms'][0].update(candidate='FAIL',error='internal',
+            failure_diagnostic=e.project('ws_smoke',RuntimeError()))
+        carrier=x if target=='pair' else x['arms'][0]
+        value=carrier['failure_diagnostic']
+        if name=='none':carrier['failure_diagnostic']=None
+        elif name=='bool':carrier['failure_diagnostic']=True
+        elif name=='text':carrier['failure_diagnostic']='SECRET_SENTINEL'
+        elif name=='unknown_stage':value['stage']='SECRET_SENTINEL'
+        elif name=='unknown_kind':value['kind']='SECRET_SENTINEL'
+        elif name=='extra':value['raw']='SECRET_SENTINEL'
+        elif name=='missing_kind':value.pop('kind')
+        elif name=='wrong_schema':value['schema']='legacy'
+        elif name=='stage_int':value['stage']=1
+        elif name=='kind_list':value['kind']=[]
+        elif name=='schema_bool':value['schema']=True
+        elif name=='missing_field':carrier.pop('failure_diagnostic')
+        result=analyzed(x,'FAIL')
+        self.assertEqual(result['arms'],[]);self.assertIsNone(result['failure_diagnostic'])
+        self.assertNotIn('SECRET_SENTINEL',json.dumps(result))
+    return test
+for target in ('pair','arm'):
+    for name in ('none','bool','text','unknown_stage','unknown_kind','extra','missing_kind',
+                 'wrong_schema','stage_int','kind_list','schema_bool','missing_field'):
+        setattr(ExecutionDiagnosticTests,'test_'+target+'_'+name,diagnostic_mutation(target,name))
+
+def exception_classified(factory,expected):
+    def test(self):
+        import execution_diagnostics as e
+        value=e.project('ws_smoke',factory('SECRET_SENTINEL'))
+        self.assertEqual(value['kind'],expected);self.assertTrue(e.valid(value))
+        self.assertNotIn('SECRET_SENTINEL',json.dumps(value))
+    return test
+for label,factory,expected in (
+ ('boundary',BoundaryRefused,'boundary_refused'),
+ ('cancelled',__import__('asyncio').CancelledError,'cancelled'),
+ ('timeout',TimeoutError,'timeout'),('os',OSError,'os_error'),
+ ('runtime',RuntimeError,'runtime_error'),('value',ValueError,'value_error'),
+ ('type',TypeError,'type_error'),('other',KeyboardInterrupt,'other')):
+    setattr(ExecutionDiagnosticTests,'test_kind_'+label,exception_classified(factory,expected))

@@ -1,3 +1,31 @@
+# 同追踪双臂异步修复准备合同
+
+本轮仅获授权集中离线修复与真实事件循环合成回归。NOT_AUTHORIZED_FOR_NATIVE_RUN、NOT_PUSHED、NOT_DISPATCHED。这是私有工具修订，不是产品版本。MEMORY NOT CLOSED / WARN_NOT_ACCEPTED，PUBLIC RELEASE BLOCK。
+
+## 本轮生效增量
+
+本节优先于下方逐字保留的历史 v1 合同。运行载荷 hud_finite_attribution_pair_v2、封口 hud_memory_pair_completion_v2、冻结 hud_remote_same_trace_memory_freeze_v2、验收 hud_memory_pair_review_acceptance_v2。scope 为 one_remote_same_trace_pair_async_v2_100min_no_retry_no_risk_acceptance，报告名 WORKBUDDY_REMOTE_FINITE_MEMORY_ASYNC_REPAIR_REVIEW.md。entry.FILES 精确 29 项，新增 execution_diagnostics.py、test_async_loop.py、real_loop_checks.py。旧 schema、scope、许可和已消费 claim 不能用于本修订。
+
+run_arm 直接 await NativeIO.ws_once_async，不在已有运行循环中再调用 asyncio.run。底层 _ws 与 HTTP/WS 超时、容量、鉴权及单次调用合同不变。Python [Runner 文档](https://docs.python.org/3.13/library/asyncio-runner.html)明确同线程已有运行循环时不能调用 asyncio.run；[Task 文档](https://docs.python.org/3.13/library/asyncio-task.html)说明 await 的调度与取消行为。测试用冻结旧 native_io.py 摘要绑定并抽取原 ws_once 方法，实际进入标准库循环重现该缺陷；这不证明 run37585748951 的现场唯一原因，历史根因仍 UNKNOWN。
+
+失败诊断只含固定 schema、stage、kind 三键。39 个阶段、9 种类别；不保存异常文字、动态类型名、路径、调用帧、token 或原始输出。首次错误保留，清理与后续检查不得覆盖；release 失败也不得保留候选 PASS。pair 和 arm 的 error 非空时必须有合法诊断，error 为空时必须为 null。分析器在 FAIL 早返回前同样检查完整 schema；未知或附加原文整体丢弃。PASS 要求诊断全空，原句柄与 child 实际 exit0、完整清理与冻结/源链等旧判据不放松。旧记录继续用旧分析器，绝不回填新字段。
+
+## 离线证据边界
+
+纯协作模型现有 116 项加诊断/schema/接线回归 37 项，共 153 项；另 16 项真实标准库事件循环合成回归，分为传输 9 项和 run_arm 7 项。最终执行事实以 FINAL_MODEL_RECEIPT.json、FINAL_REAL_LOOP_RECEIPT.json 的命令、cwd、实际计数、完整 unittest 输出与当前输入哈希为准。首次回执保留历史快照，不能充当当前绑定。
+
+真实循环使用未替换的 SelectorEventLoop、任务调度、await、取消与原有 10 秒 wait_for 超时。连接器/进程/阶段/数据均为合成，测试不调用真实 websockets.connect、HTTP、宿主、psutil、Mach、SQLite 或远端 CI，不验证真实 OS 运输管道或原生超时行为。标准库循环及自身唤醒 socketpair 在安装审计 hook 前创建；依赖预载、解释器启动和冻结旧方法的定点读取也在 hook 前。hook 后所有 socket 事件、进程、信号、SQLite、ctypes 新调用、写入及白名单外内容读取均拒绝。计数为零不能代替静态边界核验，也不能称整个进程零网络基础设施。
+
+每测试结束无遗留任务，循环最后关闭；取消被转换为固定失败诊断，合成清理不能冒充真实进程清理。10 秒测试不缩短、不改写 timeout。本地解释器版本记在回执；远端仍要求 Python3.13，跨版本运行兼容未获本轮证明。
+
+## 保留与未来门控
+
+下方历史合同、全部旧工具/报告/FAIL/claim保留。此次不创建 acceptance/authorization/permit/claim，不复制复审报告到 controller HERE，不执行 entry 或 controller，不查询生产或远端，不 push/main/改产品版本/release。旧失败的安全聚合仅作为历史绑定输入，不重新分析成 PASS。
+
+复审者只读精确白名单，唯一新增复审目录的 WORKBUDDY_REMOTE_FINITE_MEMORY_ASYNC_REPAIR_REVIEW.md，不扩读保护链、不运行任何被审代码。此次只请求一个集中安全复审；低/信息备注登记，不为文字启动版本循环。后续若另获本具体远端 pair 授权，才允许同名逐字报告 HERE 副本、新验收、新授权、新 SHA/freeze 物化及单次派发。失败或不明不重试，准备通过不是运行许可，更不是风险接受或公开 PASS。
+
+## 历史 v1 合同原文
+
 # 有限同追踪双臂内存实验准备合同
 
 状态：OFFLINE_PREPARATION_ONLY；NOT_AUTHORIZED、NOT_PUSHED、NOT_RUN。本目录是私有实验工具，不是产品v2.0.0。旧工具/报告/FAIL/claim全部保留。复审通过也不创建运行授权。

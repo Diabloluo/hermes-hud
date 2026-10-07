@@ -10,6 +10,7 @@ from native_io import NativeIO,port_valid
 from identity_diagnostics import observe_handle,valid as diagnostic_valid
 from pair_contract import PHASES,LABELS,LIMITS,error_code,checkpoint_valid,quality
 import resource_diagnostics as resources
+import execution_diagnostics as execution
 import fixture
 from pair_record import rows,encode,publish
 
@@ -106,34 +107,48 @@ async def operation(io,label,seq):
             'window_seconds':time.monotonic()-begin,'checkpoint':cp}
 
 async def run_arm(io):
-    started=io.clock();proc=expected=None
-    r={'arm':io.arm,'candidate':'FAIL','error':None,'seconds':None,'resource':None,
-       'identity_diagnostic':None,'cleanup':None,'handle':None,'child':None,
-       'source_start':None,'source_end':None,'fixture':None,'counts_end':None,
+    started=io.clock();proc=expected=None;stage='authority'
+    r={'arm':io.arm,'candidate':'FAIL','error':None,'failure_diagnostic':None,
+       'seconds':None,'resource':None,'identity_diagnostic':None,'cleanup':None,'handle':None,
+       'child':None,'source_start':None,'source_end':None,'fixture':None,'counts_end':None,
        'phases':[],'operations':[],'samples':[],'smoke':None}
+    def note(where,error):
+        if r['error'] is None:
+            r['error']=error_code(error)
+            r['failure_diagnostic']=execution.project(where,error)
     try:
         require(io.authorized() is True,'authority')
-        require(io.no_active() is True,'active')
-        r['resource']=None
+        stage='active';require(io.no_active() is True,'active')
+        stage='resource';r['resource']=None
         try:ok=io.resources()
         finally:r['resource']=io.resource_diagnostic()
         require(ok is True and resources.passed(r['resource']),'resource')
-        io.claim(io.grant);io.initialize()
-        r['fixture']=read(io.out/'fixture.json');r['source_start']=io.sources()
-        atomic(io.out/'phase-control.json',{'id':io.grant,'phase':'startup','sequence':0})
+        stage='claim';io.claim(io.grant)
+        stage='initialize';io.initialize()
+        stage='fixture_read';r['fixture']=read(io.out/'fixture.json')
+        stage='source_start';r['source_start']=io.sources()
+        stage='phase_control';atomic(io.out/'phase-control.json',{'id':io.grant,'phase':'startup','sequence':0})
         io._phase_sequence=0
-        proc=io.spawn();expected=io.expected(proc);io.check(proc,expected);io.ready(proc,expected)
-        io.acknowledge('ready');io.http_once();io.acknowledge('http')
-        io.ws_once();io.acknowledge('ws');r['smoke']=io.transport()
+        stage='spawn';proc=io.spawn()
+        stage='expected';expected=io.expected(proc)
+        stage='identity';io.check(proc,expected)
+        stage='ready';io.ready(proc,expected)
+        stage='ack_ready';io.acknowledge('ready')
+        stage='http_smoke';io.http_once()
+        stage='ack_http';io.acknowledge('http')
+        stage='ws_smoke';await io.ws_once_async()
+        stage='ack_ws';io.acknowledge('ws')
+        stage='transport';r['smoke']=io.transport()
         seq=0
         for label,seconds,load in PHASES:
-            record=await phase(io,label,seconds,load);r['phases'].append(record)
-            # Never launch the next phase/arm if quality is incomplete.
-            quality(rows(io.out/'samples.jsonl'),record)
+            stage='phase';record=await phase(io,label,seconds,load);r['phases'].append(record)
+            stage='phase_quality';quality(rows(io.out/'samples.jsonl'),record)
             if label in LABELS:
-                seq+=1;r['operations'].append(await operation(io,label,seq))
-        io.check(proc,expected);io.acknowledge('finish');io.request_finish()
-    except BaseException as error:r['error']=error_code(error)
+                seq+=1;stage='checkpoint';r['operations'].append(await operation(io,label,seq))
+        stage='check_finish';io.check(proc,expected)
+        stage='ack_finish';io.acknowledge('finish')
+        stage='request_finish';io.request_finish()
+    except BaseException as error:note(stage,error)
     finally:
         if proc is not None:
             seed=expected
@@ -143,13 +158,14 @@ async def run_arm(io):
             r['cleanup']=close_owned(proc,seed,io.inspect)
         r['handle']=observe_handle(proc)
         try:r['identity_diagnostic']=io.identity_diagnostic()
-        except BaseException:r['error']=r['error'] or 'diagnostic'
-        for k,getter in (('child',io.child_terminal),('source_end',io.sources),
-                ('counts_end',lambda:fixture.counts(io.home)),
-                ('samples',lambda:rows(io.out/'samples.jsonl'))):
+        except BaseException as error:note('identity_diagnostic',error)
+        for key,where,getter in (('child','child_terminal',io.child_terminal),
+                ('source_end','source_end',io.sources),
+                ('counts_end','counts_end',lambda:fixture.counts(io.home)),
+                ('samples','samples_read',lambda:rows(io.out/'samples.jsonl'))):
             try:
-                if r['source_start'] is not None:r[k]=getter()
-            except BaseException:r['error']=r['error'] or 'finish'
+                if r['source_start'] is not None:r[key]=getter()
+            except BaseException as error:note(where,error)
         r['seconds']=io.clock()-started
         if r['error'] is None:
             clean=r['cleanup'];child=r['child']
@@ -159,9 +175,10 @@ async def run_arm(io):
                 and child['commanded_exit'] is True and r['handle']=={'alive':False,'exit_code':0,'error':None}
                 and r['identity_diagnostic'] is None and r['source_start']==r['source_end']==child['source_end']
                 and r['counts_end']==r['fixture']['counts'] and 0<r['seconds']<3000):
-                r['error']='finish'
+                r['error']='finish';r['failure_diagnostic']=execution.contract('acceptance')
+        try:io.release()
+        except BaseException as error:note('release',error)
         if r['error'] is None:r['candidate']='PASS'
-        io.release()
     return r
 
 async def pair(root,repo,authority,freeze,review,prepared,sha,run_id):
@@ -178,32 +195,34 @@ async def pair(root,repo,authority,freeze,review,prepared,sha,run_id):
     with (root/'PAIR_CLAIM.json').open('x') as f:
         json.dump({'id':authority['id'],'state':'CONSUMED_ONCE_NO_RETRY','max_runs':1,
             'started_wall':started_wall,'sha':sha,'freeze':freeze,'review':review,'run_id':run_id},f)
-    r={'schema':'hud_finite_attribution_pair_v1','result':'PENDING_TERMINAL_SEAL','candidate':'FAIL',
-       'error':None,'grant':authority['id'],'sha':sha,'run_id':run_id,'execution_kind':NativeIO.execution_kind,
+    r={'schema':'hud_finite_attribution_pair_v2','result':'PENDING_TERMINAL_SEAL','candidate':'FAIL',
+       'error':None,'failure_diagnostic':None,'grant':authority['id'],'sha':sha,'run_id':run_id,'execution_kind':NativeIO.execution_kind,
        'freeze_start':freeze,'freeze_end':None,'review':review,'arms':[],'seconds':None,
        'limits':LIMITS[:],'growth_acceptance_budget':None,'memory_risk':'WARN_NOT_ACCEPTED','public_release':'BLOCK'}
+    stage='pair_budget'
     try:
         epoch=int(time.time())-7200
         for arm in ('sham','snapshot'):
-            require(time.monotonic()-begin<5980,'budget')
-            (root/arm).mkdir()
-            io=NativeIO(root,repo,authority['id'],freeze,prepared,arm,epoch,begin)
+            stage='pair_budget';require(time.monotonic()-begin<5980,'budget')
+            stage='arm_directory';(root/arm).mkdir()
+            stage='arm_initialize';io=NativeIO(root,repo,authority['id'],freeze,prepared,arm,epoch,begin)
             require(io.execution_kind==r['execution_kind'] and r['execution_kind'] in ('MODEL','NATIVE'),'prepared')
-            value=await run_arm(io);r['arms'].append(value)
+            stage='arm_execute';value=await run_arm(io);r['arms'].append(value)
             if value['candidate']=='FAIL':break
-        require(prepared(freeze) is True,'prepared')
+        stage='freeze_end';require(prepared(freeze) is True,'prepared')
         r['freeze_end']=freeze
-        require(len(r['arms'])==2 and all(x['candidate']=='PASS' for x in r['arms']),'finish')
-        require(r['arms'][0]['fixture']==r['arms'][1]['fixture']
+        stage='pair_acceptance';require(len(r['arms'])==2 and all(x['candidate']=='PASS' for x in r['arms']),'finish')
+        stage='pair_sources';require(r['arms'][0]['fixture']==r['arms'][1]['fixture']
             and r['arms'][0]['source_start']==r['arms'][1]['source_start'],'source')
-        require(time.monotonic()-begin<6000,'budget');r['candidate']='PASS'
-    except BaseException as error:r['error']=error_code(error)
+        stage='pair_finish';require(time.monotonic()-begin<6000,'budget');r['candidate']='PASS'
+    except BaseException as error:
+        r['error']=error_code(error);r['failure_diagnostic']=execution.project(stage,error)
     r['seconds']=time.monotonic()-begin
     payload=encode(r);publish(root/'result.json',payload)
     require((root/'result.json').read_bytes()==payload and prepared(freeze) is True,'seal')
     elapsed=time.monotonic()-begin
     require(0<=elapsed<6000,'budget')
     from hashlib import sha256
-    atomic(root/'completion.json',{'schema':'hud_memory_pair_completion_v1','payload_sha256':sha256(payload).hexdigest(),
+    atomic(root/'completion.json',{'schema':'hud_memory_pair_completion_v2','payload_sha256':sha256(payload).hexdigest(),
         'verdict':r['candidate'],'freeze_sha256':freeze,'review_sha256':review,'seconds_at_seal':elapsed})
     return r['candidate']=='PASS'

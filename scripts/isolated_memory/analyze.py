@@ -11,18 +11,23 @@ from pair_contract import (PHASES,LABELS,METRICS,LIMITS,ERRORS,finite,integer,ha
 from lifecycle import cleanup_valid,child_valid,sources_valid,transport_valid
 from identity_diagnostics import valid as diagnostic_valid,handle_valid
 import resource_diagnostics as resources
+import execution_diagnostics as execution
 
-PAIR_KEYS={'schema','result','candidate','error','grant','sha','run_id','execution_kind',
+PAIR_KEYS={'schema','result','candidate','error','failure_diagnostic','grant','sha','run_id','execution_kind',
  'freeze_start','freeze_end','review','arms','seconds','limits','growth_acceptance_budget','memory_risk','public_release'}
-ARM_KEYS={'arm','candidate','error','seconds','resource','identity_diagnostic','cleanup','handle',
+ARM_KEYS={'arm','candidate','error','failure_diagnostic','seconds','resource','identity_diagnostic','cleanup','handle',
  'child','source_start','source_end','fixture','counts_end','phases','operations','samples','smoke'}
 COUNTS={'sessions':5000,'messages':200000,'usage_rows':4900,'active_sessions':20,
  'ended_sessions':4980,'tool_messages':2000,'skill_records':1000}
+
+def diagnostic_pair(error,value):
+    return value is None if error is None else execution.valid(value)
 
 def arm_valid(x,name):
     if not (type(x) is dict and set(x)==ARM_KEYS and x['arm']==name
        and x['candidate'] in ('PASS','FAIL') and (x['error'] is None or
        type(x['error']) is str and x['error'] in ERRORS)
+       and diagnostic_pair(x['error'],x['failure_diagnostic'])
        and finite(x['seconds']) and x['seconds']>=0
        and (x['resource'] is None or resources.valid(x['resource']))
        and (x['identity_diagnostic'] is None or diagnostic_valid(x['identity_diagnostic']))
@@ -61,9 +66,10 @@ def arm_valid(x,name):
     return True
 
 def pair_valid(x):
-    if not (type(x) is dict and set(x)==PAIR_KEYS and x['schema']=='hud_finite_attribution_pair_v1'
+    if not (type(x) is dict and set(x)==PAIR_KEYS and x['schema']=='hud_finite_attribution_pair_v2'
        and x['result']=='PENDING_TERMINAL_SEAL' and x['candidate'] in ('PASS','FAIL')
        and (x['error'] is None or type(x['error']) is str and x['error'] in ERRORS)
+       and diagnostic_pair(x['error'],x['failure_diagnostic'])
        and type(x['grant']) is str and GRANT.fullmatch(x['grant']) is not None
        and type(x['sha']) is str and __import__('re').fullmatch('[a-f0-9]{40}',x['sha']) is not None
        and type(x['run_id']) is str and x['run_id'].isascii() and x['run_id'].isdigit() and 1<=len(x['run_id'])<=20
@@ -102,13 +108,13 @@ def complete_arm(x):
     trends={k:{'final_minus_baseline':means['final'][k]-means['baseline'][k],
        'cooldown_ols_per_hour':slope([(next(r['end'] for r in phases if r['label']==f'cooldown-{n}'),
         means[f'cooldown-{n}'][k]) for n in range(1,5)])} for k in METRICS}
-    return {'arm':x['arm'],'seconds':x['seconds'],'coverage':qualities,'phase_tail_means':means,
+    return {'arm':x['arm'],'failure_diagnostic':None,'seconds':x['seconds'],'coverage':qualities,'phase_tail_means':means,
       'within_arm_changes':trends,'operations':operations,'phases':phases,'samples':x['samples'],
       'resource':x['resource'],'cleanup':c,'handle':x['handle'],'child':child,'source_end':x['source_end'],
       'smoke':x['smoke'],'fixture':x['fixture']}
 
 def analyze(payload,completion,freeze,review):
-    result={'result':'DIAGNOSTIC_ONLY_NOT_VERIFIED','error':'evidence_invalid','arms':[],
+    result={'result':'DIAGNOSTIC_ONLY_NOT_VERIFIED','error':'evidence_invalid','failure_diagnostic':None,'arms':[],
         'memory_risk':'WARN_NOT_ACCEPTED','public_release':'BLOCK','growth_acceptance_budget':None,
         'absolute_between_arm_memory_comparison':'FORBIDDEN','ols_status':'INCOMPLETE_NO_SLOPE',
         'limits':LIMITS[:]}
@@ -116,7 +122,7 @@ def analyze(payload,completion,freeze,review):
         require(type(payload) is bytes and len(payload)<=2*1024*1024
           and type(completion) is dict and set(completion)=={'schema','payload_sha256','verdict',
             'freeze_sha256','review_sha256','seconds_at_seal'}
-          and completion['schema']=='hud_memory_pair_completion_v1' and completion['verdict'] in ('PASS','FAIL')
+          and completion['schema']=='hud_memory_pair_completion_v2' and completion['verdict'] in ('PASS','FAIL')
           and hash_valid(freeze) and hash_valid(review) and completion['freeze_sha256']==freeze
           and completion['review_sha256']==review and completion['payload_sha256']==hashlib.sha256(payload).hexdigest()
           and finite(completion['seconds_at_seal']) and 0<=completion['seconds_at_seal']<6000,'seal')
@@ -125,7 +131,7 @@ def analyze(payload,completion,freeze,review):
               and x['seconds']<=completion['seconds_at_seal'],'seal')
         if completion['verdict']=='FAIL':
             require(x['candidate']=='FAIL','seal')
-            result.update(error='execution_failed',arms=[{'arm':a['arm'],'error':a['error'],
+            result.update(error='execution_failed',failure_diagnostic=x['failure_diagnostic'],arms=[{'arm':a['arm'],'error':a['error'],'failure_diagnostic':a['failure_diagnostic'],
              'samples':a['samples'],'resource':a['resource'],'cleanup':a['cleanup'],'handle':a['handle']}
              for a in x['arms']])
             return result
@@ -142,7 +148,7 @@ def analyze(payload,completion,freeze,review):
 def main(root,freeze,review):
     root=Path(root)
     require(root.is_absolute() and root.resolve()==root and root.name=='hud-finite-attribution-owned','seal')
-    result={'result':'DIAGNOSTIC_ONLY_NOT_VERIFIED','error':'evidence_missing','arms':[],
+    result={'result':'DIAGNOSTIC_ONLY_NOT_VERIFIED','error':'evidence_missing','failure_diagnostic':None,'arms':[],
         'memory_risk':'WARN_NOT_ACCEPTED','public_release':'BLOCK','growth_acceptance_budget':None,
         'absolute_between_arm_memory_comparison':'FORBIDDEN','ols_status':'INCOMPLETE_NO_SLOPE','limits':LIMITS[:]}
     try:result=analyze(bounded(root/'result.json',2*1024*1024),read(root/'completion.json'),freeze,review)
