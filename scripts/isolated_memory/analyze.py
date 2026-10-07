@@ -1,266 +1,157 @@
-"""Independent offline scalar analysis. Does not import runner or open any DB/home."""
-import argparse
+"""Independent pure aggregate analysis. No runner/native imports, DB/home/trace reopening."""
 import hashlib
 import json
-import math
 from pathlib import Path
-import statistics
 import sys
+if __name__=='__main__':sys.path.insert(0,str(Path(__file__).resolve().parent))
+from common import require,bounded,read,object_pairs
+from pair_record import encode,publish
+from pair_contract import (PHASES,LABELS,METRICS,LIMITS,ERRORS,finite,integer,hash_valid,
+                          sample_valid,checkpoint_valid,quality,slope,monotonic_states,GRANT)
+from lifecycle import cleanup_valid,child_valid,sources_valid,transport_valid
+from identity_diagnostics import valid as diagnostic_valid,handle_valid
+import resource_diagnostics as resources
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (require, read, digest, frozen, protocol, schedule, coverage,
-                    METRICS, LABELS, number, SHA, HEX)
-from identity_contract import (valid as identity_valid, binding_valid, diagnostic_valid,
-                               diagnostic_matched, failure_valid)
+PAIR_KEYS={'schema','result','candidate','error','grant','sha','run_id','execution_kind',
+ 'freeze_start','freeze_end','review','arms','seconds','limits','growth_acceptance_budget','memory_risk','public_release'}
+ARM_KEYS={'arm','candidate','error','seconds','resource','identity_diagnostic','cleanup','handle',
+ 'child','source_start','source_end','fixture','counts_end','phases','operations','samples','smoke'}
+COUNTS={'sessions':5000,'messages':200000,'usage_rows':4900,'active_sessions':20,
+ 'ended_sessions':4980,'tool_messages':2000,'skill_records':1000}
 
+def arm_valid(x,name):
+    if not (type(x) is dict and set(x)==ARM_KEYS and x['arm']==name
+       and x['candidate'] in ('PASS','FAIL') and (x['error'] is None or
+       type(x['error']) is str and x['error'] in ERRORS)
+       and finite(x['seconds']) and x['seconds']>=0
+       and (x['resource'] is None or resources.valid(x['resource']))
+       and (x['identity_diagnostic'] is None or diagnostic_valid(x['identity_diagnostic']))
+       and (x['cleanup'] is None or cleanup_valid(x['cleanup']))
+       and handle_valid(x['handle']) and (x['child'] is None or child_valid(x['child']))
+       and all(x[k] is None or sources_valid(x[k]) for k in ('source_start','source_end'))
+       and (x['smoke'] is None or transport_valid(x['smoke']))
+       and type(x['phases']) is list and len(x['phases'])<=len(PHASES)
+       and type(x['operations']) is list and len(x['operations'])<=5
+       and type(x['samples']) is list and len(x['samples'])<=1600
+       and all(sample_valid(r) for r in x['samples'])):return False
+    if not all(b['at']>a['at'] for a,b in zip(x['samples'],x['samples'][1:])):return False
+    for row,(label,seconds,load) in zip(x['phases'],PHASES):
+        if not (type(row) is dict and set(row)=={'label','seconds','start','end','http','ws','handshakes','state'}
+          and row['label']==label and type(row['seconds']) is int and row['seconds']==seconds
+          and finite(row['start']) and finite(row['end']) and 0<=row['start']<row['end']
+          and all(integer(row[k]) for k in ('http','ws','handshakes'))
+          and __import__('guard_stack').clean_state(row['state'])):return False
+    for seq,op in enumerate(x['operations'],1):
+        if not (type(op) is dict and set(op)=={'sequence','label','at','observed_seconds','window_seconds','checkpoint'}
+          and type(op['sequence']) is int and op['sequence']==seq and op['label']==LABELS[seq-1]
+          and all(finite(op[k]) for k in ('at','observed_seconds','window_seconds'))
+          and op['at']>=0 and 0<=op['observed_seconds']<30 and 30<=op['window_seconds']<32
+          and checkpoint_valid(op['checkpoint'],name,seq)):return False
+    f=x['fixture']
+    if f is not None:
+        if not (type(f) is dict and set(f)=={'counts','schema_source_sha256','source_hashes',
+            'query_only','native_ddl','timeline_total'} and f['counts']==COUNTS
+            and all(type(n) is int for n in f['counts'].values()) and f['query_only'] is True
+            and f['timeline_total'] is None and hash_valid(f['schema_source_sha256'])
+            and f['native_ddl']=='fresh pinned distribution SCHEMA_SQL; required fields not patched'
+            and type(f['source_hashes']) is dict and set(f['source_hashes'])=={'state.db','job-ledger/jobs.jsonl'}
+            and all(hash_valid(h) for h in f['source_hashes'].values())):return False
+    if x['counts_end'] is not None and not (type(x['counts_end']) is dict and x['counts_end']==COUNTS
+        and all(type(v) is int for v in x['counts_end'].values())):return False
+    return True
 
-def slope(points):
-    require(len(points) == 4 and all(number(x) and number(y) for x, y in points), 'slope')
-    xs, ys = zip(*points)
-    mx, my = statistics.mean(xs), statistics.mean(ys)
-    den = sum((x-mx)**2 for x in xs)
-    require(den > 0, 'slope')
-    return sum((x-mx)*(y-my) for x, y in points)/den*3600
+def pair_valid(x):
+    if not (type(x) is dict and set(x)==PAIR_KEYS and x['schema']=='hud_finite_attribution_pair_v1'
+       and x['result']=='PENDING_TERMINAL_SEAL' and x['candidate'] in ('PASS','FAIL')
+       and (x['error'] is None or type(x['error']) is str and x['error'] in ERRORS)
+       and type(x['grant']) is str and GRANT.fullmatch(x['grant']) is not None
+       and type(x['sha']) is str and __import__('re').fullmatch('[a-f0-9]{40}',x['sha']) is not None
+       and type(x['run_id']) is str and x['run_id'].isascii() and x['run_id'].isdigit() and 1<=len(x['run_id'])<=20
+       and x['execution_kind'] in ('MODEL','NATIVE') and hash_valid(x['freeze_start'])
+       and (x['freeze_end'] is None or hash_valid(x['freeze_end'])) and hash_valid(x['review'])
+       and finite(x['seconds']) and x['seconds']>=0 and x['limits']==LIMITS
+       and x['growth_acceptance_budget'] is None and x['memory_risk']=='WARN_NOT_ACCEPTED'
+       and x['public_release']=='BLOCK' and type(x['arms']) is list and len(x['arms'])<=2):return False
+    return all(arm_valid(arm,name) for arm,name in zip(x['arms'],('sham','snapshot')))
 
+def complete_arm(x):
+    require(x['candidate']=='PASS' and x['error'] is None and 0<x['seconds']<3000
+       and resources.passed(x['resource']) and x['identity_diagnostic'] is None
+       and transport_valid(x['smoke']) and len(x['phases'])==len(PHASES)
+       and len(x['operations'])==5 and x['fixture'] is not None and x['counts_end']==COUNTS
+       and x['source_start']==x['source_end'] and sources_valid(x['source_start']),'finish')
+    c=x['cleanup'];child=x['child']
+    require(c is not None and c['identity_matched'] is True and c['alive'] is False
+       and type(c['exit_code']) is int and c['exit_code']==0 and c['error'] is None
+       and x['handle']=={'alive':False,'exit_code':0,'error':None}
+       and child is not None and child['candidate']=='PASS' and child['commanded_exit'] is True
+       and type(child['exit_code']) is int and child['exit_code']==0
+       and child['source_end']==x['source_end'],'cleanup')
+    phases=x['phases'];operations=x['operations'];means={};qualities=[];events=[];last=-1
+    for row,(_,seconds,load) in zip(phases,PHASES):
+        require(row['start']>=last and seconds<=row['end']-row['start']<=seconds+42,'phase')
+        require((row['http']>=4 and row['ws']>0 and row['handshakes']==1) if load
+                 else row['http']==row['ws']==row['handshakes']==0,'phase')
+        q,m=quality(x['samples'],row);qualities.append(q);means[row['label']]=m
+        events.append((row['end'],row['state']));last=row['end']
+    for seq,op in enumerate(operations,1):
+        index=next(i for i,r in enumerate(phases) if r['label']==LABELS[seq-1])
+        require(op['at']>=phases[index]['end'] and op['at']+op['window_seconds']<=phases[index+1]['start'],'operation')
+        events.append((op['at']+op['window_seconds'],op['checkpoint']['state']))
+    require(monotonic_states([s for _,s in sorted(events,key=lambda e:e[0])]+[child['state']]),'boundary')
+    trends={k:{'final_minus_baseline':means['final'][k]-means['baseline'][k],
+       'cooldown_ols_per_hour':slope([(next(r['end'] for r in phases if r['label']==f'cooldown-{n}'),
+        means[f'cooldown-{n}'][k]) for n in range(1,5)])} for k in METRICS}
+    return {'arm':x['arm'],'seconds':x['seconds'],'coverage':qualities,'phase_tail_means':means,
+      'within_arm_changes':trends,'operations':operations,'phases':phases,'samples':x['samples'],
+      'resource':x['resource'],'cleanup':c,'handle':x['handle'],'child':child,'source_end':x['source_end'],
+      'smoke':x['smoke'],'fixture':x['fixture']}
 
-def samples_read(path):
-    require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 16*1024*1024,
-            'samples_boundary')
-    rows = [json.loads(line) for line in path.read_text().splitlines()]
-    require(0 < len(rows) <= 2000, 'samples_count')
-    for row in rows:
-        require(set(row) == {'at', 'phase'} | set(METRICS) and number(row['at'])
-                and type(row['phase']) is str and row['phase'] in
-                {x[0] for x in schedule(protocol())} | {'startup', 'checkpoint'}
-                and all(type(row[k]) is int and 0 <= row[k] < 2**63 for k in METRICS), 'sample_schema')
-    require(all(b['at'] > a['at'] for a, b in zip(rows, rows[1:])), 'sample_order')
-    return rows
-
-
-def analyze_arm(root, arm, p, pair):
-    out = root/arm/'evidence'
-    require(not (out/'observer-failure.json').exists(), 'observer_failed')
-    r = read(out/'result.json')
-    require(set(r) == {'schema', 'arm', 'result', 'error', 'phases', 'operations', 'cleanup',
-                       'fixture', 'sources_end', 'counts_end', 'tool_end', 'start', 'seconds', 'identity',
-                       'identity_diagnostic'}
-            and r['schema'] == 'hud_remote_arm_v2' and r['arm'] == arm
-            and r['result'] == 'EXECUTION_COMPLETE_PENDING_ANALYSIS' and r['error'] is None
-            and 0 < r['seconds'] < p['arm_seconds'] and r['tool_end'] == pair['tool_start'], 'arm')
-    clean = r['cleanup']
-    require(set(clean) == {'identity_matched', 'alive', 'exit_code', 'error', 'diagnostic'}
-            and clean['identity_matched'] is True and clean['alive'] is False
-            and type(clean['exit_code']) is int and clean['error'] is None
-            and diagnostic_matched(clean['diagnostic'])
-            and clean['diagnostic']['stage'] in ('pre_term', 'pre_kill'), 'cleanup')
-    identity = r['identity']
-    expected_home = root/arm/'synthetic-home'
-    require(identity_valid(identity) and identity['cwd'] == str(expected_home)
-            and identity['exe'] == pair['interpreter_binding']['exe']
-            and diagnostic_matched(r['identity_diagnostic'])
-            and r['identity_diagnostic']['stage'] in ('initial', 'loop'), 'identity')
-    # Explicit argv length is eleven; do not trust an extra shell/token argument.
-    require(type(identity['argv']) is list and len(identity['argv']) == 11
-            and identity['argv'][1:4] == ['-I', '-B', str(Path(__file__).resolve().parent/'observer.py')]
-            and identity['argv'][4:8] == ['dashboard', '--host', '127.0.0.1', '--port']
-            and identity['argv'][9:] == ['--no-open', '--skip-build']
-            and identity['argv'][8].isdigit() and 1024 <= int(identity['argv'][8]) <= 65535
-            and int(identity['argv'][8]) != 9119
-            and identity['argv'][0] == pair['interpreter_binding']['argv0'],
-            'identity_command')
-    require(read(out/'identity.json') == identity, 'identity_binding')
-    fixture = r['fixture']
-    require(set(fixture) == {'counts', 'schema_source_sha256', 'source_hashes', 'query_only',
-                            'native_ddl', 'timeline_total'} and fixture['counts'] == p['fixture_counts']
-            and r['counts_end'] == p['fixture_counts'] and fixture['query_only'] is True
-            and fixture['timeline_total'] is None
-            and all(type(v) is int for v in fixture['counts'].values())
-            and all(type(v) is int for v in r['counts_end'].values())
-            and HEX.fullmatch(fixture['schema_source_sha256']) is not None
-            and set(fixture['source_hashes']) == {'state.db', 'job-ledger/jobs.jsonl'}
-            and all(HEX.fullmatch(v) is not None for v in fixture['source_hashes'].values())
-            and r['sources_end'] == fixture['source_hashes'], 'fixture')
-    phases = r['phases']
-    require(len(phases) == len(schedule(p)), 'schedule')
-    rows = samples_read(out/'samples.jsonl')
-    means, qualities = {}, []
-    last = r['start']
-    for phase, (label, seconds, load) in zip(phases, schedule(p)):
-        require(set(phase) == {'label', 'seconds', 'start', 'end', 'http', 'ws', 'handshakes'}
-                and phase['label'] == label and phase['seconds'] == seconds
-                and number(phase['start']) and number(phase['end'])
-                and phase['start'] >= last and phase['end']-phase['start'] >= seconds
-                and all(type(phase[k]) is int and phase[k] >= 0 for k in ('http', 'ws', 'handshakes'))
-                and ((phase['http'] >= 4 and phase['ws'] > 0 and phase['handshakes'] == 1) if load
-                     else phase['http'] == phase['ws'] == phase['handshakes'] == 0), 'phase')
-        quality, tail = coverage(rows, phase, p)
-        qualities.append(quality)
-        means[label] = {k: statistics.mean(s[k] for s in tail) for k in METRICS}
-        last = phase['end']
-    require(len(r['operations']) == 5, 'operations')
-    cp_summaries = []
-    for seq, (label, operation) in enumerate(zip(LABELS, r['operations']), 1):
-        require(set(operation) == {'sequence', 'label', 'at', 'observed_seconds', 'window_seconds'}
-                and type(operation['sequence']) is int and operation['sequence'] == seq
-                and operation['label'] == label and number(operation['at'])
-                and number(operation['observed_seconds']) and number(operation['window_seconds'])
-                and 0 <= operation['observed_seconds'] < 30 and operation['window_seconds'] >= 30,
-                'operation')
-        cp = read(out/f'checkpoint-{seq}.json')
-        require(set(cp) == {'sequence', 'label', 'compare_to', 'snapshot_count', 'gc_count', 'seconds', 'values'}
-                and type(cp['sequence']) is int and cp['sequence'] == seq and cp['label'] == label
-                and (cp['compare_to'] is None if seq == 1 else type(cp['compare_to']) is int and cp['compare_to'] == 1)
-                and type(cp['snapshot_count']) is int and cp['snapshot_count'] == int(arm == 'snapshot')
-                and type(cp['gc_count']) is int and cp['gc_count'] == 0
-                and number(cp['seconds']) and 0 <= cp['seconds'] < 30, 'checkpoint')
-        v = cp['values']
-        if arm == 'sham':
-            require(v is None, 'sham_intervention')
-        else:
-            require(set(v) == {'trace_records', 'snapshot_bytes', 'delta_rows', 'net_delta_bytes',
-                              'top', 'interpretation'} and v['interpretation'] == 'filename_provenance_only_not_ownership'
-                    and all(type(v[k]) is int and v[k] >= 0 for k in ('trace_records', 'snapshot_bytes', 'delta_rows'))
-                    and type(v['net_delta_bytes']) is int and type(v['top']) is list and len(v['top']) <= 25,
-                    'allocation_schema')
-            for t in v['top']:
-                require(set(t) == {'file_sha256', 'line', 'bytes', 'blocks'}
-                        and HEX.fullmatch(t['file_sha256']) is not None
-                        and all(type(t[k]) is int and t[k] >= 0 for k in ('line', 'bytes', 'blocks')), 'allocation_privacy')
-            require(sum(t['bytes'] for t in v['top']) <= v['snapshot_bytes'], 'allocation_bounds')
-        cp_summaries.append({'sequence': seq, 'seconds': cp['seconds'], 'values': v})
-    trends = {}
-    for metric in METRICS:
-        points = [(next(x['end'] for x in phases if x['label'] == f'cooldown-{n}'),
-                   means[f'cooldown-{n}'][metric]) for n in range(1, 5)]
-        trends[metric] = {'final_minus_baseline': means['final'][metric]-means['baseline'][metric],
-                          'cooldown_ols_per_hour': slope(points)}
-    return {'arm': arm, 'seconds': r['seconds'], 'coverage': qualities, 'phase_tail_means': means,
-            'within_arm_changes': trends, 'checkpoints': cp_summaries,
-            'http': sum(x['http'] for x in phases), 'ws': sum(x['ws'] for x in phases),
-            'samples': rows, 'phases': phases,
-            'cleanup_verified_from_record': True, 'live_pid_checked': False,
-            'fixture': fixture, 'identity_digest': hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()}
-
-
-def analyze(root):
-    p = protocol()
-    pair = read(root/'result.json')
-    require(set(pair) == {'schema', 'sha', 'candidate', 'grant', 'run_id', 'result', 'arms',
-                         'tool_start', 'tool_end', 'seconds', 'environment', 'memory_risk',
-                         'public_release', 'public_source_start', 'public_source_end',
-                         'interpreter_binding', 'interpreter_binding_end'}
-            and pair['schema'] == 'hud_remote_pair_v2' and pair['candidate'] == p['candidate']
-            and SHA.fullmatch(pair['sha']) is not None and pair['result'] == 'EXECUTION_COMPLETE_PENDING_ANALYSIS'
-            and pair['memory_risk'] == 'WARN_NOT_ACCEPTED' and pair['public_release'] == 'BLOCK'
-            and pair['arms'] == [{'arm': a, 'result': 'EXECUTION_COMPLETE_PENDING_ANALYSIS'} for a in p['arms']]
-            and number(pair['seconds']) and 0 < pair['seconds'] < p['pair_seconds']
-            and pair['tool_start'] == pair['tool_end'] == frozen()
-            and pair['public_source_start'] == pair['public_source_end'], 'pair')
-    require(binding_valid(pair['interpreter_binding'], root)
-            and pair['interpreter_binding'] == pair['interpreter_binding_end'], 'interpreter_binding')
-    source = pair['public_source_start']
-    require(set(source) == {'count', 'sha256'} and type(source['count']) is int and source['count'] > 0
-            and HEX.fullmatch(source['sha256']) is not None, 'public_source')
-    env = pair['environment']
-    require(set(env) == {'python', 'platform', 'distributions'} and env['platform'] == 'darwin'
-            and type(env['python']) is str and env['python'].startswith('3.13.')
-            and type(env['distributions']) is dict and len(env['distributions']) <= 512
-            and env['distributions'].get('hermes-agent') == p['host_version'], 'environment')
-    versions = {k: env['distributions'].get(k) for k in ('hermes-agent', 'psutil', 'websockets',
-                                                       'fastapi', 'uvicorn', 'starlette')}
-    import re
-    require(all(type(v) is str and re.fullmatch(r'[a-zA-Z0-9.+_-]{1,64}', v) for v in versions.values()),
-            'environment')
-    arms = [analyze_arm(root, arm, p, pair) for arm in p['arms']]
-    require(arms[0]['fixture'] == arms[1]['fixture'], 'paired_fixture')
-    return {'result': 'VERIFIED_REMOTE_FINITE_EXECUTION_ONLY', 'sha': pair['sha'],
-            'seconds': pair['seconds'], 'arms': arms, 'environment': {'python': env['python'],
-                'platform': env['platform'], 'versions': versions, 'public_cli_source': source,
-                'interpreter_fingerprint': {k: pair['interpreter_binding'][k]
-                    for k in ('launcher_sha256', 'exe_sha256')},
-                'os_argv0_equals_launcher': pair['interpreter_binding']['argv0'] ==
-                                           pair['interpreter_binding']['launcher']},
-            'absolute_between_arm_memory_comparison': 'FORBIDDEN',
-            'ols': 'four_cooldown_points_descriptive_only',
-            'historical_cause': 'UNKNOWN', 'growth_acceptance_budget': None,
-            'memory_risk': 'WARN_NOT_ACCEPTED', 'public_release': 'BLOCK',
-            'limitations': ['Fresh macOS Python 3.13 Hermes 0.19.0; not historical host recreation.',
-                'Sequential order and system pressure can confound trends.',
-                'Snapshot instrumentation changes the observed object.',
-                'Net traced bytes do not exclude product or native memory retention.',
-                'Mach self scalars are not region ownership; RSS/compressed differences are not conservation.',
-                'No raw transport fidelity reconstruction from aggregate records.',
-                'No risk acceptance, long-term no-leak proof, final product SHA or public release PASS.']}
-
-
-def diagnostic(root):
-    """Preserve valid partial scalars on FAIL, never export an arbitrary payload."""
-    result = []
-    allowed_errors = {'start_resource', 'fixture_counts', 'port', 'host_identity', 'observer_failed',
-        'resource', 'sampler_guard', 'operation_budget', 'pair_budget', 'arm_budget', 'phase_ack',
-        'http', 'http_schema', 'ws_schema', 'ws_early_exit', 'load', 'startup_budget', 'observer_ready',
-        'operation_ack', 'clock', 'internal', 'cleanup_failed', 'final_readback', 'source_changed', 'tool_drift',
-        'host_early_exit', 'identity_inspection', 'interpreter_binding'}
-    for arm in protocol()['arms']:
-        out = root/arm/'evidence'
-        if not (out/'result.json').is_file():
-            continue
-        values = {'arm': arm, 'result': 'DIAGNOSTIC_ONLY', 'error': 'unclassified',
-                  'cleanup': None, 'seconds': None, 'samples': [], 'observer_failure_recorded': False,
-                  'identity_diagnostic': None, 'observer_failure': None}
-        try:
-            r = read(out/'result.json')
-            if r.get('error') in allowed_errors:
-                values['error'] = r['error']
-            if number(r.get('seconds')) and 0 <= r['seconds'] < 10000:
-                values['seconds'] = r['seconds']
-            c = r.get('cleanup')
-            if (type(c) is dict and set(c) == {'identity_matched', 'alive', 'exit_code', 'error', 'diagnostic'}
-                and type(c['identity_matched']) is bool and (c['alive'] is None or type(c['alive']) is bool)
-                and (c['exit_code'] is None or type(c['exit_code']) is int and abs(c['exit_code']) < 10000)
-                and c['error'] in (None, 'unexpected_exit', 'cleanup_failed')
-                and diagnostic_valid(c['diagnostic'])):
-                values['cleanup'] = c
-            if diagnostic_valid(r.get('identity_diagnostic')):
-                values['identity_diagnostic'] = r['identity_diagnostic']
-            values['observer_failure_recorded'] = (out/'observer-failure.json').is_file()
-            if values['observer_failure_recorded']:
-                child = read(out/'observer-failure.json', maximum=4096)
-                if failure_valid(child):
-                    values['observer_failure'] = child
-        except BaseException:
-            pass
-        try:
-            values['samples'] = samples_read(out/'samples.jsonl')
-        except BaseException:
-            pass  # Invalid/raw-containing samples are not exported and never validate.
-        result.append(values)
-    return result
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('root', type=Path)
-    args = parser.parse_args()
-    root = args.root.resolve()
-    # Only this fixed CI-owned root is supported. No general DB/log/source reader.
-    require(root.name == 'hud-finite-owned' and not args.root.is_symlink(), 'root')
-    output = root/'aggregate-artifact'
-    output.mkdir(exist_ok=True)
+def analyze(payload,completion,freeze,review):
+    result={'result':'DIAGNOSTIC_ONLY_NOT_VERIFIED','error':'evidence_invalid','arms':[],
+        'memory_risk':'WARN_NOT_ACCEPTED','public_release':'BLOCK','growth_acceptance_budget':None,
+        'absolute_between_arm_memory_comparison':'FORBIDDEN','ols_status':'INCOMPLETE_NO_SLOPE',
+        'limits':LIMITS[:]}
     try:
-        summary = analyze(root)
-        code = 0
-    except BaseException:
-        summary = {'result': 'DIAGNOSTIC_ONLY_NOT_VERIFIED', 'memory_risk': 'WARN_NOT_ACCEPTED',
-                   'public_release': 'BLOCK', 'error': 'evidence_invalid_or_execution_failed',
-                   'partial_aggregate_diagnostics': diagnostic(root)}
-        code = 2
-    (output/'analysis.json').write_text(json.dumps(summary, sort_keys=True, indent=2)+'\n')
-    # Deliberately only validated/projection scalars, not homes, logs, HTML, config,
-    # sample raw JSON, caller-defined extra fields or arbitrary failure payloads.
-    print(json.dumps({k: summary[k] for k in ('result', 'memory_risk', 'public_release')}))
-    return code
+        require(type(payload) is bytes and len(payload)<=2*1024*1024
+          and type(completion) is dict and set(completion)=={'schema','payload_sha256','verdict',
+            'freeze_sha256','review_sha256','seconds_at_seal'}
+          and completion['schema']=='hud_memory_pair_completion_v1' and completion['verdict'] in ('PASS','FAIL')
+          and hash_valid(freeze) and hash_valid(review) and completion['freeze_sha256']==freeze
+          and completion['review_sha256']==review and completion['payload_sha256']==hashlib.sha256(payload).hexdigest()
+          and finite(completion['seconds_at_seal']) and 0<=completion['seconds_at_seal']<6000,'seal')
+        x=json.loads(payload,object_pairs_hook=object_pairs)
+        require(pair_valid(x) and x['freeze_start']==freeze and x['review']==review
+              and x['seconds']<=completion['seconds_at_seal'],'seal')
+        if completion['verdict']=='FAIL':
+            require(x['candidate']=='FAIL','seal')
+            result.update(error='execution_failed',arms=[{'arm':a['arm'],'error':a['error'],
+             'samples':a['samples'],'resource':a['resource'],'cleanup':a['cleanup'],'handle':a['handle']}
+             for a in x['arms']])
+            return result
+        require(x['candidate']=='PASS' and x['error'] is None and x['freeze_end']==freeze
+            and 0<x['seconds']<6000 and len(x['arms'])==2,'finish')
+        arms=[complete_arm(a) for a in x['arms']]
+        require(arms[0]['fixture']==arms[1]['fixture'] and arms[0]['source_end']==arms[1]['source_end'],'source')
+        result.update(result=('VERIFIED_REMOTE_SAME_TRACE_FINITE_PAIR_ONLY' if x['execution_kind']=='NATIVE'
+            else 'VERIFIED_OFFLINE_PAIR_MODEL_ONLY'),error=None,arms=arms,
+            ols_status='DESCRIPTIVE_FOUR_COOLDOWN_POINTS_ONLY')
+        return result
+    except Exception:return result
 
-
-if __name__ == '__main__':
-    raise SystemExit(main())
+def main(root,freeze,review):
+    root=Path(root)
+    require(root.is_absolute() and root.resolve()==root and root.name=='hud-finite-attribution-owned','seal')
+    result={'result':'DIAGNOSTIC_ONLY_NOT_VERIFIED','error':'evidence_missing','arms':[],
+        'memory_risk':'WARN_NOT_ACCEPTED','public_release':'BLOCK','growth_acceptance_budget':None,
+        'absolute_between_arm_memory_comparison':'FORBIDDEN','ols_status':'INCOMPLETE_NO_SLOPE','limits':LIMITS[:]}
+    try:result=analyze(bounded(root/'result.json',2*1024*1024),read(root/'completion.json'),freeze,review)
+    except Exception:pass
+    root.mkdir(exist_ok=True)
+    artifact=root/'aggregate-artifact';artifact.mkdir(exist_ok=True)
+    publish(artifact/'analysis.json',encode(result))
+    return 0 if result['result']=='VERIFIED_REMOTE_SAME_TRACE_FINITE_PAIR_ONLY' else 2
+if __name__=='__main__':
+    try:raise SystemExit(main(*sys.argv[1:]))
+    except SystemExit:raise
+    except BaseException:raise SystemExit(2) from None

@@ -92,7 +92,7 @@ def diagnostic_matched(row):
 
 def binding_valid(binding, root):
     return (type(binding) is dict and set(binding) == BINDING_KEYS
-            and binding['schema'] == 'hud_remote_interpreter_v2'
+            and binding['schema'] == 'hud_remote_interpreter_v3'
             and binding['launcher'] == str(root/'venv/bin/python')
             and binding['prefix'] == str(root/'venv')
             and all(text(binding[k]) and Path(binding[k]).is_absolute() for k in ('argv0', 'exe'))
@@ -106,12 +106,52 @@ def bind_parent(root):
     actual = inspect(type('Self', (), {'pid': os.getpid()})())
     require(valid(actual) and actual['argv'][1:] == sys.orig_argv[1:]
             and sys.orig_argv[1:3] == ['-I', '-B'], 'interpreter_binding')
-    result = {'schema': 'hud_remote_interpreter_v2', 'launcher': sys.executable,
+    result = {'schema': 'hud_remote_interpreter_v3', 'launcher': sys.executable,
               'prefix': str(Path(sys.prefix).resolve()), 'argv0': actual['argv'][0],
               'exe': actual['exe'], 'launcher_sha256': digest(Path(sys.executable).resolve()),
               'exe_sha256': digest(Path(actual['exe']).resolve())}
     require(binding_valid(result, root), 'interpreter_binding')
     return result
+
+
+def revalidate_binding(binding, root):
+    """Rehash only the prebound public launcher/image; never inspect a child."""
+    require(binding_valid(binding, root), 'interpreter_binding')
+    launcher, image = Path(binding['launcher']), Path(binding['exe'])
+    require(Path(binding['prefix']).resolve() == root/'venv'
+            and image.resolve() == image
+            and digest(launcher.resolve()) == binding['launcher_sha256']
+            and digest(image) == binding['exe_sha256'], 'interpreter_binding')
+    return True
+
+
+def direct_launch(launch_argv, home, binding, root):
+    """One direct image exec, with parent-bound argv0 and venv launcher hint.
+
+    Removes the wrapper handoff rather than accepting intermediate child images.
+    This is a launch contract, not proof that this CI Python honors the hint.
+    """
+    require(binding_valid(binding, root) and type(launch_argv) is list
+            and len(launch_argv) == 11 and all(text(v) for v in launch_argv)
+            and launch_argv[0] == binding['launcher']
+            and launch_argv[1:3] == ['-I', '-B']
+            and launch_argv[3] == str(Path(__file__).resolve().parent/'observer_smoke.py')
+            and launch_argv[4:8] == ['dashboard', '--host', '127.0.0.1', '--port']
+            and launch_argv[8].isascii() and launch_argv[8].isdecimal()
+            and str(int(launch_argv[8])) == launch_argv[8]
+            and 1024 <= int(launch_argv[8]) <= 65535 and int(launch_argv[8]) != 9119
+            and launch_argv[9:] == ['--no-open', '--skip-build']
+            and home in (root/'sham/synthetic-home', root/'snapshot/synthetic-home'), 'interpreter_binding')
+    return {'argv': [binding['argv0']] + launch_argv[1:],
+            'executable': binding['exe'], 'venv_launcher': binding['launcher']}
+
+
+def child_context(root, executable, prefix, orig_argv, isolated, no_bytecode):
+    """Fail before host imports if direct-image exec loses its owned venv."""
+    return (type(executable) is str and executable == str(root/'venv/bin/python')
+            and prefix == str(root/'venv') and type(orig_argv) is list
+            and len(orig_argv) == 11 and orig_argv[1:3] == ['-I', '-B']
+            and type(isolated) is int and isolated == 1 and no_bytecode is True)
 
 
 def expected(launch_argv, home, pid, birth, binding):
