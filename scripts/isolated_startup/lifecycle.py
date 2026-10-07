@@ -13,8 +13,8 @@ import identity_diagnostics as diagnostics
 
 HEX = re.compile(r'^[0-9a-f]{64}$')
 GRANT = re.compile(r'^[0-9a-f]{32}$')
-SCHEMA = 'hud_short_startup_backend_v4'
-SCOPE = 'one_owned_config_probe_startup_300s_http1_ws1_no_retry_no_risk_acceptance'
+SCHEMA = 'hud_short_startup_backend_v5'
+SCOPE = 'one_owned_optional_launchd_absence_startup_300s_http1_ws1_no_retry_no_risk_acceptance'
 CHECKPOINTS = ('ready', 'http', 'ws', 'finish')
 ERRORS = {'prepared', 'authority', 'active', 'resource', 'claim', 'initialization',
           'source', 'spawn', 'identity', 'ready', 'http', 'ws', 'boundary', 'budget',
@@ -98,12 +98,12 @@ class ChildLifecycle:
             require(commanded_exit is True and type(exit_code) is int and exit_code == 0, 'finish')
             require(sources_valid(source_end) and source_end == self._sources, 'source')
             state = self._stack.checkpoint()  # AFTER the host has finished, not only pre-TERM.
-            return {'schema': 'hud_short_child_terminal_v2', 'candidate': 'PASS',
+            return {'schema': 'hud_short_child_terminal_v3', 'candidate': 'PASS',
                     'source_end': copy.deepcopy(source_end), 'state': state,
                     'commanded_exit': True, 'exit_code': 0}
         except BaseException:
             self._failed = True
-            return {'schema': 'hud_short_child_terminal_v2', 'candidate': 'FAIL',
+            return {'schema': 'hud_short_child_terminal_v3', 'candidate': 'FAIL',
                     'source_end': None, 'state': self._stack.state(),
                     'commanded_exit': commanded_exit is True,
                     'exit_code': exit_code if type(exit_code) is int and abs(exit_code)<10000 else None}
@@ -112,7 +112,7 @@ class ChildLifecycle:
 def child_valid(row):
     return (type(row) is dict and set(row) == {'schema', 'candidate', 'source_end', 'state',
                                              'commanded_exit', 'exit_code'}
-            and row['schema'] == 'hud_short_child_terminal_v2'
+            and row['schema'] == 'hud_short_child_terminal_v3'
             and row['candidate'] in ('PASS', 'FAIL') and type(row['commanded_exit']) is bool
             and stack_valid(row['state'])
             and (row['exit_code'] is None or type(row['exit_code']) is int and abs(row['exit_code'])<10000)
@@ -348,7 +348,7 @@ def execute_model_io(io, authority, freeze, review):
         require(io.read_payload() == payload, 'seal')
         require(io.prepared(freeze) is True, 'prepared')
         budget(0)
-        completion = {'schema': 'hud_short_completion_v4', 'payload_sha256': sha(payload),
+        completion = {'schema': 'hud_short_completion_v5', 'payload_sha256': sha(payload),
                       'verdict': row['candidate'] if row['error'] is None
                                   and row['cleanup_error'] is None else 'FAIL',
                       'freeze_sha256': freeze, 'review_sha256': review,

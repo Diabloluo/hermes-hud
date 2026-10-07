@@ -1,5 +1,10 @@
 {
-  "schema": "hud_remote_short_startup_protocol_v3",
+  "schema": "hud_remote_short_startup_protocol_v4",
+  "optional_process_contract": "EXACT_COLLECTOR_933_BACKGROUND_397_LAUNCHCTL_PRINT_UID_SYNTHETIC_ABSENCE_ONLY",
+  "launchctl_design_cap": 16,
+  "launchctl_cap_is_observed_demand": false,
+  "launchctl_counter_monotonic": true,
+  "non_open_diagnostic": "FIXED_EVENT_ENUM_BOUND_CONTENT_HASH_LINE_ONLY",
   "config_probe_contract": "EXACT_CONFIG_868_DIRECT_SECURE_FILE_886_SYNTHETIC_ABSENCE_ONLY",
   "config_probe_design_cap": 64,
   "config_cap_is_observed_demand": false,

@@ -47,14 +47,14 @@ def cleanup(x):
 def child(x):
     return (type(x) is dict and set(x)=={'schema', 'candidate', 'source_end', 'state',
                                        'commanded_exit', 'exit_code'}
-            and x['schema']=='hud_short_child_terminal_v2' and x['candidate'] in ('PASS','FAIL')
+            and x['schema']=='hud_short_child_terminal_v3' and x['candidate'] in ('PASS','FAIL')
             and (x['source_end'] is None or sources(x['source_end'])) and stack_valid(x['state'])
             and type(x['commanded_exit']) is bool
             and (x['exit_code'] is None or type(x['exit_code']) is int and abs(x['exit_code'])<10000))
 
 
 def valid(x):
-    if not (type(x) is dict and set(x)==KEYS and x['schema']=='hud_short_startup_backend_v4'
+    if not (type(x) is dict and set(x)==KEYS and x['schema']=='hud_short_startup_backend_v5'
             and (x['failure_stage'] is None or type(x['failure_stage']) is str
                  and x['failure_stage'] in diagnostics.STAGES)
             and all(x[k] is None or diagnostics.valid(x[k])
@@ -82,16 +82,20 @@ def valid(x):
     # a clean but reconstructed/stale object cannot silently reset either one.
     prior = {'cgroup':0, 'mountinfo':0}
     config_prior = 0
+    launchctl_prior = 0
     states = [ack['state'] for ack in x['checkpoints']]
     if x['child'] is not None:
         states.append(x['child']['state'])
     for state in states:
         current=state['file']['missing']
         config_current = state['file']['config_missing']
-        if any(current[key]<prior[key] for key in prior) or config_current < config_prior:
+        launchctl_current = state['launchctl_missing']
+        if (any(current[key]<prior[key] for key in prior) or config_current < config_prior
+                or launchctl_current < launchctl_prior):
             return False
         prior=current
         config_prior=config_current
+        launchctl_prior=launchctl_current
     return True
 
 
@@ -140,7 +144,7 @@ def analyze(payload, completion, freeze, review):
     try:
         if not (type(payload) is bytes and len(payload)<=65536 and type(completion) is dict
                 and set(completion)=={'schema','payload_sha256','verdict','freeze_sha256','review_sha256','seconds_at_seal'}
-                and completion['schema']=='hud_short_completion_v4'
+                and completion['schema']=='hud_short_completion_v5'
                 and completion['verdict'] in ('PASS','FAIL')
                 and type(freeze) is str and HEX.fullmatch(freeze) is not None
                 and type(review) is str and HEX.fullmatch(review) is not None

@@ -12,6 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 from common import read,atomic,require,digest,bounded
 from boundary_policy import FilePolicy,BoundFrames,SOURCE_SHA,CONFIG_SOURCE_SHA
 from guard_stack import GuardStack,clean_state
+from optional_process import COLLECTORS_SHA
 from lifecycle import ChildLifecycle,sources_valid,GRANT
 from source_contract import capture,manifest_valid
 from identity_contract import child_context
@@ -44,9 +45,13 @@ def boot():
     bindings={str(site/row['name']):row['sha256'] for row in manifest['public']}
     require(bindings[str(site/'hermes_constants.py')]==SOURCE_SHA,'source')
     require(bindings[str(site/'hermes_cli/config.py')]==CONFIG_SOURCE_SHA,'source')
+    collector = next((row for row in manifest['candidate'] if row['name']=='dashboard/hud/collectors.py'), None)
+    require(collector is not None and collector['sha256']==COLLECTORS_SHA,'source')
+    bindings[str(repo/'dashboard/hud/collectors.py')]=COLLECTORS_SHA
     roots=(str(repo),str(HERE),str(Path(sys.prefix).resolve()),str(Path(sys.base_prefix).resolve()),
            '/System','/usr/lib','/Library/Developer')
-    stack=GuardStack(FilePolicy(str(home),str(out),roots,'darwin'),BoundFrames(bindings),str(home),port)
+    stack=GuardStack(FilePolicy(str(home),str(out),roots,'darwin'),BoundFrames(bindings),str(home),port,
+                     owner_uid=os.getuid(), platform=sys.platform)
     child=ChildLifecycle(stack,sources)
     stopped=threading.Event();worker_error=threading.Event()
     original=importlib.machinery.SourceFileLoader.exec_module
@@ -111,7 +116,7 @@ def boot():
             freeze_check(os.environ['HUD_FREEZE'])
             terminal=child.terminal(ended,commanded,code)
         except BaseException:
-            terminal={'schema':'hud_short_child_terminal_v2','candidate':'FAIL','source_end':None,
+            terminal={'schema':'hud_short_child_terminal_v3','candidate':'FAIL','source_end':None,
                       'state':stack.state(),'commanded_exit':commanded,'exit_code':code}
         atomic(out/'child-terminal.json',terminal)
     return code if terminal['candidate']=='PASS' else 2

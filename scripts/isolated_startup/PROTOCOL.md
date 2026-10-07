@@ -1,5 +1,31 @@
 # Remote single short startup backend — preparation only
 
+## Current optional-process preparation (authoritative delta)
+
+This private v5 preparation adds only the OPTIONAL_PROCESS_DELTA.md contract.
+All older sections below are retained history; their schema/report/scope names
+are NOT current materialization instructions. Current guard/child are v3;
+backend/completion/freeze are v5; file boundary remains v2, interpreter v3.
+The only future accepted report is WORKBUDDY_REMOTE_SHORT_STARTUP_OPTIONAL_PROCESS_REVIEW.md.
+After independent review acceptance and a separate concrete native grant, its
+byte-identical original must be copied to HERE and its exact SHA bound in both
+acceptance and authorization. No report copy or gate is created in preparation.
+Current scope: one_owned_optional_launchd_absence_startup_300s_http1_ws1_no_retry_no_risk_acceptance.
+Old grants, claims and schemas cannot be reused; run37564289766 remains FAIL.
+
+The optional query is NOT run: the exact bound Popen audit attempt raises fixed
+FileNotFoundError. The host's own collector catches it and reports unavailable,
+managed=null. This proves neither native launchd state nor full host compatibility.
+The 16-call cap is a design bound, not measured demand. Unknown operations remain
+sticky fatal and export only a fixed event enum plus bound hashes/lines.
+The frame projection is same-process provenance, not trusted OS containment.
+The modeled audit tuple and CPython reference are NOT actual CI-version proof;
+no real Popen/audit/pipe/psutil/HTTP/WS is tested in this offline stage.
+
+Unchanged: installation<=1800s, startup<300s including reserved cleanup20s,
+HTTP/WS each once; no retry, production, real user data or risk acceptance.
+MEMORY NOT CLOSED/WARN_NOT_ACCEPTED and PUBLIC RELEASE BLOCK remain.
+
 ## Current config probe correction
 
 This is private v4 offline preparation dated2026-10-07, not a new native run.

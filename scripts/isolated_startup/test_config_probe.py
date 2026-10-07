@@ -231,7 +231,7 @@ class ConfigTerminalTests(unittest.TestCase):
         for ack,count in zip(row['checkpoints'],(1,2,2,4)):ack['state']['file']['config_missing']=count
         row['child']['state']['file']['config_missing']=4
         self.assertTrue(a.valid(row));self.assertTrue(a.pass_conditions(row))
-        result=a.analyze(l.encode(row),{'schema':'hud_short_completion_v4',
+        result=a.analyze(l.encode(row),{'schema':'hud_short_completion_v5',
             'payload_sha256':a.hashlib.sha256(l.encode(row)).hexdigest(),'verdict':'PASS',
             'freeze_sha256':regression.F,'review_sha256':regression.R,'seconds_at_seal':100.},
             regression.F,regression.R)

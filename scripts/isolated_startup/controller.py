@@ -12,7 +12,7 @@ from common import require,read,digest,atomic
 from lifecycle import SCHEMA,SCOPE,authority_valid
 
 HERE=Path(__file__).resolve().parent
-REPORT='DOT_REMOTE_SHORT_STARTUP_CONFIG_PROBE_REVIEW.md'
+REPORT='WORKBUDDY_REMOTE_SHORT_STARTUP_OPTIONAL_PROCESS_REVIEW.md'
 
 
 def gates(a,accepted,freeze,report,now):
