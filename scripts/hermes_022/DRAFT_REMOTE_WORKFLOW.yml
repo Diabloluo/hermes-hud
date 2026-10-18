@@ -1,0 +1,60 @@
+name: Hermes 022 isolated compatibility
+run-name: hermes-022-${{ github.run_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_sha:
+        required: true
+        type: string
+      authorization_b64:
+        required: true
+        type: string
+      acceptance_b64:
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: hermes-022-single-owned
+  cancel-in-progress: false
+jobs:
+  isolated:
+    if: github.repository == 'Diabloluo/hermes-hud' && github.ref == 'refs/heads/test/v2-isolated-memory-20261003' && github.run_attempt == 1 && github.sha == inputs.reviewed_sha
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.reviewed_sha }}
+          path: reviewed
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: NousResearch/hermes-agent
+          ref: d923a5eb487a17c0a68801bba9ef0f56c81040a8
+          path: sdk-source
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 004c18a7bc54e1297833b2ceb1aec11417bfdfe9
+          path: hud-source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.14.7'
+          architecture: x64
+      - name: One install and sealed startup no retry
+        timeout-minutes: 35
+        env:
+          REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+          HUD_AUTHORIZATION_B64: ${{ inputs.authorization_b64 }}
+          HUD_ACCEPTANCE_B64: ${{ inputs.acceptance_b64 }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -I -B reviewed/scripts/hermes_022/remote_entry.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: hermes-022-safe-aggregate-${{ github.run_id }}
+          path: /private/tmp/hermes-022-safe-output/analysis.json
+          if-no-files-found: error
+          retention-days: 14
