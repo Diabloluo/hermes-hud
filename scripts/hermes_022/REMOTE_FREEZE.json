@@ -1,7 +1,8 @@
 {
-  "schema": "hermes_0222_remote_freeze_v1",
+  "schema": "hermes_0222_remote_freeze_v2",
   "files": {
     "DRAFT_REMOTE_WORKFLOW.yml": "4b04def7ca3dd9fb2eccdddab7b9f49afa37bebd197b238a56490d993ddc79f3",
+    "SDK_SOURCE_SELECTION.json": "cfea0a9d3da0cd91ca961c01d9156a3d2047119a66204086fb99a10f9a5b098f",
     "api_checks.py": "048eca6271052f5e8d77da80f3e7a4e88838e4e0fc377eca936adc48f5576a6a",
     "artifact_stage.py": "0780b9a38f7c97f8cd89d0354e148bece7cf16e928cb1dd22c596183aaf591df",
     "audit_adapter.py": "22978145993aa098ba9e9dbcae58a2bda17cddef6ab020fbe6b9f689f36d37ad",
@@ -21,10 +22,10 @@
     "owned_process.py": "42d0aed638de3d1e5bec4a3848382d7e1ee17d3065e8da8f3c8efeacc88bd924",
     "plugin_handoff.py": "3e9b6a1112d0148bbcd332b3c5b0787211a41e5fd8419d88b2d346a60e6d5e3d",
     "pm_handoff.py": "190ca6b0b7ea296cbcec739b752ca5b86a99a4e83c3c38dd5cf8a7584af085d4",
-    "remote_backend.py": "faa0e38543be2e1d526c8ce95edab7d401bf25279b77cffccef600a6fa2ad142",
-    "remote_contract.py": "a33e89f1c741b65e1003f705df52ca4c432127d455e518cf3960f74f285c4ff7",
+    "remote_backend.py": "02b9d0c9e366aef95e86c1e45c70d73a5925db5d7d363701d5034ff1f4d27187",
+    "remote_contract.py": "b9c5aba898e059949bf975d447db631846f67f75ff85dd2bd5924da4c692df77",
     "remote_controller.py": "e1e0c7e8a47ba3891d1c3e45e58ffe98997a59ba21eaf01b0da98c48f510198d",
-    "remote_entry.py": "6614a44c435e74dcff37beec9e7929cbdf5c4604bb6c8c35cf1faa36062be089",
+    "remote_entry.py": "4e2639bbbefffa1cd3b06f814ee3db6efda1dc26b3b8f4085b7378e80b79b43a",
     "remote_files.py": "588aef3432b86224893b9477cdcdeca28bdd75ee62ebc023a652115ba3dc06ba",
     "remote_install.py": "703244393ba1a79df13e7e4040063821ff9010571f9be9e5b89d0e41e0a54b14",
     "remote_pm_entry.py": "bdf348b4030559aa09f6cd45c460c81cb7daeb5b95b78fe077b3b0aa25dfc7a9",
@@ -33,6 +34,7 @@
     "runtime_fence.py": "e51e8c95aaefd42f551b06538c63da902209f0d4b6c26b476128ead6f8bdb4cd",
     "sealed_session.py": "c7dfcffb9a3d825f94dd6e43bd07b90e08830af0d1f8550c76ef5b21c3a667b0",
     "server_bridge.py": "3bac99c7a90e410ab1dbeebd2b73418c42ea33bc490a5d99a7e787ab1983a759",
+    "source_selection.py": "59cab8131285541601f2d0f2985c2130145e213e59685df779b22f85513d56f8",
     "web_preparation.py": "87de14c2530e147b8787e7d72b0a21e04847521b1209634a1be63871f7e76e3c"
   }
 }

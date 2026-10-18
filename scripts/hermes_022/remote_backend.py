@@ -21,6 +21,7 @@ from pm_handoff import decode,HOST_COMMIT,HUD_COMMIT,host_plan,relative
 from official_entry import environment
 from installed_closure import TEXT,TEXT_NAMES
 from plugin_handoff import projection,CONFIG
+from source_selection import catalog as source_catalog, listing as source_listing, diagnostic as source_diagnostic
 
 PYTHON_URL='https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-apple-darwin-install_only.tar.gz'
 PYTHON_SHA='dd8841a2e8ef94bd1a02b52f92843120942140f112145d4e0199abab56f120b1'
@@ -32,7 +33,7 @@ def row(name,raw):
     kind='text' if PurePosixPath(name).suffix in TEXT or PurePosixPath(name).name in TEXT_NAMES else 'binary'
     return {'path':name,'bytes':len(raw),'sha256':sha(raw),'kind':kind}
 
-def checkout_files(checkout,commit,env):
+def checkout_files(checkout,commit,env,selection=None):
     """Read only tracked bytes at the fixed commit; never recurse into .git.
 
     Checkout action supplies Git objects. Every selected working file is checked
@@ -44,17 +45,19 @@ def checkout_files(checkout,commit,env):
               stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30,check=False)
         need(r.returncode==0 and len(r.stdout)<=4*1024**2);return r.stdout
     need(git(['rev-parse','HEAD']).decode().strip()==commit)
-    records=git(['ls-tree','-rz','--full-tree',commit]).split(b'\0');objects={};total=0
-    need(records[-1]==b'' and 0<len(records)-1<=8192)
-    for item in records[:-1]:
-        meta,name=item.split(b'\t',1);mode,kind,h=meta.decode('ascii').split();name=name.decode('utf-8')
-        need(relative(name) and '\\' not in name and kind=='blob' and mode in ('100644','100755','120000')
-             and name.casefold() not in {n.casefold() for n in objects})
+    selected=source_catalog(selection) if selection is not None else None
+    need(selected is None or selected['commit']==commit)
+    args=['ls-tree','-rz','--full-tree',commit]
+    if selected is not None:args+=['--',*selected['pathspecs']]
+    records=source_listing(git(args),selected);objects={};total=0
+    sizes={r['path']:r['bytes'] for r in selected['files']} if selected is not None else None
+    for name,mode,h in records:
         path=checkout+'/'+name
         if mode=='120000':
             need(stat.S_ISLNK(os.lstat(path).st_mode));raw=os.readlink(path).encode()
         else:raw=read(path,512*1024**2)
-        need(hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==h)
+        need((sizes is None or len(raw)==sizes[name]) and
+             hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==h)
         total+=len(raw);need(total<=1024**3);objects[name]=(mode,raw)
     def resolve(name,seen):
         need(name in objects and name not in seen and len(seen)<64)
@@ -85,28 +88,41 @@ class Backend:
         n=self.deadline-time.monotonic();need(0<n<=1800);return n
 
     def sources(self):
+        self.source_site='root'
         need(os.path.realpath('/private/tmp')=='/private/tmp')
         os.mkdir(self.root,0o700)
+        self.source_site='claim'
         write_new(self.root,'evidence/REMOTE_CLAIM.json',encode(self.claim))
+        self.source_site='npm_config'
         write_new(self.root,'tmp/empty-npmrc',b'')
+        self.source_site='synthetic_config'
         write_new(self.root,'home/.hermes/config.yaml',CONFIG)
         env=environment(self.root,'install')
+        self.source_site='sdk_catalog'
+        selection=read(self.here+'/SDK_SOURCE_SELECTION.json');source_catalog(selection)
         for slot,checkout,commit in (('sdk','sdk-source',HOST_COMMIT),('product','hud-source',HUD_COMMIT)):
-            self.remaining();files=checkout_files(self.workspace+'/'+checkout,commit,env)
+            self.source_site=slot+'_checkout';self.remaining()
+            files=checkout_files(self.workspace+'/'+checkout,commit,env,selection=selection if slot=='sdk' else None)
+            self.source_site=slot+'_stage'
             stage(self.root,slot,files)
             self.rows.extend(row(slot+'/'+f['path'],f['data']) for f in files)
         files=[]
+        self.source_site='tool_read'
         for name,h in self.freeze['files'].items():
-            if not name.endswith('.py') or name.startswith('test_'):continue
+            if not (name.endswith('.py') or name=='SDK_SOURCE_SELECTION.json') or name.startswith('test_'):continue
             raw=read(self.here+'/'+name);need(sha(raw)==h)
             files.append({'path':name,'data':raw,'sha256':h,'mode':0o644,'materialized_link':False})
-        stage(self.root,'tool',files)
+        self.source_site='tool_stage';stage(self.root,'tool',files)
         self.rows.extend(row('tool/'+f['path'],f['data']) for f in files)
         byname={r['path']:r for r in self.rows}
         def product_read(name):
             raw=read(self.root+'/'+name);need(sha(raw)==byname[name]['sha256']);return raw
-        for f in projection(self.rows,product_read):write_new(self.root,f['path'],f['data'])
+        self.source_site='plugin_projection';plugin=projection(self.rows,product_read)
+        self.source_site='plugin_write'
+        for f in plugin:write_new(self.root,f['path'],f['data'])
+        self.source_site='source_verify'
         self.remaining();verify_rows(self.root,self.rows)
+        self.source_site='complete'
 
     def bootstrap(self):
         self.remaining()
@@ -228,7 +244,7 @@ class Backend:
 
 async def execute(backend):
     """One ordered path, with no retries and no host after install failure."""
-    stage_name='sources';commands=[];host=None
+    stage_name='sources';commands=[];host=None;detail=None
     try:
         need(getattr(backend,'used',False) is False);backend.used=True
         backend.sources();stage_name='bootstrap';backend.bootstrap()
@@ -237,6 +253,7 @@ async def execute(backend):
         stage_name='web_build';commands.append(await backend.web(stage_name))
         stage_name='handoff';backend.handoff()
         stage_name='host';host=await backend.host();stage_name='aggregate'
-    except BaseException:pass
+    except BaseException as exc:
+        if stage_name=='sources':detail=source_diagnostic(getattr(backend,'source_site','phase'),exc)
     from remote_contract import aggregate
-    return aggregate(backend.auth['grant'],stage_name,commands,host)
+    return aggregate(backend.auth['grant'],stage_name,commands,host,detail)

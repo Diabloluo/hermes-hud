@@ -6,7 +6,7 @@ import re
 
 REPO = 'Diabloluo/hermes-hud'
 BRANCH = 'test/v2-isolated-memory-20261003'
-SCOPE = 'one_remote_hermes_0222_install1800_host300_no_retry_no_risk_acceptance_v1'
+SCOPE = 'one_remote_hermes_0222_projected_sources_v2_install1800_host300_no_retry_no_risk_acceptance'
 STAGES = ('gate','claim','sources','bootstrap','pm_install','npm_ci','web_build',
           'handoff','host','aggregate')
 
@@ -31,7 +31,7 @@ def platform_gate(env,system,machine,version):
 def authorize(auth,acceptance,freeze,report,env,now):
     need(type(auth) is dict and set(auth)=={'schema','scope','grant','sha','freeze_sha256',
          'report_sha256','issued','expires','max_runs','owner_confirmed','repository','branch'})
-    need(auth['schema']=='hermes_0222_remote_authorization_v1' and auth['scope']==SCOPE
+    need(auth['schema']=='hermes_0222_remote_authorization_v2' and auth['scope']==SCOPE
          and hexstr(auth['grant'],32) and hexstr(auth['sha'],40)
          and auth['repository']==REPO and auth['branch']==BRANCH
          and type(auth['max_runs']) is int and auth['max_runs']==1 and auth['owner_confirmed'] is True)
@@ -39,13 +39,13 @@ def authorize(auth,acceptance,freeze,report,env,now):
          and auth['report_sha256']==report)
     need(all(finite(v) for v in (now,auth['issued'],auth['expires']))
          and auth['issued']<=now<=auth['expires'] and 0<auth['expires']-auth['issued']<=3600)
-    need(type(acceptance) is dict and acceptance=={'schema':'hermes_0222_remote_acceptance_v1',
+    need(type(acceptance) is dict and acceptance=={'schema':'hermes_0222_remote_acceptance_v2',
          'scope':SCOPE,'safety':'PASS','sha':auth['sha'],'freeze_sha256':freeze,'report_sha256':report})
     need(type(env) is dict and env.get('GITHUB_REPOSITORY')==REPO
          and env.get('GITHUB_REF')=='refs/heads/'+BRANCH and env.get('GITHUB_SHA')==auth['sha']
          and env.get('GITHUB_EVENT_NAME')=='workflow_dispatch' and env.get('GITHUB_RUN_ATTEMPT')=='1'
          and type(env.get('GITHUB_RUN_ID')) is str and re.fullmatch('[1-9][0-9]{0,19}',env['GITHUB_RUN_ID']) is not None)
-    return {'schema':'hermes_0222_remote_claim_v1','grant':auth['grant'],'sha':auth['sha'],
+    return {'schema':'hermes_0222_remote_claim_v2','grant':auth['grant'],'sha':auth['sha'],
             'freeze_sha256':freeze,'report_sha256':report,'run_id':env['GITHUB_RUN_ID'],
             'state':'CONSUMED_ONCE_NO_RETRY_EVEN_IF_OUTCOME_UNKNOWN','scope':SCOPE}
 
@@ -69,7 +69,7 @@ def child_bindings(config_raw,report_raw,auth,start):
            'state':'CONSUMED_ONCE_NO_RETRY','started_wall':start,'deadline_wall':start+300}
     return a,accepted,claim
 
-def aggregate(grant,stage,install,host):
+def aggregate(grant,stage,install,host,source_diagnostic=None):
     """Allowlisted projection only; never publish arbitrary lower-layer objects."""
     need(hexstr(grant,32) and stage in STAGES)
     commands=install if type(install) is list else []
@@ -91,8 +91,11 @@ def aggregate(grant,stage,install,host):
              and all(c.get(k) is None for k in ('error','cleanup_error','stop_error'))
              and all(type(h.get(k)) is dict and h[k].get('result')=='EXPECTED_RESPONSE_ONLY' for k in ('http','ws')))
     ok=stage=='aggregate' and install_ok and host_ok
-    return {'schema':'hermes_0222_remote_safe_aggregate_v1','grant':grant,
-            'result':'PASS' if ok else 'FAIL','scope':'VERIFIED_SINGLE_REMOTE_SYNTHETIC_SESSION_RECORD_ONLY' if ok else 'DIAGNOSTIC_ONLY_NOT_VERIFIED',
+    from source_selection import valid_diagnostic
+    need(valid_diagnostic(source_diagnostic) if stage=='sources' else source_diagnostic is None)
+    return {'schema':'hermes_0222_remote_safe_aggregate_v2','grant':grant,
+            'result':'PASS' if ok else 'FAIL','scope':'VERIFIED_SINGLE_REMOTE_PROJECTED_SOURCE_SYNTHETIC_SESSION_RECORD_ONLY' if ok else 'DIAGNOSTIC_ONLY_NOT_VERIFIED',
+            'source_projection':'PINNED_INSTALL_HOST_WEB_INPUTS_NOT_FULL_REPOSITORY','source_diagnostic':source_diagnostic,
             'stage':stage,'install_commands_zero':install_ok,'http_verified':ok,'ws_verified':ok,
             'host_exit_zero':type(c.get('exit_code')) is int and c['exit_code']==0,
             'child_seal_verified':h.get('child_seal_verified') is True,
@@ -106,12 +109,14 @@ def validate_aggregate(row):
     need(type(row) is dict and set(row)==set(template) and hexstr(row['grant'],32)
          and row['stage'] in STAGES and row['result'] in ('PASS','FAIL'))
     variable={'grant','stage','result','scope','install_commands_zero','http_verified','ws_verified',
-              'host_exit_zero','child_seal_verified','source_unchanged'}
+              'host_exit_zero','child_seal_verified','source_unchanged','source_diagnostic'}
     need(all(type(row[k]) is type(v) and row[k]==v for k,v in template.items() if k not in variable))
     flags=('install_commands_zero','http_verified','ws_verified','host_exit_zero','child_seal_verified','source_unchanged')
     need(all(type(row[k]) is bool for k in flags))
-    need(row['scope']==('VERIFIED_SINGLE_REMOTE_SYNTHETIC_SESSION_RECORD_ONLY' if row['result']=='PASS'
+    need(row['scope']==('VERIFIED_SINGLE_REMOTE_PROJECTED_SOURCE_SYNTHETIC_SESSION_RECORD_ONLY' if row['result']=='PASS'
                        else 'DIAGNOSTIC_ONLY_NOT_VERIFIED'))
-    if row['result']=='PASS':need(row['stage']=='aggregate' and all(row[k] for k in flags))
+    from source_selection import valid_diagnostic
+    need(valid_diagnostic(row['source_diagnostic']) if row['stage']=='sources' else row['source_diagnostic'] is None)
+    if row['result']=='PASS':need(row['stage']=='aggregate' and all(row[k] for k in flags) and row['source_diagnostic'] is None)
     else:need(row['http_verified'] is False and row['ws_verified'] is False)
     return True

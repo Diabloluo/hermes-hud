@@ -19,7 +19,7 @@ from pm_handoff import decode,relative
 
 def frozen(here,expected):
     raw=read(here+'/REMOTE_FREEZE.json');need(sha(raw)==expected)
-    row=decode(raw);need(set(row)=={'schema','files'} and row['schema']=='hermes_0222_remote_freeze_v1')
+    row=decode(raw);need(set(row)=={'schema','files'} and row['schema']=='hermes_0222_remote_freeze_v2')
     files=row['files'];need(type(files) is dict and 25<=len(files)<=64)
     required={'remote_entry.py','remote_backend.py','remote_contract.py','remote_files.py','remote_install.py',
               'remote_pm_entry.py','official_entry.py','child_runtime.py','child_guard.py','child_execution.py',
@@ -27,7 +27,8 @@ def frozen(here,expected):
               'guard_stack.py','audit_adapter.py','boundary_policy.py','optional_process.py','owned_process.py',
               'install_parent.py','host_session.py','sealed_session.py','bounded_io.py','api_checks.py',
               'installed_closure.py','plugin_handoff.py','install_completion.py','web_preparation.py','artifact_stage.py',
-              'DRAFT_REMOTE_WORKFLOW.yml','remote_controller.py','runtime_aliases.py'}
+              'DRAFT_REMOTE_WORKFLOW.yml','remote_controller.py','runtime_aliases.py',
+              'source_selection.py','SDK_SOURCE_SELECTION.json'}
     need(set(files)==required)
     for name,h in files.items():
         need(relative(name) and '/' not in name and hexstr(h,64) and sha(read(here+'/'+name))==h)
