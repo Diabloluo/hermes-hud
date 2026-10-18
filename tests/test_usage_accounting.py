@@ -3,7 +3,7 @@
 fixture 设计：
   1. 一个主会话（sessions 表）        input=1000 output=100 est=0.5 actual=0.4
   2. 同 session 的 task='' usage 行    input=1000 output=100 api_call_count=1
-                                       （主会话重复记账，必须被排除）
+                                       （Token 重复记账排除；费用只读 usage 单源）
   3. 两个不同 auxiliary tasks:
      - compression  input=200 output=50  api_call_count=2 est=0.1
      - vision       input=300 output=60  api_call_count=3 est=0.2
@@ -75,6 +75,9 @@ def _build_fixture_db(path: Path) -> None:
         "INSERT INTO session_model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         ("s1", "modelA", "providerX", "", "vision", 3, 300, 60, 150, 0, 0, 0.2, 0.0, TODAY, TODAY),
     )
+    cur.execute("ALTER TABLE session_model_usage ADD COLUMN cost_status TEXT")
+    cur.execute("ALTER TABLE session_model_usage ADD COLUMN cost_source TEXT")
+    cur.execute("UPDATE session_model_usage SET cost_status='estimated', cost_source='fixture_prices'")
     conn.commit()
     conn.close()
 
@@ -124,7 +127,7 @@ def test_usage_accounting(usage_db) -> None:
 
 
 def test_usage_excludes_empty_task_rows(usage_db) -> None:
-    """task='' 的 usage 行绝不进入统计（否则主会话翻倍）。"""
+    """task='' 的 usage 行不重复计 Token；费用使用 canonical 单源。"""
     r = collectors.collect_usage(days=30)
     # 若把 task='' 的 1000 input 重复计入，input 会变成 2500
     assert r["totals"]["input"] == 1500

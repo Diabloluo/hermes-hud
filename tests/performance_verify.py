@@ -35,7 +35,7 @@ collector_calls = {"n": 0}
 telemetry_writes = {"n": 0}
 
 
-def _fake_build_snapshot() -> dict:
+def _fake_build_snapshot(locale: str = "zh") -> dict:
     """mock collectors：每次调用计数，返回 rules 可评估的最小快照。"""
     collector_calls["n"] += 1
     now = time.time()
@@ -65,7 +65,7 @@ def _fake_build_snapshot() -> dict:
     }
 
 
-def _fake_evaluate(snap: dict) -> dict:
+def _fake_evaluate(snap: dict, locale: str = "zh") -> dict:
     return {"overall": "normal",
             "counts": {"critical": 0, "warning": 0, "normal": 5},
             "checks": [], "incidents": [], "evaluated_at": time.time()}
@@ -141,7 +141,7 @@ async def main() -> None:
     args = ap.parse_args()
 
     r10 = await run_10min(args.seconds)
-    print("=== 10min result ===")
+    print("=== shared snapshot result ===")
     print(json.dumps(r10, ensure_ascii=False, indent=1))
 
     # 3 页面并发

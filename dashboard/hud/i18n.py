@@ -24,6 +24,20 @@ from __future__ import annotations
 _SUPPORTED = {"zh", "en", "fr", "ar"}
 
 TEMPLATES: dict[str, dict[str, str]] = {
+    "diagnostic_pending": {
+        "zh": "{name} 诊断待更新，当前状态未知", "en": "{name} diagnostic pending; current state unknown",
+        "fr": "Diagnostic {name} en attente ; état actuel inconnu",
+        "ar": "تشخيص {name} قيد الانتظار؛ الحالة الحالية غير معروفة",
+    },
+    "err_diagnostic_query": {
+        "zh": "诊断查询不可用", "en": "Diagnostic query unavailable",
+        "fr": "Requête de diagnostic indisponible", "ar": "استعلام التشخيص غير متاح",
+    },
+    "err_log_timestamps_unavailable": {
+        "zh": "部分日志时间不可确定，错误计数不完整", "en": "Some log timestamps are unknown; error count is incomplete",
+        "fr": "Certains horodatages sont inconnus ; nombre d’erreurs incomplet",
+        "ar": "بعض أوقات السجل غير معروفة؛ عدد الأخطاء غير مكتمل",
+    },
     # -- rules.py: gateway --
     "gateway_alive": {
         "zh": "Gateway 运行中 (PID {pid})",

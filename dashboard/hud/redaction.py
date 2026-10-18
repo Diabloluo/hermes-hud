@@ -201,3 +201,8 @@ def fingerprint(line: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     # 截断到 120 字符，超过部分丢弃（尾部通常是具体参数）
     return s[:120]
+
+
+def sanitize_title(title, limit: int = 120):
+    """Sanitize before truncating so a cut-off credential cannot escape matching."""
+    return redact_line(str(title))[:limit] if title else None
