@@ -17,6 +17,10 @@ SITES=frozenset(('phase','root','claim','npm_config','synthetic_config','sdk_cat
     'sdk_checkout','sdk_stage','product_checkout','product_stage','tool_read',
     'tool_stage','plugin_projection','plugin_write','source_verify','complete'))
 KINDS=frozenset(('refused','io','internal'))
+CHECKS=frozenset(('path','head_run','head_result','head_size','head_binding','catalog',
+    'listing_run','listing_result','listing_size','listing_count','listing_record',
+    'listing_binding','file_read','file_size','file_hash','source_bytes','materialize'))
+SITES=SITES|frozenset(slot+'_checkout_'+check for slot in ('sdk','product') for check in CHECKS)
 
 def selected(name):
     parts=name.split('/')
@@ -47,22 +51,26 @@ def catalog(raw):
          and len(specs)<=256 and all(re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*',x) is not None for x in specs),'binding')
     return c
 
-def listing(raw, c=None):
+def listing(raw, c=None,checkpoint=None):
     """Validate the whole selected listing before any working-file open.
 
     Metadata is capped at the existing 4 MiB and 8192-file limits. Literal Git
     pathspecs are used by the caller, never a permissive glob/fallback scan.
     """
-    need(type(raw) is bytes and len(raw)<=4*1024**2,'schema')
-    records=raw.split(b'\0');need(records[-1]==b'' and 0<len(records)-1<=8192,'schema')
+    def mark(code):
+        if checkpoint is not None:checkpoint(code)
+    mark('listing_size');need(type(raw) is bytes and len(raw)<=4*1024**2,'schema')
+    records=raw.split(b'\0');mark('listing_count');need(records[-1]==b'' and 0<len(records)-1<=8192,'schema')
     result=[];seen=set()
     for record in records[:-1]:
+        mark('listing_record')
         meta,name=record.split(b'\t',1);mode,kind,h=meta.decode('ascii').split();name=name.decode('utf-8')
         need(relative(name) and '\\' not in name and '.git' not in PurePosixPath(name).parts
              and kind=='blob' and mode in ('100644','100755','120000')
              and re.fullmatch('[a-f0-9]{40}',h) is not None and name.casefold() not in seen,'path')
         seen.add(name.casefold());result.append((name,mode,h))
     if c is not None:
+        mark('listing_binding')
         expected={r['path']:(r['mode'],r['blob']) for r in c['files']}
         need({n:(m,h) for n,m,h in result}==expected,'binding')
     return result
@@ -70,9 +78,9 @@ def listing(raw, c=None):
 def diagnostic(site, exc):
     site=site if type(site) is str and site in SITES else 'phase'
     kind='refused' if isinstance(exc,(HandoffRefused,ArtifactRefused,RemoteRefused)) else ('io' if isinstance(exc,OSError) else 'internal')
-    return {'version':1,'site':site,'kind':kind}
+    return {'version':2,'site':site,'kind':kind}
 
 def valid_diagnostic(row):
     return (type(row) is dict and set(row)=={'version','site','kind'} and
-            type(row['version']) is int and row['version']==1 and type(row['site']) is str and
+            type(row['version']) is int and row['version']==2 and type(row['site']) is str and
             row['site'] in SITES and type(row['kind']) is str and row['kind'] in KINDS)

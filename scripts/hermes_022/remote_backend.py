@@ -21,7 +21,7 @@ from pm_handoff import decode,HOST_COMMIT,HUD_COMMIT,host_plan,relative
 from official_entry import environment
 from installed_closure import TEXT,TEXT_NAMES
 from plugin_handoff import projection,CONFIG
-from source_selection import catalog as source_catalog, listing as source_listing, diagnostic as source_diagnostic
+from source_selection import catalog as source_catalog, listing as source_listing, diagnostic as source_diagnostic, CHECKS
 
 PYTHON_URL='https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7+20260901-x86_64-apple-darwin-install_only.tar.gz'
 PYTHON_SHA='dd8841a2e8ef94bd1a02b52f92843120942140f112145d4e0199abab56f120b1'
@@ -33,32 +33,47 @@ def row(name,raw):
     kind='text' if PurePosixPath(name).suffix in TEXT or PurePosixPath(name).name in TEXT_NAMES else 'binary'
     return {'path':name,'bytes':len(raw),'sha256':sha(raw),'kind':kind}
 
-def checkout_files(checkout,commit,env,selection=None):
+def checkout_files(checkout,commit,env,selection=None,checkpoint=None):
     """Read only tracked bytes at the fixed commit; never recurse into .git.
 
     Checkout action supplies Git objects. Every selected working file is checked
     against its Git blob. Internal source links are copied as bytes, not links.
     """
-    need(os.path.realpath(checkout)==checkout and len(commit)==40)
-    def git(args):
-        r=subprocess.run(['/usr/bin/git','-C',checkout,*args],env=env,stdin=subprocess.DEVNULL,
+    def mark(code):
+        need(code in CHECKS)
+        if checkpoint is not None:checkpoint(code)
+    mark('path');need(os.path.realpath(checkout)==checkout and len(commit)==40)
+    # actions/checkout's HOME/global safe.directory does not survive HOME
+    # isolation. Trust this exact canonical checkout only, never '*' or an
+    # ambient global config. HEAD, listing and every content hash still bind it.
+    git_env={**env,'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null',
+             'GIT_TERMINAL_PROMPT':'0','GIT_OPTIONAL_LOCKS':'0',
+             'GIT_NO_REPLACE_OBJECTS':'1','GIT_NO_LAZY_FETCH':'1'}
+    def git(args,label):
+        mark(label+'_run')
+        r=subprocess.run(['/usr/bin/git','-C',checkout,'-c','safe.directory='+checkout,*args],env=git_env,stdin=subprocess.DEVNULL,
               stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30,check=False)
-        need(r.returncode==0 and len(r.stdout)<=4*1024**2);return r.stdout
-    need(git(['rev-parse','HEAD']).decode().strip()==commit)
+        mark(label+'_result');need(r.returncode==0)
+        mark(label+'_size');need(len(r.stdout)<=4*1024**2);return r.stdout
+    head=git(['rev-parse','HEAD'],'head')
+    mark('head_binding');need(head.decode().strip()==commit)
+    mark('catalog')
     selected=source_catalog(selection) if selection is not None else None
     need(selected is None or selected['commit']==commit)
     args=['ls-tree','-rz','--full-tree',commit]
     if selected is not None:args+=['--',*selected['pathspecs']]
-    records=source_listing(git(args),selected);objects={};total=0
+    metadata=git(args,'listing')
+    records=source_listing(metadata,selected,checkpoint=mark);objects={};total=0
     sizes={r['path']:r['bytes'] for r in selected['files']} if selected is not None else None
     for name,mode,h in records:
         path=checkout+'/'+name
+        mark('file_read')
         if mode=='120000':
             need(stat.S_ISLNK(os.lstat(path).st_mode));raw=os.readlink(path).encode()
         else:raw=read(path,512*1024**2)
-        need((sizes is None or len(raw)==sizes[name]) and
-             hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==h)
-        total+=len(raw);need(total<=1024**3);objects[name]=(mode,raw)
+        mark('file_size');need(sizes is None or len(raw)==sizes[name])
+        mark('file_hash');need(hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==h)
+        mark('source_bytes');total+=len(raw);need(total<=1024**3);objects[name]=(mode,raw)
     def resolve(name,seen):
         need(name in objects and name not in seen and len(seen)<64)
         mode,raw=objects[name]
@@ -72,6 +87,7 @@ def checkout_files(checkout,commit,env,selection=None):
         return resolve('/'.join(parts),seen|{name})
     files=[];total=0
     for name in sorted(objects):
+        mark('materialize')
         mode,raw=resolve(name,set());total+=len(raw);need(total<=1024**3)
         files.append({'path':name,'data':raw,'sha256':sha(raw),'mode':0o755 if mode=='100755' else 0o644,
                       'materialized_link':objects[name][0]=='120000'})
@@ -102,7 +118,8 @@ class Backend:
         selection=read(self.here+'/SDK_SOURCE_SELECTION.json');source_catalog(selection)
         for slot,checkout,commit in (('sdk','sdk-source',HOST_COMMIT),('product','hud-source',HUD_COMMIT)):
             self.source_site=slot+'_checkout';self.remaining()
-            files=checkout_files(self.workspace+'/'+checkout,commit,env,selection=selection if slot=='sdk' else None)
+            files=checkout_files(self.workspace+'/'+checkout,commit,env,selection=selection if slot=='sdk' else None,
+                    checkpoint=lambda check:setattr(self,'source_site',slot+'_checkout_'+check))
             self.source_site=slot+'_stage'
             stage(self.root,slot,files)
             self.rows.extend(row(slot+'/'+f['path'],f['data']) for f in files)

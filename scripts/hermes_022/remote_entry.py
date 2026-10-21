@@ -19,7 +19,7 @@ from pm_handoff import decode,relative
 
 def frozen(here,expected):
     raw=read(here+'/REMOTE_FREEZE.json');need(sha(raw)==expected)
-    row=decode(raw);need(set(row)=={'schema','files'} and row['schema']=='hermes_0222_remote_freeze_v2')
+    row=decode(raw);need(set(row)=={'schema','files'} and row['schema']=='hermes_0222_remote_freeze_v3')
     files=row['files'];need(type(files) is dict and 25<=len(files)<=64)
     required={'remote_entry.py','remote_backend.py','remote_contract.py','remote_files.py','remote_install.py',
               'remote_pm_entry.py','official_entry.py','child_runtime.py','child_guard.py','child_execution.py',

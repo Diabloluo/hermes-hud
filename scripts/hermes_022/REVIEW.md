@@ -1,155 +1,235 @@
-# Cursor 完整集中复审报告 — Hermes 0.22.2 sources 修正版
+# Cursor 完整集中复审报告 — Hermes 0.22.2 checkout 修正版 v3
 
-归档说明：本文件由 Codex 从 Cursor Agents 可见会话的完整最终回复转录，恢复标题、表格、代码与内联文件名的 Markdown 排版；不是 Cursor 原生文件导出，不是新一轮自审，不改变受审输入。来源会话为「Hermes 0.22.2 static review」，模式 Ask，界面模型标签 Grok 4.7 High Fast；界面显示回复时间 2026-10-18 18:03（Asia/Shanghai），Worked for 13m 59s。取回时间 2026-10-18T10:12:05Z。受审目录为本文件同目录。
+归档说明：由 Codex 从 Cursor Agents「Hermes SDK static review」最终回复的可见界面及 Copy message 文本取回并转录，恢复 Markdown 表格和代码块排版；不是 Cursor 原生文件导出，不宣称与原生导出逐字节相同。Ask 模式，界面模型标签 Grok 4.7 High Fast；界面显示完成时间 2026-10-18 19:15（Asia/Shanghai），Worked for 16m 44s。复制内容仅在未发送的临时输入框中展开读取，随后已清空，未发送额外消息。
 
-受审清单：REVIEW_INPUT_MANIFEST.json，55,151 B，SHA-256 f076d455a87e334a2f7ec60fc1ad706ebef88bd42d3bf8346ffcffbb9fd343f8，184 项，4,768,094 B。报告正文起止对应 Cursor 最终回复从「无真实安全或正确性阻断」至「也不是内存风险接受或公开发布」。代码块保留可见代码内容，不将格式恢复声称为逐字节原生导出。
+受审清单：REVIEW_INPUT_MANIFEST.json，60,561 B / SHA-256 61d9fdd299a2b20bf93d3a0ba67934fe059a91e72750deed23c8e94be9c4a04d；202 项，5,305,080 B。以下保留报告全部结论、限制、表格与代码摘录，代码出处行号保留。原回复表格首行的“14,421 等待”亦原样保留，未静默改写；该行后半部明确的实际旧/新大小为 15,402 → 16,413 B，另由 SOURCE_COMPARISON.json 与归档接收记录核对，不以残留文字作为数值依据。
 
 ---
 
-无真实安全或正确性阻断。离线准备与有限模型完整性成立，只到可以请求一份新的投影源原生范围为止。MEMORY 维持 WARN_NOT_ACCEPTED，公开状态维持 BLOCK。这次不授权原生，也不把准备结果当成 SDK 安装、HTTP/WS、CI 或 HUD 2.0 上线通过。
+阻断：无。最高结论只到离线准备完成，可以另行请求一个新的具体运行范围。历史 run `39118974049` 的最早真实条件仍是 **UNKNOWN**。合成的 Git 所有者拒绝在其声明的测试钩子内有代码与当前回执支持，不能外推成远端归因。
 
-## 分层判定
+**MEMORY：WARN_NOT_ACCEPTED。PUBLIC：BLOCK。** 本会话没有创建授权、claim、推送或调度。
 
-| 层 | 判定 |
-| --- | --- |
-| 旧 checkout_files 对 8192 的计数拒绝 | 代码顺序独立成立。18605 与 1,848,170 字节是请求方执行记录。两者合在一起，才得到“若该记录为真，则全树清单在内容读取前被计数拒绝”。 |
-| 历史 run 39113826866 的首次抛错点 | 仍是 UNKNOWN。547 字节导出不能反填。 |
-| 3185 文件投影 | 目录内部闭合、字面 pathspec、读前精确匹配，独立成立。与公开全树逐行相等，按记录接收。 |
-| sources 60 与 local Git 5 | 源码缝独立成立。463 的执行通过是 Codex 回执，本复审未重跑。 |
-| 远端合同 v2 | 三键、接收前拒绝非法 FAIL、PASS 为 null、旧授权/范围/freeze 不能升级，由源码结构成立。 |
-| 19 份关键文件与原门槛 | 逐字未动。8192、1GiB、4MiB、2MiB、512MiB、4096、内存门槛未提高。 |
-| 35 项 freeze、37 份本地 payload、12 份 FINAL | 闭合。当前清单内没有新 grant、claim 或 acceptance。这不是缺件。 |
+## 分层结论
 
-## 独立可算与按记录接收
+当前候选是 Hermes 0.22.2 `sdk_checkout` 集中修正版 v3。冻结包可以进入“请求一次新的具体运行”这一步；该请求现在还不存在。
 
-独立重算：
+精确的命令级 `safe.directory=<canonical checkout>` 没有扩到 `*`、父目录或全局 Git 配置。它只取消这一个已经选定的目录上的 Git 所有者拒绝。这不是 UID 证明，也不是操作系统沙箱。固定 HEAD、清单元数据、工作文件的 nofollow、stamp、nlink、字节长度和 Git blob SHA1 都还在。
 
-- 清单自身 55,151 字节，SHA256 f076d455a87e334a2f7ec60fc1ad706ebef88bd42d3bf8346ffcffbb9fd343f8。184 条路径互异，声明总字节 4,768,094，逐项大小与 SHA256 全部相符。
-- 当前 freeze 文件 3,328 字节，SHA256 f12dce30344c5b4c7902aa65fc36f09f0a415e1d7e0ceee9aafb1d1bf10d4e04，schema hermes_0222_remote_freeze_v2，35 个键与 remote_entry.frozen 的要求集合相同，并与工作区及 repository-payload/scripts/hermes_022/ 逐字相同。
-- 旧 freeze 3,132 字节，1ffccee10de9fadbdfc6c80c6993a576b9fc8736ccddb5b012b3874391107695，v1，33 项。
-- SDK_SOURCE_SELECTION.json 395,939 字节，SHA256 cfea0a9d3da0cd91ca961c01d9156a3d2047119a66204086fb99a10f9a5b098f。3,185 行，字节和 67,016,450，120 个 pathspec。
-- 由目录本身算出的 ls-tree -z 尺寸是 274,637 字节。3,185 ≤ 8192，274,637 ≤ 4,194,304，67,016,450 ≤ 1GiB，单文件最大 1,430,925 字节，没有任何选中文件超过 2MiB。
-- PROTECTED_BYTES.json 的 19 个文件与旧目录逐字相同。
-- SOURCE_DIFF.patch 21,450 字节，SHA256 0485d6e8bf67d85ae7f16a10d4a020c58bf57bdfcb2c31b0da392acf6eebe9e7。在内存中应用到 11 个旧文件后，与当前文件逐字相同。
-- 已归档的 18 个公开 blob：文件字节、Git blob SHA1、目录中的 blob 与字节数一致。uv-virtualenv.rs 的 blob c1422b426bce0266a16c21dbe10449582e8f55a4 与 UV_SOURCE.json 一致；该文件不在 SDK 目录内。
-- 12 份 FINAL 回执的全部 input 哈希与当前文件一致，tests_run 之和为 463，failures、errors、skipped 都是 0。
+旧聚合仍是 v2、`version: 1`、`site: sdk_checkout`、`kind: refused`。新代码在原有效时刻拒绝这份旧授权和旧聚合，没有回填旧 FAIL。`kind: refused` 只表示某次 `need()` 拒绝，不能区分所有者检查、HEAD、清单或内容哈希。因此合成复现保持 **PLAUSIBLE**，不是实证。
 
-按记录接收，本复审没有原始响应可以重算：
+## 独立核对
 
-- PUBLIC_TREE_PROOF.json：公开元数据 5,174,151 字节，SHA256 750082fb1bc40d61de7978d721a819508048fb557fba91d8d5324e9013fa9097，全记录 19,838，blob 18,605，ls-tree -z blob 字节 1,848,170，重建 1,234 个树对象且与 commit tree 5a064077e8d1de9fc7a4b27efc04f0caa2cb06c0 相符。
-- 这些数字内部自洽：19,838 − 18,605 = 1,233 个非 blob 记录，加上根树正好是 1,234。按这份记录，公开响应里没有 gitlink。生成器哈希等于清单内的 read_public_selection.py。原始响应未归档。
-- 18,605 − 3,185 = 15,420 只在接受上述 blob 计数时成立。
-- 历史 547 字节聚合、FOLLOWUP 中的 run 元数据、以及“未推送”都是包内声明。没有做 Git 或网络核对。
+清单自身 **60,561 B**，SHA256 `61d9fdd299a2b20bf93d3a0ba67934fe059a91e72750deed23c8e94be9c4a04d`。202 项、**5,305,080 B**，逐项字节与 SHA256 均为 0 漂移，无重复路径，路径都在清单给出的三个目录内。
 
-## 旧计数拒绝与历史抛错点
+`PACKAGE_READBACK.json` 的 `files` 是其中 **199** 项，这 199 项也是 0 漂移。另外 3 项不在该字典里，但已按清单单独核对通过：回读文件自身、`FINAL_OFFLINE_SUMMARY.json`、`WORKTREE_PROBE_RECEIPT.json`。
 
-旧 checkout_files 先取全树，再检查条数，然后才读工作文件：
+`SOURCE_DIFF.patch` 为 17,790 B，SHA256 `37c7aa3e4fcb9023d029eb283e105848d1da3a1aeb1a4688758d7d6086f0ada2`。6 个文件均从 sources v2 基线在内存中重放，并与当前文件逐字节相同：
 
-旧目录 remote_backend.py Ln 47–56：
+| 文件 | 结果 |
+|---|---|
+| `remote_backend.py` | 14,421 等待，实际旧文件 15,402 B → 16,413 B，等于当前 `d54ff52d…` |
+| `remote_contract.py` | 8,373 → 8,371，相等 |
+| `remote_entry.py` | 4,042 → 4,042，相等 |
+| `source_selection.py` | 4,633 → 5,184，相等 |
+| `test_remote.py` | 13,032 → 13,032，相等 |
+| `test_sources.py` | 17,648 → 17,939，相等 |
+
+旧 `remote_backend.py` 的 Git 调用没有 `safe.directory`。`SOURCE_COMPARISON.json` 的 47 项共享记录与磁盘一致；`new_runtime_files` 为空，新增测试只有 `test_checkout_git.py`。
+
+当前包 52 个 Python 文件 AST 解析全部通过。解析时没有导入这些模块。
+
+冻结文件 `REMOTE_FREEZE.json` 为 3,328 B，SHA256 `a66ff19a664d001ff48ed50ff4057fa6d75e03b58e77dc6bddbe0c31c2decb27`，schema 为 `hermes_0222_remote_freeze_v3`。内部 35 个哈希与磁盘一致，且与 `remote_entry.py` 的必需集合相同。相对 sources v2：**31 个运行文件逐字节未变**，改变的是 `remote_backend.py`、`remote_contract.py`、`remote_entry.py`、`source_selection.py`。`install_parent.py` 仍是 `bf26879d…`。
+
+37 份 `repository-payload` 与根上对应文件逐字节相同，包括两份 2,171 B 的 workflow。workflow SHA256 仍是 `4b04def7ca3dd9fb2eccdddab7b9f49afa37bebd197b238a56490d993ddc79f3`。
+
+`SDK_SOURCE_SELECTION.json` 为 395,939 B，SHA256 `cfea0a9d3da0cd91ca961c01d9156a3d2047119a66204086fb99a10f9a5b098f`。独立计数为 **3,185** 个文件、**67,016,450** B、**120** 个 pathspec，路径已排序且唯一。模式只有 `100644` 3,128 个和 `100755` 57 个。commit `d923a5eb487a17c0a68801bba9ef0f56c81040a8` 等于 `HOST_COMMIT`，也等于 workflow 的 `sdk-source` ref。`HUD_COMMIT` `004c18a7bc54e1297833b2ceb1aec11417bfdfe9` 等于 `hud-source` ref。`uv.lock`、`pyproject.toml`、`released-v1.2.1-index.js`、`hermes_platform/host/runtime.py` 的固定 SHA256 与清单文件一致。
+
+历史聚合 `analysis.json` 为 **693 B**，SHA256 `825e2fe3bf4d74da3579af407725ba4d2ef927f1d2d14f3d24aee54036f8117e`。内容仍是 schema v2、`result: FAIL`、`stage: sources`、`grant: 7a152c67c6ad4c34becbc852baaaf024`、诊断 `{version:1, site:sdk_checkout, kind:refused}`。旧授权与旧 acceptance 仍是 v2，绑定 head `6cab12bb409e1af6574db7568c951d3b85392a98` 和旧 freeze `f12dce30…`。当前目录没有新的授权或 claim。
+
+## 回执计数
+
+13 份当前 FINAL 均为 failures 0、errors 0、skipped 0、exit 0。合计 **516 = 463 + 53**。
+
+| 回执 | 测试 |
+|---|---|
+| FINAL_ALIAS / FINAL_INVENTORY | 30 + 30 |
+| FINAL_FULL_FILE_CHAIN | 9 |
+| FINAL_CHILD | 131 |
+| FINAL_REMOTE | 50 |
+| FINAL_PARENT | 36 |
+| FINAL_COMPLETION_MODEL | 23 |
+| FINAL_SOURCE | 28 |
+| FINAL_REMOTE_FILES | 12 |
+| FINAL_ARTIFACT | 49 |
+| FINAL_SOURCES | 60 |
+| FINAL_GIT_FORMAT | 5 |
+| FINAL_CHECKOUT_GIT | 53 |
+
+`FINAL_GIT_FORMAT_RECEIPT.json` 记录 13 个本地 Git 进程。`FINAL_CHECKOUT_GIT_RECEIPT.json` 记录 `git_processes: 92`、`forbidden: 0`、`outside_open: 0`、`pending: 0`、事件循环已关闭。两者合计 **105**。这是这两个最终组的记录，不是整轮进程总数。
+
+92 与测试结构的静态分解一致：16 个 Checkout 用例各 4 次建仓调用，共 64；其余成功、失败和产品仓调用合计 28。格式组是 9 次对象准备加 4 次 `ls-tree`。这是算术核对，不是本轮重新启动的 Git。
+
+53 的结构是 16 个真实 Git/checkout 用例，加 3 个固定诊断用例，再加 17×2 个 schema 用例。回执中的 unittest 输出列出这些用例且全部为 ok。
+
+`FINAL_REMOTE` 与 `FINAL_REMOTE_FILES` 用文件名作输入键。其中改变过的 `remote_backend.py`、`remote_contract.py`、`remote_entry.py`、`source_selection.py`、`test_remote.py` 绑定的是当前新哈希，不是 v2 旧哈希。`FINAL_CHECKOUT_GIT` 的绝对路径输入与磁盘一致；它同时绑定当前候选 `d54ff52d…` 和基线 `02b9d0c9…`，后者只用于旧实现的拒绝对照。
+
+以下记录不是当前通过结果：
+
+- `FIRST_HARNESS_FAILURE.json`：exit 1，`/dev/null` 被拒绝，初始夹具清理 UNKNOWN。
+- `SECOND_GIT_HARNESS_RECEIPT.json`：53 项中 52 个错误，exit 1，Git 计数 88。
+- `THIRD_GIT_HARNESS_RECEIPT.json`：17 个错误，exit 1，Git 计数 88。
+- `FOURTH_GIT_HARNESS_RECEIPT.json`：1 个错误，exit 1，Git 计数 88。
+
+`PREPARATION_EVENTS.json` 对首次失败、52/17/1、复制时去掉的末尾空行，以及随后恢复的 `install_parent.py`，有集中记录。
+
+## 精确 Git 信任例外
+
+旧调用是绝对路径 `/usr/bin/git`，参数为 `-C <checkout>`，环境就是传入的安装环境：
+
+旧目录 remote_backend.py Ln 43–46：
 
 ```python
-records = git(['ls-tree','-rz','--full-tree',commit]).split(b'\0');objects = {};total = 0
-need(records[-1]==b'' and 0<len(records)-1<=8192)
-# ... metadata parse ...
-else:raw = read(path,512*1024**2)
+def git(args):
+    r=subprocess.run(['/usr/bin/git','-C',checkout,*args],env=env,stdin=subprocess.DEVNULL,
+          stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30,check=False)
+    need(r.returncode==0 and len(r.stdout)<=4*1024**2);return r.stdout
 ```
 
-git() 同时拒绝超过 4MiB 的标准输出。记录中的 1,848,170 字节低于 4MiB，18,605 高于 8192。因此若这份 ls-tree -rz 记录为真，触发的是计数守卫，而且发生在任何选中文件的内容读取之前。
+新调用先要求 checkout 已是 canonical 路径，再只给这两条只读命令加一个命令级配置：
 
-历史 analysis.json 只有 547 字节，SHA256 6d6cba42fc0839cd2158591c64eb45f8b274ebeaf88353e081f646bd792ec489。它是 v1，result=FAIL，stage=sources，没有 source_diagnostic，没有 site，也没有异常文本。FOLLOWUP 自己写的根因是 UNKNOWN_SAFE_AGGREGATE_HAS_NO_SUBSTAGE_OR_EXCEPTION_DETAIL。sources 在到达 ls-tree 之前还有 root、claim、配置和 rev-parse。这份导出不能证明历史第一次抛错就是第 48 行。
-
-包内另外两个 18605 是合成量，不能代替公开树：test_sources.py 的 FakeGit 直接拼出 18605 条记录；test_git_format.py 用 18,600 个合成 blob 加 5 个选中路径造了一个本地 bare 仓。
-
-## 投影与读前闭合
-
-HOST_COMMIT 是 d923a5eb487a17c0a68801bba9ef0f56c81040a8，与目录 commit、workflow 的 sdk checkout ref 相同。HUD commit 004c18a7bc54e1297833b2ceb1aec11417bfdfe9 与 workflow 的 hud-source ref 相同。
-
-120 个 pathspec 由三部分组成，没有第四种：
-
-- 18 个目录根：acp_adapter、agent、tools、hermes_cli、gateway、tui_gateway、cron、plugins、providers、hermes_platform、pm、scripts、web、apps/shared、assets、skills、locales、native。
-- 97 个仓库根级精确文件。
-- 5 个精确工作区清单：apps/bootstrap-installer/package.json、apps/desktop/package.json、tests-js/package.json、ui-tui/package.json、ui-tui/packages/hermes-ink/package.json。
-
-18 + 97 + 5 = 120。正则只允许字母、数字、_、.、- 和斜杠。没有 *?[]{}:!，没有 :(glob)，也没有 ..。pathspec 放在 -- 之后。source_selection.selected 与准备用的 read_public_selection.selected 在 AST 上相同；后者不在 35 项 freeze 里，运行时不会调用它。
-
-目录根会让 Git 列出该目录下的全部 blob，这是投影本身，不是通配回退。多出的、缺少的或 blob 不同的记录在 listing() 里与钉死的 path/mode/blob 集合比较，失败即拒绝。SDK 槽位始终传入这份目录；没有失败后退回全仓的分支。5 个精确文件 pathspec 不会把 apps/desktop、ui-tui 或 tests-js 的其余树带进来。
-
-当前目录 remote_backend.py Ln 50–60：
+当前目录 remote_backend.py Ln 42–59：
 
 ```python
-args = ['ls-tree','-rz','--full-tree',commit]
-if selected is not None:args += ['--',*selected['pathspecs']]
-records = source_listing(git(args),selected);objects = {};total = 0
-sizes = {r['path']:r['bytes'] for r in selected['files']} if selected is not None else None
-for name,mode,h in records:
-    path = checkout+'/'+name
-    # content read only after listing returns
+def mark(code):
+    need(code in CHECKS)
+    if checkpoint is not None:checkpoint(code)
+mark('path');need(os.path.realpath(checkout)==checkout and len(commit)==40)
+git_env={**env,'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null',
+         'GIT_TERMINAL_PROMPT':'0','GIT_OPTIONAL_LOCKS':'0',
+         'GIT_NO_REPLACE_OBJECTS':'1','GIT_NO_LAZY_FETCH':'1'}
+def git(args,label):
+    mark(label+'_run')
+    r=subprocess.run(['/usr/bin/git','-C',checkout,'-c','safe.directory='+checkout,*args],env=git_env,stdin=subprocess.DEVNULL,
+          stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30,check=False)
+    mark(label+'_result');need(r.returncode==0)
+    mark(label+'_size');need(len(r.stdout)<=4*1024**2);return r.stdout
+head=git(['rev-parse','HEAD'],'head')
+mark('head_binding');need(head.decode().strip()==commit)
 ```
 
-listing() 在返回前执行 4MiB、8192、blob、以及与目录的精确相等。内容循环才调用 read()，并同时核对目录字节数和 blob <size>\0<content> 的 SHA1。产品槽位仍传 selection=None，继续受 8192 约束；本包没有 HUD 全树计数。
+生产调用点只把这个例外用在 `workspace/sdk-source` 与 `workspace/hud-source`：
 
-已归档 pyproject.toml 的 setuptools include 根是 acp_adapter、agent、cron、gateway、hermes_cli、hermes_platform、plugins、pm、providers、tools、tui_gateway，全部落在上述目录根内。package-data 模式也落在这些根里。已归档 package-lock.json 里，web 的依赖是 @hermes/shared: file:../apps/shared；apps/shared 整棵在投影内。ui-tui 另有一条指向 shared 的链接，并有 @hermes/ink: file:./packages/hermes-ink。ink 与 desktop 只保留了 package.json。当前 web 计划只对 workspace web 做 npm ci 和 web.mjs，并带 --ignore-scripts。
+当前目录 remote_backend.py Ln 119–122：
 
-目录模式只有 100644 3,128 个和 100755 57 个。必需文件都在，18 个根都非空，路径已排序，casefold 无冲突，relative() 拒绝绝对路径和 ..。有一个 0 字节文件 tui_gateway/__init__.py，模式允许。
+```python
+for slot,checkout,commit in (('sdk','sdk-source',HOST_COMMIT),('product','hud-source',HUD_COMMIT)):
+    self.source_site=slot+'_checkout';self.remaining()
+    files=checkout_files(self.workspace+'/'+checkout,commit,env,selection=selection if slot=='sdk' else None,
+            checkpoint=lambda check:setattr(self,'source_site',slot+'_checkout_'+check))
+```
 
-运行时不会再次列出全树，否则又会撞上 8192。因此“公开树里还有一个未写入目录的根级文件”这件事，要靠 freeze 中的目录哈希加上上述树证明，而不是靠原生 checkout 再扫描全树。
+这里的 `env` 来自封闭的安装环境，不是 `os.environ`：
 
-## 诊断 v2
+official_entry.py Ln 34–44：
 
-sources 失败只产生 version、site、kind。site 16 个，kind 只有 refused、io、internal。未知 site 收成 phase。异常文本、路径和参数不进入记录。
+```python
+def environment(root, role, token=None):
+    p=layout(root);need(role in ("install","host"))
+    env={"HOME":p["home"],"HERMES_HOME":p["hermes_home"],"TMPDIR":p["tmp"],
+         "PATH":"/usr/bin:/bin:/usr/sbin:/sbin","LANG":"en_US.UTF-8","LC_CTYPE":"en_US.UTF-8",
+         "TZ":"UTC","PYTHONDONTWRITEBYTECODE":"1","PYTHONNOUSERSITE":"1",
+         "XDG_CACHE_HOME":p["home"]+"/.cache","UV_CACHE_DIR":p["hermes_home"]+"/cache/uv"}
+```
 
-aggregate() 在返回前要求：stage 为 sources 时诊断必须通过 valid_diagnostic，其他 stage 必须是 null。validate_aggregate() 在 export_safe() 写文件前再查一次。PASS 还要求 stage 为 aggregate、诊断为 null，以及安装、HTTP、WS、host exit、child seal、source 标志全部为真。旧聚合少了 source_diagnostic 和 source_projection，schema 仍是 v1，键集合对不上。旧授权 schema 与旧 scope 在 authorize() 被 v2 精确匹配拒绝。子授权、子 acceptance、parent claim 仍是 v1；child_bindings 不在函数差异里。
+`subprocess` 的 `env=` 会替换子进程环境。Git 子进程因此只有这 11 个安装键，再覆盖 6 个 Git 键。其中没有 `GIT_DIR`、`GIT_CONFIG_COUNT`、调用方令牌或动态加载变量。`GIT_CONFIG_GLOBAL=/dev/null` 与 `GIT_CONFIG_NOSYSTEM=1` 使 runner 上更宽的全局 `safe.directory` 不会被继承。宿主子进程的环境集合另有精确白名单，不含这些 Git 键（`owned_process.py` 75–77 行）。
 
-聚合模板里的 memory=WARN_NOT_ACCEPTED、public_release=BLOCK、retry=false 不是可变字段。source_projection 固定为 PINNED_INSTALL_HOST_WEB_INPUTS_NOT_FULL_REPOSITORY。
+`remote_entry.py` 61 行的 `dict(os.environ)` 只用于控制器门禁。70–71 行要求 `GITHUB_WORKSPACE` 为绝对且 `realpath` 等于自身。checkout 目录若是符号链接，会在 Git 启动前拒绝；对应测试是 `test_alias_checkout_refused_before_git`。
 
-## 未改的安全边界
+两条命令是 `rev-parse HEAD` 和 `ls-tree -rz --full-tree <固定 commit>`。SDK 在 `--` 之后使用目录中的字面 pathspec。没有 `git config` 写操作，没有 `safe.directory=*`，也没有把父目录放进该值。生产后缀固定为 `sdk-source` / `hud-source`，整个值不会是 `*`，也不会以 `/*` 结尾。
 
-19 份逐字文件覆盖进程身份、信号、清理、child/host 执行、安装清单和 staging。owned_process.py 仍只接受 SIGTERM 与 SIGKILL。installed_closure.py 仍是 MAX_FILES=8192、MAX_BYTES=1GiB，文本 2MiB、二进制 512MiB。remote_files.py 的默认读取上限仍是 2MiB，行数上限 8192。
+`runtime_fence.py` 把 `os.chown` 列为拒绝事件；清单内 Python 没有 `os.chown(` 调用，也没有 `shell=True`。
 
-remote_backend.source_check 不在函数差异中，仍要求可用内存至少 3072*1024**2、swap used 至多 512*1024**2。新的 checkout 仍把 Git 输出限制在 4MiB，单文件读取上限 512MiB，累计 1GiB。目录条数上限是新的 4096，当前 3,185 低于它；这不是把 8192 提高了。workflow 2,171 字节，SHA256 4b04def7ca3dd9fb2eccdddab7b9f49afa37bebd197b238a56490d993ddc79f3，与旧文件、两份 payload 副本相同。plugin_handoff.py 仍要求 hermes-hud 1.2.1。
+这个例外的权限边界是：它让 Git 在该精确目录上忽略所有者不匹配。操作系统仍按原权限决定能否读。随后的 HEAD、清单和 blob 哈希仍约束内容。命令行 `-c` 属于 Git 的受保护配置范围，所以它能作用于所有者检查；仓库自己的本地配置不能把自己标成 safe。
 
-## 测试与 463 绑定
+## 绑定与诊断闭包
 
-分组 30+30+9+131+50+36+23+28+12+49+60+5 = 463。前九组 349，加 artifact 49、sources 60、local Git 5。
+HEAD 比较、blob 头 `blob <len>\0`、SHA1、文件字节和 1 GiB 总量都保留。普通文件仍走 `read()`：
 
-sources 组静态方法 27+6+13，再加 14 个模块级动态否定例，等于回执 60。它调用真实 Backend.sources 和 execute，文件是合成的，subprocess.run 被 FakeGit 替换；审计钩子拒绝真实 subprocess、socket、sqlite 和 ctypes。未选中的 tests/never-open.py 被断言不进入读取列表。这不是 SDK 安装。
+remote_files.py Ln 10–18：
 
-local Git 组的 5 个方法写在函数内部的类里。成功路径展开为 13 个本地 Git 进程：init、hash-object、6 次 mktree、--version、4 次 ls-tree。回执记录 allowed_local_git_processes=13，版本字符串是 git version 2.54.0 (Apple Git-157)。同文件里的 network_calls 和 sdk_processes 是字面量 0，不是审计计数。这里有 13 个明确的本地 Git 进程。准备阶段读取公开树时有网络；sources 离线 harness 才有网络拒绝钩子。
+```python
+def read(path,limit=2*1024**2):
+    need(type(path) is str and path.startswith('/') and os.path.realpath(path)==path)
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    try:
+        before=os.fstat(fd);need(stat.S_ISREG(before.st_mode) and before.st_nlink==1 and 0<=before.st_size<=limit)
+        ...
+        need(os.read(fd,1)==b'' and file_stamp(before)==file_stamp(os.fstat(fd))==file_stamp(os.lstat(path)))
+```
 
-其余 FINAL 含类内动态用例。child 可见静态方法 90、回执 131；remote 可见静态方法 24、回执 50。本复审没有执行加载器，所以不用静态方法数否定这些回执，也不把回执当成自己重跑的结果。它们的 input 哈希已经与当前文件逐项对齐。
+`file_stamp` 仍是设备、inode、大小、mtime_ns、ctime_ns、nlink（`pm_handoff.py` 60–61 行）。符号链接分支仍是 `lstat` 加 `readlink`。目录模式仍只接受 `100644` / `100755`；listing 仍可表示 `120000`，但 SDK 绑定必须与目录完全一致。
 
-FIRST_SOURCES_RECEIPT.json 与 FIRST_REMOTE_RECEIPT.json 仍钉着旧的 source_selection.py、remote_backend.py，sources 的 FIRST 还钉着旧 test_sources.py。当前绑定只使用 12 份 FINAL。exploratory 回执不进入 463。
+上限没有提高：Git 标准输出与 listing 4 MiB，listing 8,192 项，目录行 4,096，单文件 512 MiB，合计 1 GiB，pathspec 256，可用内存 3 GiB，swap used 512 MiB。3,185 与 67,016,450 都在这些上限内。
 
-## freeze、payload 与授权
+诊断键空间是 16 个原 site 加 34 个检查点，共 50。检查点 17 个，kind 仍是 `refused`、`io`、`internal`。
 
-35 个运行输入含新的 source_selection.py 与 SDK_SOURCE_SELECTION.json。37 份本地 payload 是这 35 个文件、一份 REMOTE_FREEZE.json，以及 .github/workflows/hermes-022-isolated.yml。PUBLISH_LAYOUT.json 写明 contains_authorization=false、pushed=false。清单里的授权与 acceptance 只有旧目录中的 v1 文件，scope 仍是旧字符串，grant 25b96779c554420d945d8f647ab14320。新 scope one_remote_hermes_0222_projected_sources_v2_install1800_host300_no_retry_no_risk_acceptance 只出现在新合同里，没有配套的新授权文件。
+source_selection.py Ln 16–23：
+
+```python
+SITES=frozenset(('phase','root','claim','npm_config','synthetic_config','sdk_catalog',
+    'sdk_checkout','sdk_stage','product_checkout','product_stage','tool_read',
+    'tool_stage','plugin_projection','plugin_write','source_verify','complete'))
+KINDS=frozenset(('refused','io','internal'))
+CHECKS=frozenset(('path','head_run','head_result','head_size','head_binding','catalog',
+    'listing_run','listing_result','listing_size','listing_count','listing_record',
+    'listing_binding','file_read','file_size','file_hash','source_bytes','materialize'))
+SITES=SITES|frozenset(slot+'_checkout_'+check for slot in ('sdk','product') for check in CHECKS)
+```
+
+`diagnostic()` 只返回 `version: 2`、`site`、`kind`（78–86 行）。site 不在封闭集合内时变成 `phase`。异常文本、路径、argv、环境和 Git stderr 不进入记录；Git stderr 被 `DEVNULL` 丢弃。
+
+授权、acceptance、claim 与聚合分别要求 v3。聚合 schema 不在可变字段里，所以旧 v2 文档不能靠改诊断版本混入。sources 阶段的诊断还必须通过 version 2 校验。
+
+remote_contract.py Ln 34–42：
+
+```python
+need(auth['schema']=='hermes_0222_remote_authorization_v3' and auth['scope']==SCOPE
+     and hexstr(auth['grant'],32) and hexstr(auth['sha'],40)
+     ...
+need(type(acceptance) is dict and acceptance=={'schema':'hermes_0222_remote_acceptance_v3',
+     'scope':SCOPE,'safety':'PASS','sha':auth['sha'],'freeze_sha256':freeze,'report_sha256':report})
+```
+
+新 scope 是 `one_remote_hermes_0222_exact_git_trust_v3_install1800_host300_no_retry_no_risk_acceptance`。聚合结果里的 scope 仍是两条固定结果字符串，与授权 scope 不是同一个字段。`remote_entry.py` 22 行只接受 freeze v3。
+
+子协议、身份、信号、清理和真实 exit 0 所在文件属于那 31 个未变文件。当前文本仍要求子载荷 `ENTRY_RETURNED_ZERO_NOT_ACCEPTANCE`、父进程观察到的 exit 0（`child_protocol.py` 52–85 行），以及先核对身份再发 `SIGTERM` / `SIGKILL`（`owned_process.py` 48–55、149–181 行）。聚合仍要求三条安装命令 exit 0，且清理 exit 0（`remote_contract.py` 76–92 行）。这些记录都带 `WARN_NOT_ACCEPTED` 与 `BLOCK`，并且 `retry: False`。
+
+workflow 仍是单次 `workflow_dispatch`、`contents: read`、`persist-credentials: false`、`macos-15-intel`。它不内嵌 scope；授权来自运行输入。新的 reviewed SHA 与 v3 授权都还没有创建。
 
 ## 非阻断与证据上限
 
-集中登记一次：
+以下事项一次登记，不单独构成阻断：
 
-- 公开全树原始元数据未归档。全树过滤结果等于这份目录，是 PUBLIC_TREE_PROOF.json 的执行记录。
-- 历史首次抛错点未知。合成 18605 只证明守卫和 Git 对象格式。
-- 未改 workflow 的 actions/checkout 仍会把完整 sdk-source 物化到 runner。控制器只在清单闭合后读取选中文件。
-- 产品树仍走无 pathspec 的 8192 路径。本包没有 HUD 全树条数。
-- ui-tui、desktop、hermes-ink 只保留清单，不保留实现。真实 npm 闭包未跑。
-- local Git 的网络 0 与 SDK 进程 0 是源码字面量。Git 版本是本机 Apple Git，不是 CI 证明。
-- test_git_format.py 没有 sources 组那种审计钩子。
-- 非 pm_handoff.Refused、artifact_stage.Refused、remote_contract.Refused 的异常在 sources 中记为 internal，仍是三键枚举，不带原始文本。
-- source_site=complete 设在 sources() 最后一行，正常成功不会产出诊断。
-- 投影含公开根级点文件，包括 .env.example 和 .envrc。这是钉死的公开 blob，不是读取本机 HOME 或凭据。
-- blob 身份是 SHA1，与这个 40 位 commit 一致。
-- execute 仍吞掉 BaseException；sources 失败被收成固定诊断。
-- SOURCE_COMPARISON.json 的 shared 有 42 项，没有列入已变化的 REMOTE_FREEZE.json。freeze 由自身哈希和 payload 钉住。
-- FOLLOWUP 提到的 transport、job 和 fetch 文件不在本清单，未读。
-- 未列目录，因此“工作区绝对没有未列入清单的文件”不是一次文件系统普查。
-- 真实安装、依赖闭包、CI Git、installer 子孙的 OS sandbox、同步 IO 的硬截止、VM teardown、浏览器和长期内存接受，都没有在这次复审里变成通过。
-- 旧 payload 与 seal 未随 547 字节聚合导出，也不能从该文件重算。
+1. 信任通过后，Git 仍会读取该仓库的本地配置。生产命令只有 `rev-parse` 与 `ls-tree`，并关闭了 system/global、replace 和 lazy fetch。本轮没有执行 Git，因此不能证明这两条 plumbing 在所有版本上都不会触发 fsmonitor 或 hook。内容替换仍会被后续哈希挡住。
+2. `GITHUB_WORKSPACE` 只要求绝对且 canonical，没有单独拒绝换行。生产后缀使该值不能成为 `*` 或 `/*`。
+3. 产品槽 `selection=None`，所以 `product_checkout_listing_binding` 在这条执行路径上不会被走到。它仍是封闭诊断键。SDK 路径会做完整清单绑定。产品的 `catalog` 检查点只标记顺序，不读取 SDK 目录。
+4. `listing_size` 会在 Git 输出上限和 listing 解析处各标记一次。两次都是尺寸拒绝。
+5. Python audit 不是内核沙箱。`test_checkout_git.py` 20–37 行允许精确登记的 Git、`/dev/null`、管道 FD、已绑定 root 的相对写入，以及清理期的相对遍历。159 行写明 preload 不在覆盖内。`child_guard.py` 1–4 行和 `audit_adapter.py` 13–14 行也写明 audit 不是独立沙箱。`FINAL_SOURCES` 的 `open: 3028` 是打开计数，不是 Git 进程数。
+6. 完整 sources 用例实际调用 `Backend.sources()`，使用两个本地合成仓和真实文件，并核对投影后的 `index.js`。`HOST_COMMIT` / `HUD_COMMIT` 只在内存中替换为合成 commit。它不执行 SDK，`installer` 保持为空。
+7. `GIT_TEST_ASSUME_DIFFERENT_OWNER=1` 只存在于测试包装器和 `probe_git_trust.py`。探针源码不写死 128；`TRUST_PROBE_RECEIPT.json` 记录 ordinary 0、假定不同所有者 128、精确目录 0。本轮没有重跑该探针。
+8. `METADATA_PROBE_RECEIPT.json` 记录合成树 3,185 条、274,637 B、缺失与额外都为空。这是元数据夹具回执。`PUBLIC_TREE_PROOF.json` 另有全树 19,838 条，并声明原始全量元数据未归档，所以 19,838 与 1,234 个 tree object 不能在本轮重算。目录 JSON 的 3,185 与 67,016,450 已独立重算。
+9. `WORKTREE_PROBE_RECEIPT.json` 绑定的是旧后端 `02b9d0c9…`，用于同所有者基线。它不是当前 FINAL。
+10. 探索性和失败 harness 另有本地 Git 记录：元数据探针 2、信任探针 4、三次失败 harness 各 88。它们不计入 105，本轮也没有相加成“整轮总数”。
+11. 初始合成夹具清理保持 UNKNOWN。最终组记录 pending 0，这仍不是内核级清理证明。
+12. 本地 payload 未推送。workflow 只有在未来的 reviewed SHA 指向含该修复的提交，并且另有 v3 授权时，才会执行这版代码。当前缺授权是状态，不是缺件缺陷。
+13. Git blob 身份仍是 SHA1。这是所选 Git 对象的格式，目录与冻结文件另用 SHA256。
+14. 清单中还有更早的 `run-39113826866` 聚合文件。它不是 `39118974049` 的诊断记录，本轮不用它解释这次 `sdk_checkout` 拒绝。
 
-## 实际做了、没做、边界
+## 本轮实际范围
 
-做了：只读清单内绝对路径；独立哈希；JSON 与 TOML 解析；AST 比较；内存应用补丁；目录规则、pathspec、blob 与已归档锁文件的闭合；sources 与 Git fixture 的源码计数；FINAL 输入绑定。
+做了：按清单绝对路径读取合同、请求、回读、补丁、冻结、当前与基线的相关源码、workflow、探针、历史聚合和回执；用独立 hashlib、JSON、AST 和内存补丁重放完成核对。
 
-没做：运行或导入任何被审脚本、测试、SDK、安装器、host、verifier 和公开元数据读取器；Git、网络、原生进程、资源探针；读取 DB、HOME、config、凭据或 Actions 日志；列目录、递归、glob、按引用扩链；修改文件；创建报告、授权或命令。
+没做：没有修改或新增文件，没有运行被审脚本、测试、探针、SDK、安装器、host 或 verifier，没有导入被审模块，没有列目录、递归或按引用扩读，没有 Git、网络、HOME、数据库、凭据或日志查询，没有创建授权、claim 或命令。
 
-边界保持为：HUD 1.2.1 是固定输入。这次复审的最高结论是离线准备完成，可以据此请求新的投影源 v2 范围。它不是原生兼容通过，也不是内存风险接受或公开发布。
+边界：退出码 128/0 与 105 个 Git 进程来自清单内回执及与测试结构一致的静态分解。本会话没有重新观察这些进程。
