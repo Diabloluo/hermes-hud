@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-01
+
 ### Fixed
 - Batch timeline events and the scan-start watermark in one transaction. Wait
   for timeline work before submitting an executor job, and drain an active job
@@ -25,9 +27,10 @@
   timestamp offsets, producer timezone and ambiguous DST times.
 
 ### Compatibility
-- Schema remains **1** and the plugin version remains **1.2.1** pending release.
-  Existing clients must handle the corrected nullable fields and coverage
-  metadata described in [HUD API data contract](docs/architecture/HUD_API_DATA_CONTRACT.md).
+- API schema remains **1**. Desktop Alpha **0.1.0** is unchanged (channel
+  `desktop-v0.1.0-alpha`); this is a HUD plugin release, not a new Desktop
+  binary. Existing clients must handle the corrected nullable fields and
+  coverage metadata described in [HUD API data contract](docs/architecture/HUD_API_DATA_CONTRACT.md).
 - `estimated_cost_usd` and `/usage`'s `est_cost` alias represent the **known priced
   subtotal**, not a complete bill: a readable source with entirely unknown
   pricing returns numeric `0` with `cost_complete=false`; an unavailable pricing
