@@ -1,8 +1,8 @@
 # HUD API data contract — audit repair candidate
 
 Applies to `/api/plugins/hermes-hud/` REST responses and snapshot/health data
-sent through WebSocket `/events`. This candidate retains schema **1** and plugin
-version **1.2.1**; it has not been released. The corrections below affect existing
+sent through WebSocket `/events`. Shipped in plugin **1.2.2**; schema remains
+**1** and Desktop Alpha **0.1.0** is unchanged. The corrections below affect existing
 field semantics and nullability. Consumers that assumed every numeric or boolean
 field was always populated must update their handling before adopting it.
 
