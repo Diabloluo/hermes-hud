@@ -45,6 +45,9 @@ def fake_state(tmp_path) -> Path:
     con.execute("INSERT INTO messages (session_id, role, tool_name, tool_call_id, timestamp,"
                 " finish_reason) VALUES ('s1','assistant','git push','c2',1756000060,'error')")
     con.execute("INSERT INTO session_model_usage VALUES ('s1','gpt-4o',1000,500,0.01)")
+    con.execute("ALTER TABLE session_model_usage ADD COLUMN cost_status TEXT")
+    con.execute("ALTER TABLE session_model_usage ADD COLUMN cost_source TEXT")
+    con.execute("UPDATE session_model_usage SET cost_status='estimated', cost_source='fixture_prices'")
     con.commit()
     con.close()
     return db

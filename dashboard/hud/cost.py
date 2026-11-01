@@ -22,7 +22,7 @@ from typing import Any, Optional
 log = logging.getLogger("hud.cost")
 
 from .collectors import get_hud_timezone  # noqa: E402
-from .redaction import redact_line  # noqa: E402
+from .redaction import sanitize_title  # noqa: E402
 
 TIME_RANGES = {"today": None, "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400,
                "all": -1}  # today 由时区日界处理；all 无界
@@ -49,6 +49,98 @@ def _pricing_known(cost_status: Any, cost_source: Any) -> bool:
     if cost_status == "estimated" and cost_source and str(cost_source) != "none":
         return True
     return False
+
+
+def _pricing_coverage(total: int, known: int, estimate: float, source_ok: bool = True,
+                      empty_is_zero: bool = True) -> dict:
+    complete = source_ok and known == total and (bool(total) or empty_is_zero)
+    return {
+        "estimated_cost_usd": estimate if source_ok else None,
+        "usage_rows": total if source_ok else None,
+        "pricing_known_rows": known if source_ok else None,
+        "pricing_unknown_rows": total - known if source_ok else None,
+        "pricing_coverage_ratio": (known / total if source_ok and total else
+                                   (1.0 if complete else None)),
+        "cost_complete": bool(complete),
+        "cost_semantics": "estimated",
+        "cost_source_status": "healthy" if source_ok else "unavailable",
+    }
+
+
+def pricing_summary(rows: list[tuple], source_ok: bool = True,
+                    empty_is_zero: bool = True) -> dict:
+    """Shared pricing contract for legacy views; rows = (estimate, status, source)."""
+    known = [r for r in rows if _pricing_known(r[1], r[2])]
+    return _pricing_coverage(len(rows), len(known), sum(float(r[0] or 0) for r in known),
+                             source_ok, empty_is_zero)
+
+
+def read_pricing_summary(con, auxiliary: bool = False, cutoff=None) -> dict:
+    """Aggregate snapshot pricing in SQLite instead of materializing every row.
+
+    The SQL predicate mirrors _pricing_known; legacy missing metadata is unknown.
+    """
+    try:
+        columns = {r[1] for r in con.execute("PRAGMA table_info(session_model_usage)")}
+        known = ("cost_status='estimated' AND cost_source IS NOT NULL"
+                 " AND cost_source != '' AND cost_source != 'none'"
+                 if {"cost_status", "cost_source"} <= columns else "0")
+        where, params = [], []
+        if auxiliary:
+            where.append("task != ''")
+        if cutoff is not None:
+            where.append("last_seen >= ?")
+            params.append(cutoff)
+        sql = ("SELECT COUNT(*), COALESCE(SUM(CASE WHEN " + known + " THEN 1 ELSE 0 END),0),"
+               " COALESCE(SUM(CASE WHEN " + known + " THEN estimated_cost_usd ELSE 0 END),0)"
+               " FROM session_model_usage")
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        total, priced, estimate = con.execute(sql, params).fetchone()
+        return _pricing_coverage(total, priced, float(estimate))
+    except sqlite3.Error:
+        return _pricing_coverage(0, 0, 0.0, source_ok=False)
+
+
+def read_pricing_rows(con, session_ids=None, cutoff=None) -> tuple[list[tuple], bool]:
+    """Read the canonical source through an existing read-only connection.
+
+    Missing legacy provenance columns are unknown, never inferred from a number.
+    Returned rows: session_id, model, task, last_seen, estimate, status, source.
+    """
+    try:
+        columns = {r[1] for r in con.execute("PRAGMA table_info(session_model_usage)")}
+        if not {"session_id", "estimated_cost_usd"} <= columns:
+            return [], False
+        names = ("session_id", "model", "task", "last_seen", "estimated_cost_usd",
+                 "cost_status", "cost_source")
+        select = ", ".join(n if n in columns else "NULL" for n in names)
+        sql, params = "SELECT " + select + " FROM session_model_usage", []
+        where = []
+        if session_ids is not None:
+            ids = list(dict.fromkeys(session_ids))
+            if not ids:
+                return [], True
+            where.append("session_id IN (" + ",".join("?" for _ in ids) + ")")
+            params.extend(ids)
+        if cutoff is not None:
+            where.append("last_seen >= ?")
+            params.append(cutoff)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        return con.execute(sql, params).fetchall(), True
+    except sqlite3.Error:
+        return [], False
+
+
+def session_pricing(con, session_ids) -> dict:
+    rows, ok = read_pricing_rows(con, session_ids=session_ids)
+    grouped = {}
+    for r in rows:
+        grouped.setdefault(r[0], []).append(r[4:7])
+    # No usage row is not evidence of a free session.
+    return {sid: pricing_summary(grouped.get(sid, []), ok, empty_is_zero=False)
+            for sid in session_ids}
 
 
 def _state_conn(home: Path):
@@ -116,9 +208,7 @@ def _cutoff(time_range: str, now: Optional[int] = None) -> tuple[Optional[float]
 
 
 def _sanitize_title(title: Any) -> Optional[str]:
-    if not title:
-        return None
-    return redact_line(str(title))[:120]
+    return sanitize_title(title)
 
 
 def _window_attrs(time_range: str) -> dict:
