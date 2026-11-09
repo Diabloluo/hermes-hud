@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Hermes HUD",
-  "version": "0.1.0",
+  "productName": "驿览 · RelayGlance",
+  "version": "0.1.1",
   "identifier": "com.diabloluo.hermes-hud-desktop",
   "build": {
     "beforeDevCommand": "",
@@ -16,10 +16,15 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
-    "icon": ["icons/icon.icns"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/icon.icns"
+    ],
     "category": "DeveloperTool",
-    "shortDescription": "Hermes HUD macOS Desktop Alpha",
-    "longDescription": "Local-first, read-only observability for Hermes Agent — desktop shell over the running Hermes Dashboard. Alpha (unsigned, local testing only)."
+    "shortDescription": "驿览 · RelayGlance macOS Desktop Alpha",
+    "longDescription": "Local-first, read-only observability for Hermes Agent. RelayGlance (formerly Hermes HUD) is an unofficial community desktop companion to the running Hermes Dashboard. Alpha; release verification required before distribution."
   }
 }

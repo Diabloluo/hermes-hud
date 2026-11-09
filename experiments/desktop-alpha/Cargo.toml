@@ -1,7 +1,7 @@
 [package]
 name = "hermes-hud-desktop"
-version = "0.1.0"
-description = "Hermes HUD Desktop prototype — remote WebView shell over the running Hermes Dashboard"
+version = "0.1.1"
+description = "驿览 · RelayGlance Desktop — remote WebView shell over the running Hermes Dashboard"
 edition = "2021"
 
 [build-dependencies]

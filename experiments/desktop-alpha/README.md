@@ -1,52 +1,66 @@
-# experiments/desktop-alpha — Hermes HUD Desktop Prototype (Tauri 2)
+# 驿览 · RelayGlance Desktop (Tauri 2)
 
-Desktop Foundation v0.1 prototype. **Not a release.** Local unsigned .app only.
+The **0.1.1 source candidate** applies the approved RelayGlance radar brand.
+It is not a built, signed, notarized or released binary. The published Hermes
+HUD Desktop 0.1.0 tag and assets are historical and must not be overwritten.
 
-## Security invariant (MUST NOT REGRESS)
+## Security invariant (must not regress)
 
-Remote HUD WebView (`http://127.0.0.1:<port>/hud`) has **ZERO Tauri capabilities**:
+- Remote HUD WebView (`http://127.0.0.1:<port>/hud`) has **zero Tauri
+  capabilities**. It uses ordinary fetch/WebSocket/localStorage only.
+- `capabilities/local-bundled.json` is local-only. The bundled setup page has
+  one narrow `start_dashboard` command; Rust checks the page origin and runs
+  only the fixed Dashboard argv. The remote HUD cannot invoke it.
+- Navigation stays restricted to the existing allowed local origins.
+- Plugin identity `hermes-hud`, `/hud`, `/api/plugins/hermes-hud`, schema 1,
+  bundle ID `com.diabloluo.hermes-hud-desktop`, Cargo package and executable
+  `hermes-hud-desktop` remain unchanged. No data migration is introduced.
 
-| Surface | Grant |
-|---|---|
-| Tauri IPC (`invoke`) | NONE |
-| shell | NONE |
-| filesystem | NONE |
-| native commands | NONE |
-| updater | NONE |
-| dialog | NONE |
+## Branding
 
-- `capabilities/default.json` is an **empty permission set**.
-- The `/hud` page talks to the Dashboard like a normal browser: `fetch` /
-  `WebSocket` / `localStorage` — plain HTTP(S)/WS to `127.0.0.1`.
-- No Tauri HTTP plugin capability is granted to the remote URL.
-- The native Rust shell exposes **no command bridge** to the page.
+- Bundle, window, setup title and tray tooltip: **驿览 · RelayGlance**.
+- App filename: `驿览 · RelayGlance.app`.
+- Candidate DMG: `RelayGlance-Desktop-0.1.1-macOS-arm64.dmg`.
+- The full-color icon is resampled directly from the approved, hash-pinned
+  `dashboard/dist/relayglance-radar.png`; the source artwork is unchanged.
+- The black/alpha radar tray glyph follows the same rings, sweep and return
+  motif. It remains a macOS template image and is no longer overwritten by
+  the default color app icon.
 
-## Behavior
-
-- Startup: window loads bundled `assets/fallback.html`; a Rust thread probes
-  `http://127.0.0.1:9119/api/plugins/hermes-hud/health`.
-- Dashboard up + `api_schema_version==1` + `plugin_version>=1.1.0` →
-  navigate to `http://127.0.0.1:9119/hud`.
-- Not detected / incompatible → stay on fallback with reason; **Retry** is a
-  plain `location.href` back to the Dashboard URL (no IPC needed).
-- Tray: **Open Hermes HUD** / **Quit**. Close button hides to tray.
-- Navigation guard: only `127.0.0.1` / `localhost` / `tauri://`; external
-  origins are blocked.
-
-## Build & run
+To regenerate icon sizes, iconset, ICNS and the bundled setup image:
 
 ```bash
-source "$HOME/.cargo/env"
-cargo build --release          # first build compiles the whole Tauri stack
-./target/release/hermes-hud-desktop
+python3 -m venv /path/to/isolated-icons-venv
+/path/to/isolated-icons-venv/bin/pip install -r tools/requirements-icons.txt
+/path/to/isolated-icons-venv/bin/python tools/make_relayglance_icons.py
 ```
 
-Requires: Rust stable (rustup), Xcode Command Line Tools, macOS WKWebView.
-Dashboard must run with `hermes dashboard --host 127.0.0.1 --port 9119 --no-open`
-for the HUD view (fallback screen otherwise).
+`icons/brand-assets.json` records the source and output hashes. The builder
+also accepts `--output-dir` for reproducibility checks outside the checkout.
 
-## Compatibility contract
+## Build and verification
 
-Probed from `/health`: `api_schema_version` (must be 1) and `plugin_version`
-(must be >= 1.1.0). Mismatch → explicit error on the fallback screen; the app
-never white-screens or crashes.
+Requires Rust stable, Xcode Command Line Tools and macOS WKWebView. Build
+only after coordinating with other work on the selected Mac. Keep target,
+logs and temporary packaging data on a verified external work disk when
+internal space is constrained. Do not stop a running Dashboard to build.
+
+```bash
+# Inside experiments/desktop-alpha, with external paths already verified:
+export CARGO_TARGET_DIR="$EXTERNAL_BUILD_ROOT/target"
+export TMPDIR="$EXTERNAL_BUILD_ROOT/tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+cargo test --locked
+cargo test --locked --features desktop-test-hooks
+cargo build --locked --release
+# Use the existing Tauri packaging/signing workflow for app/dmg artifacts.
+```
+
+The repository's `desktop-release.yml` is a **non-publishing validation
+skeleton**, not a signing or notarization pipeline. Lightweight cloud
+checks are not evidence of a successful native build or installed upgrade.
+
+Release gates and the rename/rollback plan:
+[0.1.1 candidate](../../docs/release/DESKTOP_ALPHA_0.1.1.md) ·
+[Go/No-Go](../../docs/release/DESKTOP_ALPHA_GO_NO_GO.md) ·
+[Upgrade guide](../../docs/desktop/UPGRADE_RELAYGLANCE.md).

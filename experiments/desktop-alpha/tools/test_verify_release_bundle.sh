@@ -8,7 +8,7 @@ VERIFY_SOURCE=1
 # shellcheck disable=SC1090
 . "$SRC"
 
-TMP=$(mktemp -d /tmp/dr3c-test.XXXXXX)
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/relayglance-bundle-test.XXXXXX") || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 PASSED=0; FAILED=0
@@ -44,6 +44,20 @@ arch_ok "arm64 x86_64"; t "arch universal" 1 $?
 arch_ok "x86_64";       t "arch x86_64" 1 $?
 arch_ok "";             t "arch unreadable" 1 $?
 arch_ok "arm64e";       t "arch arm64e" 1 $?
+
+# Brand migration contract: legacy assets are historical, never silently
+# relabeled as the new release. Check them from the old release tag instead.
+canonical_name_ok "RelayGlance-Desktop-0.1.1-macOS-arm64.dmg"; t "new canonical filename" 0 $?
+canonical_name_ok "Hermes-HUD-Desktop-0.1.0-macOS-arm64.dmg"; t "legacy filename rejected" 1 $?
+canonical_name_ok "RelayGlance-Desktop-0.1.0-macOS-arm64.dmg"; t "wrong desktop version rejected" 1 $?
+canonical_name_ok "RelayGlance-Desktop-0.1.1-macOS-x86_64.dmg"; t "wrong architecture name rejected" 1 $?
+
+# A similarly named asset and duplicate entries must not satisfy checksum
+# verification. No mount, system settings, or installed apps are touched.
+printf '%s  fake.dmg.bak\n' "$GOOD" > "$TMP/SHA256SUMS.txt"
+sha256_ok "$DMG" "$TMP/SHA256SUMS.txt" "fake.dmg"; t "filename suffix rejected" 2 $?
+printf '%s  fake.dmg\n%s  fake.dmg\n' "$GOOD" "$GOOD" > "$TMP/SHA256SUMS.txt"
+sha256_ok "$DMG" "$TMP/SHA256SUMS.txt" "fake.dmg"; t "duplicate checksum rejected" 4 $?
 
 echo
 echo "RESULT: $PASSED passed, $FAILED failed"

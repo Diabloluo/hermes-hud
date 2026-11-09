@@ -1,4 +1,4 @@
-//! Hermes HUD — macOS Desktop Alpha v0.1.
+//! 驿览 · RelayGlance — macOS Desktop Alpha.
 //!
 //! Productized Tauri shell over the running Hermes Dashboard.
 //!
@@ -26,6 +26,9 @@ use tauri::{
     webview::WebviewWindowBuilder,
     Manager, WebviewUrl,
 };
+
+const DISPLAY_NAME: &str = "驿览 · RelayGlance";
+const OPEN_LABEL: &str = "Open 驿览 · RelayGlance";
 
 const DASHBOARD_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 9119;
@@ -530,28 +533,25 @@ pub fn run() {
             let window = WebviewWindowBuilder::new(
                 app, "main", WebviewUrl::App("setup.html".into()),
             )
-            .title("Hermes HUD")
+            .title(DISPLAY_NAME)
             .inner_size(1280.0, 800.0)
             .on_navigation(|url| nav_allowed(url))
             .build()?;
 
             // —— Tray（I）：Open / Retry / Quit ——
-            let open_i = MenuItem::with_id(app, "open", "Open Hermes HUD", true, None::<&str>)?;
+            let open_i = MenuItem::with_id(app, "open", OPEN_LABEL, true, None::<&str>)?;
             let retry_i = MenuItem::with_id(app, "retry", "Retry Connection", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_i, &retry_i, &quit_i])?;
-            // Tray 使用 Observer Core monochrome template mark（非彩色 App icon）
+            // Tray 使用 RelayGlance radar monochrome template mark（非彩色 App icon）
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray_template_20.png"))
                 .map_err(|e| e.to_string())?;
-            let mut tray_builder = TrayIconBuilder::with_id("hud-tray")
+            let tray_builder = TrayIconBuilder::with_id("hud-tray")
                 .icon(tray_icon)
                 .icon_as_template(true)  // macOS template image：明暗菜单栏自动适配
                 .menu(&menu)
-                .tooltip("Hermes HUD")
+                .tooltip(DISPLAY_NAME)
                 .show_menu_on_left_click(false);
-            if let Some(icon) = app.default_window_icon().cloned() {
-                tray_builder = tray_builder.icon(icon);
-            }
             let _tray = tray_builder
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {
@@ -638,6 +638,44 @@ mod tests {
         s.parse().unwrap()
     }
 
+    // Test-only fixtures follow TMPDIR and never share paths across runs.
+    struct FixtureDir(PathBuf);
+
+    impl FixtureDir {
+        fn new(name: &str) -> Self {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "relayglance-{name}-{}-{nonce}", std::process::id()
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn fake_hermes(&self) -> (PathBuf, PathBuf) {
+            let binary = self.0.join("hermes");
+            let output = self.0.join("argv.txt");
+            // POSIX quoting is for this controlled test script only; the
+            // product launcher still executes a binary with fixed argv.
+            let quoted = output.to_string_lossy().replace('\'', "'\\''");
+            std::fs::write(&binary, format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{quoted}'\nexit 0\n"
+            )).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            (binary, output)
+        }
+    }
+
+    impl Drop for FixtureDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
     fn nav_guard_allows_loopback() {
         assert!(nav_allowed(&u("http://127.0.0.1:9119/hud")));
@@ -700,40 +738,31 @@ mod tests {
         let _g = lock_env();
         // start_dashboard_bin 必须用固定 argv（无 shell、无插值）。
         // fake 二进制把 argv 写到文件 → 断言参数结构 + 拒绝注入。
-        let fake = std::env::temp_dir().join("hud-fake-hermes");
-        std::fs::write(
-            &fake,
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > /tmp/hud-fake-argv.txt\nexit 0\n",
-        )
-        .unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        let fixture = FixtureDir::new("fixed-argv");
+        let (fake, argv_path) = fixture.fake_hermes();
         std::env::set_var("HUD_DESKTOP_TEST_MODE", "1");
         std::env::set_var("HUD_HERMES_BIN", &fake);
         std::env::set_var("HUD_DASHBOARD_PORT", "9494");  // 空端口 → probe 失败 → spawn
-        let _ = std::fs::remove_file("/tmp/hud-fake-argv.txt");
+        let _ = std::fs::remove_file(&argv_path);
         let pid = maybe_spawn_dashboard()
             .expect("start with fixed argv should work")
             .expect("should spawn (no dashboard at test port)");
         assert!(pid > 0);
         // 等 fake 脚本写完 argv 文件（spawn 异步）
         for _ in 0..20 {
-            if std::path::Path::new("/tmp/hud-fake-argv.txt").exists() {
+            if argv_path.exists() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(50));
         }
         // 固定 argv：dashboard --host 127.0.0.1 --port <p> --no-open（无注入/无 shell 元字符路径）
-        let argv = std::fs::read_to_string("/tmp/hud-fake-argv.txt").unwrap_or_default();
+        let argv = std::fs::read_to_string(&argv_path).unwrap_or_default();
         let parts: Vec<&str> = argv.split_whitespace().collect();
         assert_eq!(parts, vec!["dashboard", "--host", "127.0.0.1", "--port", "9494", "--no-open"]);
         std::env::remove_var("HUD_HERMES_BIN");
         std::env::remove_var("HUD_DESKTOP_TEST_MODE");
         std::env::remove_var("HUD_DASHBOARD_PORT");
-        let _ = std::fs::remove_file("/tmp/hud-fake-argv.txt");
+        let _ = std::fs::remove_file(&argv_path);
     }
 
     #[test]
@@ -741,13 +770,8 @@ mod tests {
         let _g = lock_env();
         // state 显示 stopped → Start 前 Dashboard 变得可达 → spawn count = 0
         std::env::set_var("HUD_DESKTOP_TEST_MODE", "1");
-        let fake = std::env::temp_dir().join("hud-fake-hermes2");
-        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        let fixture = FixtureDir::new("probe-before-spawn");
+        let (fake, argv_path) = fixture.fake_hermes();
         std::env::set_var("HUD_HERMES_BIN", &fake);
         // fake dashboard（root 200 + /health 401 → AuthRequired = 已存在）
         // 动态找空闲端口（避免残留服务器占用固定端口）
@@ -774,7 +798,7 @@ mod tests {
         std::env::set_var("HUD_DASHBOARD_PORT", port.to_string());
         let spawned = maybe_spawn_dashboard().expect("probe ok");
         assert!(spawned.is_none(), "Dashboard reachable → must NOT spawn (spawn count = 0)");
-        assert!(!std::path::Path::new("/tmp/hud-fake-argv.txt").exists());
+        assert!(!argv_path.exists());
         let _ = child.kill();
         let _ = child.wait();
         std::env::remove_var("HUD_HERMES_BIN");
@@ -788,15 +812,10 @@ mod tests {
         // release .app：无 TEST_MODE → HUD_HERMES_BIN / HUD_DESKTOP_TEST_HOME 忽略
         // （不依赖真实 hermes 存在——断言 override 路径未被返回即可，CI 兼容）
         std::env::remove_var("HUD_DESKTOP_TEST_MODE");
-        let fake = std::env::temp_dir().join("hud-fake-hermes3");
-        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        let fixture = FixtureDir::new("ignored-override");
+        let (fake, _) = fixture.fake_hermes();
         std::env::set_var("HUD_HERMES_BIN", &fake);
-        std::env::set_var("HUD_DESKTOP_TEST_HOME", "/tmp/hermes-hud-empty-home");
+        std::env::set_var("HUD_DESKTOP_TEST_HOME", fixture.0.join("empty-home"));
         let old_path = std::env::var("PATH").unwrap_or_default();
         std::env::set_var("PATH", "");
         let found = find_hermes();
@@ -812,13 +831,14 @@ mod tests {
     #[test]
     fn hermes_not_found_fails_closed() {
         let _g = lock_env();
+        let fixture = FixtureDir::new("not-found");
         // TEST_MODE + 不存在 override + PATH 空 + 隔离 HOME → 找不到 → Err
         std::env::set_var("HUD_DESKTOP_TEST_MODE", "1");
         std::env::set_var("HUD_HERMES_BIN", "/nonexistent/hermes");
         std::env::set_var("HUD_DASHBOARD_PORT", "9495");  // 空端口 → probe 失败 → 查 hermes
         let old_path = std::env::var("PATH").unwrap_or_default();
         std::env::set_var("PATH", "");
-        std::env::set_var("HUD_DESKTOP_TEST_HOME", "/tmp/hermes-hud-empty-home");
+        std::env::set_var("HUD_DESKTOP_TEST_HOME", fixture.0.join("empty-home"));
         let r = maybe_spawn_dashboard();
         assert!(r.is_err(), "hermes not found must fail closed");
         std::env::set_var("PATH", &old_path);

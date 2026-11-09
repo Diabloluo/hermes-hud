@@ -1,5 +1,7 @@
 # Uninstall — Hermes HUD Desktop (macOS)
 
+> This page describes the published Hermes HUD Desktop 0.1.0. The renamed 驿览 · RelayGlance 0.1.1 is not yet released; see the [candidate upgrade guide](UPGRADE_RELAYGLANCE.md).
+
 1. Quit Hermes HUD (menu bar tray → **Quit**).
 2. Drag `Hermes HUD` from Applications to Trash (or right-click → Move to
    Trash).
