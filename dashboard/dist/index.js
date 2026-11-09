@@ -1,5 +1,5 @@
 /**
- * Hermes HUD — Dashboard Plugin
+ * RelayGlance (驿览, formerly Hermes HUD) — Dashboard Plugin
  * =============================
  * 本地实时监控指挥中心（13-Tab 计划的 MVP 实现）。
  *
@@ -37,6 +37,7 @@
 
   // English. Source of truth for fallback when a locale is missing a key.
   const EN = {
+    "原 Hermes HUD · 非官方 Hermes 社区观察插件": "Formerly Hermes HUD · Unofficial Hermes community dashboard",
     "事故时间线 (最近 ": "Incident Timeline (latest ",
     "运行": "Runs", "观测运行": "Observed runs",
     "故障": "Critical", "警告": "Warning", "正常": "Normal",
@@ -242,6 +243,7 @@
 
   // French
   const FR = {
+    "原 Hermes HUD · 非官方 Hermes 社区观察插件": "Anciennement Hermes HUD · Tableau de bord communautaire non officiel pour Hermes",
     "事故时间线 (最近 ": "Chronologie des incidents (derniers ",
     "运行": "Exécutions", "观测运行": "Exécutions observées",
     "故障": "Critique", "警告": "Avertissement", "正常": "Normal",
@@ -431,6 +433,7 @@
 
   // Arabic: HUD root provides RTL even when the minimum host has no Arabic UI.
   const AR = {
+    "原 Hermes HUD · 非官方 Hermes 社区观察插件": "Hermes HUD سابقًا · لوحة مراقبة مجتمعية غير رسمية لـ Hermes",
     "事故时间线 (最近 ": "الجدول الزمني للحوادث (الأحدث ",
     "运行": "عمليات التشغيل", "观测运行": "عمليات التشغيل المرصودة",
     "故障": "حرج", "警告": "تحذير", "正常": "طبيعي",
@@ -2123,6 +2126,16 @@
           tt("共 ") + data.total + tt(" 个技能（分页上限 200，可搜索/过滤缩小范围）"))));
   }
 
+  function BrandHeader() {
+    return h("header", { className: "hud-brand" },
+      h("span", { className: "hud-brand-icon", "aria-hidden": "true" }),
+      h("div", { className: "hud-brand-copy" },
+        h("h1", { className: "hud-brand-title" },
+          CURRENT_LOCALE === "zh" ? "驿览 · RelayGlance" : "RelayGlance"),
+        h("p", { className: "hud-brand-subtitle" },
+          tt("原 Hermes HUD · 非官方 Hermes 社区观察插件"))));
+  }
+
   function HudApp() {
     const hostI18n = useI18n();
     const [localeOverride, setLocaleOverride] = useState(function () {
@@ -2224,6 +2237,7 @@
     const cronSum = (snap && snap.cron && snap.cron.summary) || {};
 
     return h("div", { className: "hud-root", lang: locale, dir: locale === "ar" ? "rtl" : "ltr" },
+      h(BrandHeader, null),
       // 顶部状态条
       h("div", { className: "hud-header" },
         h("span", { className: "hud-health-badge " + (health ? healthClass(health.overall) : "") },

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for considering a contribution to Hermes HUD. Keep it small, keep it safe.
+Thanks for considering a contribution to RelayGlance (formerly Hermes HUD). Keep it small, keep it safe.
 
 ## Dev setup
 

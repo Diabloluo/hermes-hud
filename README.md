@@ -1,12 +1,16 @@
 **中文** | [English](README.en.md)
 
-# Hermes HUD 🛰️
+# 驿览 · RelayGlance
 
 > 本地实时监控指挥中心 —— 把 Hermes Agent 的运行状态、Token/费用、模型、记忆、会话、定时任务、渠道、错误和机器健康完整摊开，异常发生时立即看见。
 
 **不是 [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud)。** 那个是独立 TUI。本仓库是官方 `hermes dashboard` 的**用户级插件**：不替换 Dashboard、不改 `~/.hermes/hermes-agent` 核心、Hermes 升级不覆盖插件文件，可用脚本禁用；升级后的运行兼容性仍需核验。
 
 ![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
+
+<img src="dashboard/dist/relayglance-radar.png" alt="驿览雷达图标" width="96" height="96">
+
+**原 Hermes HUD，现展示名为驿览 · RelayGlance。** 这是非官方社区插件。仓库名、插件 ID `hermes-hud`、`/hud` 路由、API 和已有配置/历史数据目录保持不变，无需迁移或重新安装。本次仅调整 Web 插件展示层；已发布的 Desktop Alpha 0.1.0 安装包仍使用旧名称与图标。截图、演示与历史发布说明保留原貌。详见[品牌与兼容边界](docs/branding/RELAYGLANCE.md)。
 
 ## ✨ 核心亮点
 
@@ -23,7 +27,7 @@
 git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
 python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
-# 打开 http://127.0.0.1:9119 → 侧边栏 "Hermes HUD"
+# 打开 http://127.0.0.1:9119 → 侧边栏 "RelayGlance"（已发布 v1.2.3 及更早版本显示 Hermes HUD）
 ```
 
 > 仓库自带预构建前端，无需重新构建 Hermes Web UI。
@@ -85,7 +89,7 @@ python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 
 # 3. 启动 Dashboard（plugin_api.py 后端路由在启动时挂载，需要重启 dashboard 生效）
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
-# 浏览器打开 http://127.0.0.1:9119 → 侧边栏 "Hermes HUD"
+# 浏览器打开 http://127.0.0.1:9119 → 侧边栏 "RelayGlance"（已发布 v1.2.3 及更早版本显示 Hermes HUD）
 
 # 禁用（仅从启用列表移除 HUD，保留其他插件；重启 Dashboard 生效）：
 python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable

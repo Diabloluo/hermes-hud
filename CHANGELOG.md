@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-11-09
+
+### Changed
+- Introduce the display name **RelayGlance / 驿览** (formerly Hermes HUD),
+  with the selected local radar artwork in the Web plugin and current guides.
+  The page includes localized former-name and unofficial-community context.
+- Keep the repository, `hermes-hud` plugin ID, `/hud` route, API, schema,
+  configuration, local history and browser language key unchanged.
+- The published Desktop Alpha 0.1.0 binaries still use their original name
+  and icon; this Web plugin release does not replace or rebuild them.
+
 ## [1.2.3] - 2026-11-09
 
 ### Fixed

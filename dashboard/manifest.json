@@ -1,9 +1,9 @@
 {
   "name": "hermes-hud",
-  "label": "Hermes HUD",
-  "description": "本地实时监控指挥中心：健康总览、实时活动、Token/费用、渠道稳定性、Cron、错误事故、系统资源。Hermes core stores read-only; HUD maintains a separate local telemetry store (~/.hermes/hud/)，不产生外部遥测。",
+  "label": "RelayGlance",
+  "description": "驿览 · RelayGlance（原 Hermes HUD）：非官方 Hermes 社区观察插件，查看运行状态、故障线索与估算费用。Hermes core stores read-only; maintains a separate local telemetry store (~/.hermes/hud/), with no outbound product telemetry.",
   "icon": "Gauge",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "tab": {
     "path": "/hud",
     "position": "after:sessions"
