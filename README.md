@@ -192,7 +192,7 @@ Hermes 现有数据源（只读）
 
 - **Tested: macOS**；Linux 预计可用（社区测试欢迎）；Windows experimental
 - 既定最低版本为 Hermes v0.19.0（Dashboard 插件接口：manifest.json + plugin_api.py + IIFE bundle）；Fresh Install CI 固定此版本，不代表所有更新版本均已验收。
-- **2026-11-09：Hermes 0.23.0 已有依赖环境中的隔离核心兼容检查通过**，范围为插件装载、配置脚本、鉴权 REST/WS 和合成故障恢复；同时发现并为 Cron 30 天汇总准备了修复。此结论不涵盖全新安装、完整 Web/Desktop UI 或完整卸载，见[验收范围与缺口](docs/quality/HERMES_023_COMPATIBILITY_20261109.md)。
+- **2026-11-09：Hermes 0.23.0 已有依赖环境中的隔离核心兼容检查通过**，范围为插件装载、配置脚本、鉴权 REST/WS 和合成故障恢复；同时发现的 Cron 30 天汇总问题已在插件 v1.2.3 修复。此结论不涵盖全新安装、完整 Web/Desktop UI 或完整卸载，见[验收范围与缺口](docs/quality/HERMES_023_COMPATIBILITY_20261109.md)。
 - Hermes 升级不覆盖用户插件文件，但宿主接口仍会变化；升级后需检查兼容性，不能据此保证无需修改。
 - 禁用：`python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable`，然后重启 Dashboard。文件清理及可选告警的处理见 [INSTALL.md](INSTALL.md#卸载)。不要把旧副本留在插件发现目录中。
 

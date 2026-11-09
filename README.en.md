@@ -191,7 +191,7 @@ Hermes data sources (read-only)
 
 - **Tested: macOS**; Linux expected to work (community testing welcome); Windows experimental
 - The established minimum is Hermes Agent 0.19.0 (Dashboard plugin interface: manifest.json + plugin_api.py + IIFE bundle). Fresh Install CI pins this version; it does not certify every later host version.
-- **2026-11-09: isolated core checks passed with an existing Hermes 0.23.0 dependency environment**: plugin loading, config helper, authenticated REST/WS and synthetic failure/recovery. The review also found a Cron 30-day summary defect and prepared a correction. Fresh installation, full Web/Desktop UI and complete uninstall were not covered. See the [acceptance scope and remaining gaps](docs/quality/HERMES_023_COMPATIBILITY_20261109.md).
+- **2026-11-09: isolated core checks passed with an existing Hermes 0.23.0 dependency environment**: plugin loading, config helper, authenticated REST/WS and synthetic failure/recovery. The Cron 30-day summary defect found during that review is fixed in plugin v1.2.3. Fresh installation, full Web/Desktop UI and complete uninstall were not covered. See the [acceptance scope and remaining gaps](docs/quality/HERMES_023_COMPATIBILITY_20261109.md).
 - Hermes upgrades do not overwrite user plugin files, but host interfaces can change. Revalidate compatibility after upgrading.
 - Disable with `python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable`, then restart Dashboard. See [INSTALL.md](INSTALL.md#卸载) for file cleanup and optional alerts. Keep backup copies outside plugin discovery directories.
 

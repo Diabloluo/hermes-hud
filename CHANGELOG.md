@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-09
+
 ### Fixed
 - Parse ISO and legacy epoch timestamps consistently in Cron's 30-day execution
   summary. Old ISO-dated attempts no longer enter the window, and elapsed time
