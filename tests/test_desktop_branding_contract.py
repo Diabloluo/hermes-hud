@@ -177,7 +177,7 @@ def test_bundle_verifier_brand_contract_and_regressions():
     tools = DESKTOP / "tools"
     result = subprocess.run(["bash", str(tools / "test_verify_release_bundle.sh")],
                             capture_output=True, text=True, timeout=15, check=True)
-    assert "16 passed, 0 failed" in result.stdout
+    assert "22 passed, 0 failed" in result.stdout
     result = subprocess.run(["bash", "-c", 'VERIFY_SOURCE=1 source "$1"; printf "%s\\n%s\\n%s\\n" "$EXPECTED_VERSION" "$EXPECTED_PRODUCT_NAME" "$EXPECTED_DMG_NAME"',
                              "test", str(tools / "verify_release_bundle.sh")],
                             capture_output=True, text=True, timeout=15, check=True)

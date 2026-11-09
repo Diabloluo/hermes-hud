@@ -32,7 +32,7 @@ auto-updater or data migration is part of this candidate.
 The updated bundle verifier checks the canonical filename, checksum,
 arm64 architecture, bundle/display/executable identities, version, exact
 radar ICNS bytes, Applications symlink and absence of test hooks. Its
-successful result is explicitly **unsigned verification scope only**.
+successful result is explicitly **structural verification scope only**.
 Use the old release tag's verifier for the historical 0.1.0 DMG.
 
 ## Checks required before release

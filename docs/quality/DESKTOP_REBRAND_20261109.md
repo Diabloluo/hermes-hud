@@ -48,3 +48,11 @@ These checks used isolated source/build/cache/temp/log directories on an
 external work disk, two low-priority build jobs and no live app/service
 changes. They do not constitute GUI, upgrade, notarization or distribution
 approval; final artifact receipts must identify their exact source commit.
+
+The bundle verifier now uses macOS's system-managed read-only, non-browsing
+mount point and parses its device/path receipt. An external custom mount
+point was rejected by macOS despite a valid DMG; the normal system mount
+succeeded without changing disk ownership or security settings. The expanded
+verifier fixtures pass 22 cases, including Unicode paths, ambiguous mounts,
+malformed receipts, empty paths and absent parent devices. Only the recorded
+task-owned device is detached.

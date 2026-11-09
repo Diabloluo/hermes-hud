@@ -59,6 +59,30 @@ sha256_ok "$DMG" "$TMP/SHA256SUMS.txt" "fake.dmg"; t "filename suffix rejected" 
 printf '%s  fake.dmg\n%s  fake.dmg\n' "$GOOD" "$GOOD" > "$TMP/SHA256SUMS.txt"
 sha256_ok "$DMG" "$TMP/SHA256SUMS.txt" "fake.dmg"; t "duplicate checksum rejected" 4 $?
 
+# Structured mount receipts support spaces/non-ASCII names, reject ambiguity,
+# and never invent a device for cleanup.
+python3 - "$TMP" <<'MOUNT_FIXTURE_PY'
+from pathlib import Path
+import plistlib, sys
+root = Path(sys.argv[1])
+good = {"system-entities": [{"dev-entry": "/dev/disk99"},
+        {"dev-entry": "/dev/disk99s1", "mount-point": "/Volumes/驿览 · RelayGlance"}]}
+(root / "mount.plist").write_bytes(plistlib.dumps(good))
+good["system-entities"].append({"dev-entry": "/dev/disk99s2", "mount-point": "/Volumes/other"})
+(root / "ambiguous.plist").write_bytes(plistlib.dumps(good))
+(root / "malformed.plist").write_text("not a plist")
+(root / "empty-mount.plist").write_bytes(plistlib.dumps({"system-entities": [
+    {"dev-entry": "/dev/disk99"}, {"dev-entry": "/dev/disk99s1", "mount-point": ""}]}))
+(root / "no-device.plist").write_bytes(plistlib.dumps({"system-entities": [
+    {"dev-entry": "/dev/disk99s1", "mount-point": "/Volumes/RelayGlance"}]}))
+MOUNT_FIXTURE_PY
+t "mount parent device" "/dev/disk99" "$(mount_info "$TMP/mount.plist" device)"
+t "mount Unicode path" "/Volumes/驿览 · RelayGlance" "$(mount_info "$TMP/mount.plist" mount)"
+mount_info "$TMP/ambiguous.plist" mount >/dev/null; t "ambiguous mount rejected" 1 $?
+mount_info "$TMP/malformed.plist" device >/dev/null; t "malformed receipt rejected" 1 $?
+mount_info "$TMP/empty-mount.plist" mount >/dev/null; t "empty mount path rejected" 1 $?
+mount_info "$TMP/no-device.plist" device >/dev/null; t "missing parent device rejected" 1 $?
+
 echo
 echo "RESULT: $PASSED passed, $FAILED failed"
 [ "$FAILED" = "0" ] && exit 0 || exit 1

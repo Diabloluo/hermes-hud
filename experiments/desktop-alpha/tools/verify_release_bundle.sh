@@ -42,6 +42,28 @@ sha256_ok() {
 # arch_ok <lipo_output> — exactly "arm64" passes; anything else fails.
 arch_ok() { [ "$1" = "arm64" ]; }
 
+# Parse hdiutil's structured receipt rather than guessing the mount point.
+# A parent device is used for cleanup; never detach an unrelated volume.
+mount_info() { # attach_plist device|mount
+  python3 - "$1" "$2" <<'MOUNT_INFO_PY'
+import pathlib, plistlib, re, sys
+try:
+    entities = plistlib.loads(pathlib.Path(sys.argv[1]).read_bytes())["system-entities"]
+    if sys.argv[2] == "device":
+        values = [e["dev-entry"] for e in entities
+                  if re.fullmatch(r"/dev/disk[0-9]+", e.get("dev-entry", ""))]
+    elif sys.argv[2] == "mount":
+        values = [e["mount-point"] for e in entities if e.get("mount-point")]
+    else:
+        raise ValueError("unknown field")
+    if len(values) != 1 or not values[0].startswith("/") or "\n" in values[0]:
+        raise ValueError("expected exactly one absolute device/mount path")
+    print(values[0])
+except (KeyError, ValueError, OSError, plistlib.InvalidFileException):
+    sys.exit(1)
+MOUNT_INFO_PY
+}
+
 if [ "${VERIFY_SOURCE:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
@@ -82,21 +104,36 @@ esac
 # Fail closed before mounting an incorrectly named or unverified image.
 [ "$FAIL" = "0" ] || { echo "RESULT: FAIL — NOT FOR DISTRIBUTION"; exit 1; }
 
-# 3. mount DMG
-MNT=$(mktemp -d "${TMPDIR:-/tmp}/relayglance-verify.XXXXXX")
-MOUNTED=0
+# 3. Read-only mount at the system-managed /Volumes location. Some macOS
+# versions reject custom mount points on external APFS volumes with ownership
+# disabled. Do not change disk ownership/security settings to work around it.
+ATTACH_PLIST=$(mktemp "${TMPDIR:-/tmp}/relayglance-attach.XXXXXX") || exit 1
+ATTACH_LOG="${ATTACH_PLIST}.stderr"
+DEVICE=""
 cleanup() {
-  if [ "$MOUNTED" = "1" ]; then
-    hdiutil detach "$MNT" >/dev/null 2>&1 || return
+  local status=$?
+  if [ -n "$DEVICE" ]; then
+    if ! hdiutil detach "$DEVICE" >/dev/null 2>&1; then
+      echo "cleanup failed: could not detach task-owned $DEVICE" >&2
+      status=1
+    fi
   fi
-  rmdir "$MNT" 2>/dev/null || true
+  rm -f "$ATTACH_PLIST" "$ATTACH_LOG"
+  trap - EXIT
+  exit "$status"
 }
 trap cleanup EXIT
-if hdiutil attach "$DMG" -nobrowse -mountpoint "$MNT" >/dev/null 2>&1; then
-  MOUNTED=1
-  pass "DMG mounts"
+if hdiutil attach "$DMG" -readonly -nobrowse -plist >"$ATTACH_PLIST" 2>"$ATTACH_LOG"; then
+  DEVICE=$(mount_info "$ATTACH_PLIST" device) || {
+    fail "attached device receipt"; exit 1;
+  }
+  MNT=$(mount_info "$ATTACH_PLIST" mount) || {
+    fail "single mounted volume receipt"; exit 1;
+  }
+  pass "DMG mounts read-only"
 else
   fail "DMG mounts"
+  cat "$ATTACH_LOG" >&2
   echo "cannot continue without mounted DMG"
   exit 1
 fi
@@ -168,5 +205,5 @@ if [ "$FAIL" = "1" ]; then
   exit 1
 fi
 echo
-echo "RESULT: PASS (unsigned verification scope) — UNSIGNED / NOT FOR DISTRIBUTION"
+echo "RESULT: PASS (structure verification only) — NOT A DISTRIBUTION APPROVAL"
 exit 0
