@@ -1,12 +1,16 @@
 **English** | [中文](README.md)
 
-# Hermes HUD 🛰️
+# RelayGlance · 驿览
 
 > A local, real-time monitoring command center for Hermes Agent — health overview, token/cost, models, memory, sessions, cron jobs, channels, errors, and machine health at a glance. When something goes wrong, you see it immediately.
 
 **Not [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud).** That project is a standalone TUI. This repo is a **user-level plugin** for the official `hermes dashboard` — it does not replace the Dashboard, does not modify the `~/.hermes/hermes-agent` core, keeps its files separate from Hermes upgrades, and can be disabled with the helper script. Runtime compatibility still needs checking after host upgrades.
 
 ![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
+
+<img src="dashboard/dist/relayglance-radar.png" alt="RelayGlance radar icon" width="96" height="96">
+
+**Formerly Hermes HUD; now displayed as RelayGlance (驿览).** This is an unofficial community plugin. The repository, `hermes-hud` plugin ID, `/hud` route, APIs, configuration and history directories remain unchanged; no migration or reinstall is needed. This change covers the Web plugin only. The released Desktop Alpha 0.1.0 binaries still use their original name and icon. Historical screenshots, demos and release notes remain unchanged. See the [branding and compatibility boundary](docs/branding/RELAYGLANCE.md).
 
 ## ✨ Highlights
 
@@ -23,7 +27,7 @@
 git clone https://github.com/Diabloluo/hermes-hud ~/.hermes/plugins/hermes-hud
 python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
-# Open http://127.0.0.1:9119 → "Hermes HUD" in the sidebar
+# Open http://127.0.0.1:9119 → "RelayGlance" in the sidebar (published v1.2.3 and earlier: "Hermes HUD")
 ```
 
 > Prebuilt frontend ships in the repo — no web UI rebuild needed.
@@ -95,7 +99,7 @@ python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 
 # 3. Start the Dashboard (backend API routes mount at startup, so restart it)
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
-# Open http://127.0.0.1:9119 → "Hermes HUD" in the sidebar
+# Open http://127.0.0.1:9119 → "RelayGlance" in the sidebar (published v1.2.3 and earlier: "Hermes HUD")
 
 # Disable (removes only HUD from the enabled list; restart Dashboard afterward):
 python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable

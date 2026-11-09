@@ -150,6 +150,14 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
              "!document.querySelector('.hud-health-badge').textContent.includes('加载中')")
     assert cdp.eval("document.querySelector('.hud-root').dir") == direction
     assert cdp.eval("document.querySelector('.hud-root').lang") == locale
+    assert cdp.eval("document.querySelectorAll('.hud-brand').length") == 1
+    assert cdp.eval("document.querySelector('.hud-brand-title').textContent") == (
+        "驿览 · RelayGlance" if locale == "zh" else "RelayGlance")
+    # Exercise the host's real plugin asset route, not merely a CSS literal.
+    cdp.eval("(() => { const url=getComputedStyle(document.querySelector('.hud-brand-icon'))"
+             ".backgroundImage.slice(5,-2); window.__brandImage=new Image();"
+             "window.__brandImage.src=url; })()")
+    wait_for(cdp, "window.__brandImage.complete && window.__brandImage.naturalWidth === 1254")
     # Capture uncaught browser errors before traversing every HUD tab.
     cdp.eval("window.__hudErrors=[]; window.addEventListener('error', e=>"
              "window.__hudErrors.push(e.message)); window.addEventListener('unhandledrejection',"

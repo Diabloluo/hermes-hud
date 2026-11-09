@@ -1,10 +1,10 @@
 # 上手 5 分钟（First 5 Minutes）
 
-安装完成后（见 [INSTALL.md](INSTALL.md)），用 5 分钟熟悉 HUD 怎么看、怎么用。
+安装完成后（见 [INSTALL.md](INSTALL.md)），用 5 分钟熟悉驿览 · RelayGlance（原 Hermes HUD）怎么看、怎么用。
 
 ## 第 0 分钟：打开
 
-浏览器打开 **http://127.0.0.1:9119** → 侧边栏点 **Hermes HUD**。
+浏览器打开 **http://127.0.0.1:9119** → 侧边栏点 **RelayGlance**（已发布 v1.2.3 及更早版本为 **Hermes HUD**）。
 页面顶部状态条：健康徽章（绿=正常 / 黄=警告 / 红=故障）+ 今日费用 + 模式（WS 实时）。
 
 ## 第 1 分钟：指挥中心（默认页）

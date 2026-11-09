@@ -1,6 +1,6 @@
 # 安装指南（Install）
 
-面向第一次安装 Hermes HUD 的用户。安装路径最初以 HUD v1.1.0 在全新隔离环境验证；Fresh Install CI 仍固定 Hermes 0.19.0。2026-11-09 对 Hermes 0.23.0 的检查使用已有依赖环境，只覆盖隔离核心链路，不能代替全新安装验收。详见[兼容检查范围](docs/quality/HERMES_023_COMPATIBILITY_20261109.md)。
+面向第一次安装驿览 · RelayGlance（原 Hermes HUD）的用户。安装路径最初以 HUD v1.1.0 在全新隔离环境验证；Fresh Install CI 仍固定 Hermes 0.19.0。2026-11-09 对 Hermes 0.23.0 的检查使用已有依赖环境，只覆盖隔离核心链路，不能代替全新安装验收。详见[兼容检查范围](docs/quality/HERMES_023_COMPATIBILITY_20261109.md)。
 
 ## 前置要求
 
@@ -15,7 +15,7 @@
 > - **原生插件命令**以 `plugin.yaml` / `plugin.yml` / `plugin.json` 等原生 manifest 发现插件
 > - **Dashboard 插件**（`manifest.json` + `plugin_api.py`）通过 config 的 `plugins.enabled` 白名单启用
 >
-> Hermes HUD 当前只有 **Dashboard 插件** manifest。0.23.0 隔离实测中，
+> RelayGlance 当前只有 **Dashboard 插件** manifest。0.23.0 隔离实测中，
 > `hermes plugins disable hermes-hud` 返回 `No plugin named 'hermes-hud'`，未改变配置；旧版本也可能报 "Plugin not installed or bundled"。请使用下方仓库自带脚本，不用原生插件命令替代。
 
 ## 安装（3 步）
@@ -44,7 +44,7 @@ python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 ```
 
-打开 **http://127.0.0.1:9119** → 侧边栏出现 **Hermes HUD** 即成功。
+打开 **http://127.0.0.1:9119** → 侧边栏出现 **RelayGlance**（已发布 v1.2.3 及更早版本为 **Hermes HUD**）。再打开 `/hud`，确认页面和状态数据能正常加载；仅出现菜单不代表完整验收。
 
 > 仓库自带预构建前端（`dashboard/dist/`），**无需**重新构建 Hermes Web UI。
 > 若 Dashboard 已在运行，重启它（如 launchd 托管：`launchctl kickstart -k gui/$(id -u)/ai.hermes.dashboard`）。
@@ -96,3 +96,7 @@ cd ~/.hermes/plugins/hermes-hud && git pull
 ```
 
 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 品牌名称与旧安装
+
+新展示名为驿览 · RelayGlance；技术标识和目录仍使用 `hermes-hud`。不要改名插件目录、配置启用项或数据库来配合展示名。已发布 Desktop Alpha 的名称和图标未改。详见[品牌与兼容边界](docs/branding/RELAYGLANCE.md)。
