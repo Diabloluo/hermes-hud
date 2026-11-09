@@ -4,7 +4,7 @@
 
 > A local, real-time monitoring command center for Hermes Agent — health overview, token/cost, models, memory, sessions, cron jobs, channels, errors, and machine health at a glance. When something goes wrong, you see it immediately.
 
-**Not [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud).** That project is a standalone TUI. This repo is a **user-level plugin** for the official `hermes dashboard` — it does not replace the Dashboard, does not modify the `~/.hermes/hermes-agent` core, survives Hermes upgrades, and uninstalls in one command.
+**Not [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud).** That project is a standalone TUI. This repo is a **user-level plugin** for the official `hermes dashboard` — it does not replace the Dashboard, does not modify the `~/.hermes/hermes-agent` core, keeps its files separate from Hermes upgrades, and can be disabled with the helper script. Runtime compatibility still needs checking after host upgrades.
 
 ![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
 
@@ -70,10 +70,12 @@ cron jobs, channels, errors and incidents.
 |---|---|
 | ◉ Overview | Health score (normal/warning/critical), Gateway/channel/cron status, today's token/cost, 30 health checks, incident timeline, system mini-cards |
 | ⚡ Live | Active sessions, 2s incremental event stream (WebSocket + polling fallback), recent tool calls |
-| ¥ Token & Cost | 7/30/90-day trends, per-model / per-aux-task aggregation, costs labeled "estimated / actual / unbilled" |
+| ¥ Token & Cost | Cost Intelligence: today / 24h / 7d / 30d / all-time estimates, daily trends, model distribution, Top Sessions and budget views, with pricing coverage and attribution-aware time windows |
 | ☰ Sessions | Search, pagination, session detail (message preview + model usage) |
+| 🕒 Timeline | Session / skill / tool / incident events, filters, details and new-event indicators; observed events only |
 | 🧠 Memory | MEMORY.md/USER.md metadata, lock-file health |
 | ⚒ Skills | Skill directory statistics, category filtering and local skill list |
+| 📊 Skill Analytics | Registered / observed skills, runs, success rate, time ranges and coverage warnings; inventory joined to observed runtime data |
 | ⏱ Cron | Job enabled state, schedules, failure counts and execution history (claimed→running→completed/failed) |
 | ⇄ Channels | Telegram/Feishu "connected but jittery" correctly highlighted in yellow (not masked by a connected state) |
 | ⚠ Errors & Incidents | 30-min error count, fingerprint aggregation, incident timeline (recovered ones are kept), redacted log tail |
@@ -95,7 +97,7 @@ python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # Open http://127.0.0.1:9119 → "Hermes HUD" in the sidebar
 
-# Uninstall (removes only HUD, keeps every other plugin):
+# Disable (removes only HUD from the enabled list; restart Dashboard afterward):
 python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable
 ```
 
@@ -162,7 +164,8 @@ Hermes data sources (read-only)
 
 ## 📊 Data accounting
 
-- **Three cost buckets**: `actual` (provider billing) / `estimated` (per-model price table) / `unbilled`. Without billing data everything is labeled "local estimate"
+- Field nullability, pricing completeness and sampling states are defined in the [HUD API data contract](docs/architecture/HUD_API_DATA_CONTRACT.md). Unknown values must not become zero cost or healthy status.
+- **Cost provenance and completeness**: estimates sum only Hermes-recorded rows with known pricing provenance; historical costs are not recalculated from current price lists. `actual_cost` is a recorded, unverified value (`recorded_unverified`), not a provider invoice or a substitute for unknown pricing. A known subtotal of `0` with `cost_complete=false` does not mean free usage; unavailable sources retain `null`.
 - **No double counting**: main sessions come from `sessions`; auxiliary calls only from `session_model_usage.task != ''` (`task=''` rows duplicate main-session billing and are excluded); API calls sum the database's `api_call_count`
 - **Statistics timezone**: `HUD_TIMEZONE` (e.g. `Asia/Shanghai`) > system local timezone > UTC; UTC epochs are converted only at query time
 - **state.db fully read-only**: `mode=ro` + short timeout + `query_only`, never blocks the Gateway
@@ -187,10 +190,10 @@ Hermes data sources (read-only)
 ## 🧩 Compatibility
 
 - **Tested: macOS**; Linux expected to work (community testing welcome); Windows experimental
-- Hermes Agent ≥ 0.19.0
-  (Dashboard plugin SDK: manifest.json + plugin_api.py + IIFE bundle)
-- The plugin itself survives Hermes upgrades; rebuild the web UI only if needed (`npm run build`)
-- Full uninstall: `hermes plugins disable hermes-hud` + remove the plugin directory
+- The established minimum is Hermes Agent 0.19.0 (Dashboard plugin interface: manifest.json + plugin_api.py + IIFE bundle). Fresh Install CI pins this version; it does not certify every later host version.
+- **2026-11-09: isolated core checks passed with an existing Hermes 0.23.0 dependency environment**: plugin loading, config helper, authenticated REST/WS and synthetic failure/recovery. The review also found a Cron 30-day summary defect and prepared a correction. Fresh installation, full Web/Desktop UI and complete uninstall were not covered. See the [acceptance scope and remaining gaps](docs/quality/HERMES_023_COMPATIBILITY_20261109.md).
+- Hermes upgrades do not overwrite user plugin files, but host interfaces can change. Revalidate compatibility after upgrading.
+- Disable with `python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable`, then restart Dashboard. See [INSTALL.md](INSTALL.md#卸载) for file cleanup and optional alerts. Keep backup copies outside plugin discovery directories.
 
 ## 🤝 Community
 

@@ -4,7 +4,7 @@
 
 > 本地实时监控指挥中心 —— 把 Hermes Agent 的运行状态、Token/费用、模型、记忆、会话、定时任务、渠道、错误和机器健康完整摊开，异常发生时立即看见。
 
-**不是 [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud)。** 那个是独立 TUI。本仓库是官方 `hermes dashboard` 的**用户级插件**：不替换 Dashboard、不改 `~/.hermes/hermes-agent` 核心、Hermes 升级不覆盖、一条命令卸载。
+**不是 [joeynyc/hermes-hud](https://github.com/joeynyc/hermes-hud)。** 那个是独立 TUI。本仓库是官方 `hermes dashboard` 的**用户级插件**：不替换 Dashboard、不改 `~/.hermes/hermes-agent` 核心、Hermes 升级不覆盖插件文件，可用脚本禁用；升级后的运行兼容性仍需核验。
 
 ![release](https://img.shields.io/github/v/release/Diabloluo/hermes-hud?label=release) ![ci](https://img.shields.io/github/actions/workflow/status/Diabloluo/hermes-hud/ci.yml?label=CI) ![license](https://img.shields.io/github/license/Diabloluo/hermes-hud) ![stars](https://img.shields.io/github/stars/Diabloluo/hermes-hud) ![platform](https://img.shields.io/badge/Tested-macOS-2ea44f)
 
@@ -14,7 +14,7 @@
 - 🌐 **四语 HUD**：中文、英文、法文、阿拉伯文（RTL）。默认跟随 Dashboard，也可在 HUD 设置页独立选择，兼容旧版宿主。感谢 [@Manaf-Alkadi](https://github.com/Manaf-Alkadi) 提交 [PR #26](https://github.com/Diabloluo/hermes-hud/pull/26)。
 - ⚡ **2 秒级实时**：共享快照缓存 + WebSocket 增量事件流，REST 与 WS 不重复采集
 - 🔒 **严格只读边界**：Hermes 核心数据全程只读（`mode=ro` + 不锁 Gateway）；日志/路径先脱敏、指纹在脱敏后生成，raw secret 零出口
-- 📊 **费用口径可信**：主/辅调用不重复计数、`api_call_count` 累计、估算/实际/未计价三类分开标注
+- 📊 **费用口径可信**：主/辅调用不重复计数、`api_call_count` 累计；已知估算小计、未验证记录值与未知定价分开，不当作供应商账单
 - 🚨 **主动告警**：可选 `hud_alert.py` 把新事故/升级/恢复实时推到 Telegram + 飞书（带防抖与恢复确认状态机）
 
 ## 🚀 Quick Start
@@ -87,7 +87,7 @@ python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py enable
 hermes dashboard --host 127.0.0.1 --port 9119 --no-open
 # 浏览器打开 http://127.0.0.1:9119 → 侧边栏 "Hermes HUD"
 
-# 卸载（只移除 HUD，其他插件全部保留）：
+# 禁用（仅从启用列表移除 HUD，保留其他插件；重启 Dashboard 生效）：
 python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable
 ```
 
@@ -158,7 +158,7 @@ Hermes 现有数据源（只读）
 ## 📊 数据口径
 
 - API 字段的可空性、费用完整性与采样状态见 [HUD API 数据契约](docs/architecture/HUD_API_DATA_CONTRACT.md)；调用方不得把未知值转换成零费用或健康状态。
-- **费用三类分开**：`实际`（provider 账单）/ `估算`（按模型价表）/ `未计价`。无账单数据时一律标"本地估算"
+- **费用按来源与完整性区分**：估算费用只累计 Hermes 已记录且有定价来源的行，不按当前价表重算历史。`actual_cost` 是已记录但未验证的值（`recorded_unverified`），不是供应商账单，也不能填补未知定价。已知小计为 `0` 但 `cost_complete=false` 时，不代表免费；数据源不可用时保留 `null`。
 - **主/辅不重复计数**：主会话读 `sessions`，辅助调用只读 `session_model_usage.task != ''`
   （`task=''` 是主会话重复记账，不计入），API calls 用数据库 `api_call_count` 累计
 - **统计时区**：`HUD_TIMEZONE`（如 `Asia/Shanghai`）> 系统本地时区 > UTC；DB 的 UTC epoch 仅查询时转换
@@ -191,9 +191,10 @@ Hermes 现有数据源（只读）
 ## 🧩 兼容性
 
 - **Tested: macOS**；Linux 预计可用（社区测试欢迎）；Windows experimental
-- Hermes v0.20+（Dashboard 插件 SDK：manifest.json + plugin_api.py + IIFE bundle）
-- 升级 Hermes 后插件本体无需改动；若 Web UI 需重建再 `npm run build`
-- 完整卸载：`hermes plugins disable hermes-hud` + 删除插件目录
+- 既定最低版本为 Hermes v0.19.0（Dashboard 插件接口：manifest.json + plugin_api.py + IIFE bundle）；Fresh Install CI 固定此版本，不代表所有更新版本均已验收。
+- **2026-11-09：Hermes 0.23.0 已有依赖环境中的隔离核心兼容检查通过**，范围为插件装载、配置脚本、鉴权 REST/WS 和合成故障恢复；同时发现并为 Cron 30 天汇总准备了修复。此结论不涵盖全新安装、完整 Web/Desktop UI 或完整卸载，见[验收范围与缺口](docs/quality/HERMES_023_COMPATIBILITY_20261109.md)。
+- Hermes 升级不覆盖用户插件文件，但宿主接口仍会变化；升级后需检查兼容性，不能据此保证无需修改。
+- 禁用：`python3 ~/.hermes/plugins/hermes-hud/scripts/enable_dashboard_plugin.py disable`，然后重启 Dashboard。文件清理及可选告警的处理见 [INSTALL.md](INSTALL.md#卸载)。不要把旧副本留在插件发现目录中。
 
 ## 🤝 社区
 
