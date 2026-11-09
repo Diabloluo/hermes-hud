@@ -3,7 +3,7 @@
   "label": "RelayGlance",
   "description": "驿览 · RelayGlance（原 Hermes HUD）：非官方 Hermes 社区观察插件，查看运行状态、故障线索与估算费用。Hermes core stores read-only; maintains a separate local telemetry store (~/.hermes/hud/), with no outbound product telemetry.",
   "icon": "Gauge",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "tab": {
     "path": "/hud",
     "position": "after:sessions"

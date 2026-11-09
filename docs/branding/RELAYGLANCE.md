@@ -25,7 +25,7 @@ Hermes 0.23's sidebar accepts a fixed set of icon names, not PNG paths. This cha
 
 The released **Desktop Alpha 0.1.0** app, DMG, Dock/tray icons and application name are unchanged. Do not describe this Web change as a new Desktop binary. A future Desktop rebrand requires separate icon production, versioning, replacement/launch tests, signing and notarization; keeping the Bundle ID alone is not sufficient.
 
-This branch starts from plugin v1.2.3. Version selection and release are separate steps; the published v1.2.3 tag and files are not overwritten. The header and documentation on this branch describe the candidate, not proof of a live deployment.
+Web branding is versioned separately as plugin v1.2.4, based on v1.2.3. The published v1.2.3 tag and files are not overwritten. Source code and a public release are not proof of a live deployment; check the installed instance separately.
 
 ## 定位 / Claims
 
