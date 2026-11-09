@@ -5,6 +5,22 @@
 
 ## [Unreleased]
 
+### Fixed
+- Parse ISO and legacy epoch timestamps consistently in Cron's 30-day execution
+  summary. Old ISO-dated attempts no longer enter the window, and elapsed time
+  is calculated from parsed timestamps rather than SQLite text subtraction.
+  Non-finite timestamps and invalid durations cannot contaminate Cron JSON.
+- Correct Dashboard-plugin disable instructions and clarify recorded cost,
+  current time-range, Desktop Alpha, and host-compatibility documentation.
+
+### Validation
+- Hermes 0.23.0 core loading, REST authentication, live WebSocket updates, and
+  synthetic Cron failure/recovery were checked in an isolated profile using an
+  existing dependency environment. This is not a fresh-install, full browser,
+  Desktop UI, or complete uninstall certification. See the
+  [bounded compatibility record](docs/quality/HERMES_023_COMPATIBILITY_20261109.md).
+- API schema remains 1; no host migration or Desktop binary change is included.
+
 ## [1.2.2] - 2026-11-01
 
 ### Fixed

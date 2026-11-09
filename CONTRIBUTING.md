@@ -8,7 +8,7 @@ Thanks for considering a contribution to Hermes HUD. Keep it small, keep it safe
 git clone https://github.com/Diabloluo/hermes-hud
 cd hermes-hud
 python3 -m venv .venv && source .venv/bin/activate
-pip install pytest
+pip install pytest fastapi httpx
 ```
 
 The plugin runs as a user-level Dashboard plugin at `~/.hermes/plugins/hermes-hud/`
@@ -18,17 +18,20 @@ The plugin runs as a user-level Dashboard plugin at `~/.hermes/plugins/hermes-hu
 ## Tests
 
 ```bash
-python -m pytest tests/ -q --ignore=tests/performance_verify.py
+HERMES_HOME="$(mktemp -d)" python -m pytest tests/ -q \
+  --ignore=tests/performance_verify.py \
+  --deselect=tests/test_secrets_scan.py::test_real_telemetry_readonly_scan
 ```
 
-- All tests run against `tmp_path` fixtures — **no real `~/.hermes`, no network, no real Telegram/Feishu**.
-- Keep it that way: never add a test that reads live data or sends real requests.
+- Use an isolated `HERMES_HOME` for local runs. The existing `test_real_telemetry_readonly_scan` reads `Path.home() / ".hermes/hud"` directly, so changing `HERMES_HOME` alone does not isolate it. The command above explicitly excludes it. Run that optional live-data scan only with separate authorization.
+- GUI / real-CLI tests may skip when their prerequisites are absent. Report skipped or excluded checks separately; a unit-suite pass is not complete installation or UI acceptance.
+- New tests must use synthetic fixtures, not live data or real Telegram/Feishu requests.
 - `tests/performance_verify.py` is a manual 10-minute benchmark; it never runs in CI.
 
 ## PR workflow
 
 1. Branch from `main`: `git switch -c fix/your-change`
-2. Make the change + tests; run the full suite (must stay 84+ passed, 0 failed)
+2. Make the change + tests; run the applicable suite with zero failures and report any skips/exclusions. Do not treat an old fixed test count as coverage.
 3. Push and open a PR with a short, honest description
 4. CI runs pytest across 3 Python versions × 2 OSes plus static checks; wait for green
 5. GitGuardian scans every PR; if it flags something, fix the actual issue —

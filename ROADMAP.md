@@ -1,29 +1,41 @@
 # Roadmap
 
-> Roadmap items are exploratory and do not represent committed delivery
-> dates. External collectors are a direction, not an immediate build.
+Updated 2026-11-09. Items below are not committed delivery dates. Maintenance
+comes before expanding the product; the [frozen strategy](docs/strategy/STRATEGIC_DIRECTION.md)
+does not authorize a rename, a second adapter or a Plugin SDK build.
+
+## Completed
+
+- macOS Desktop Alpha 0.1.0 public release, Developer ID signing and Apple
+  notarization (`desktop-v0.1.0-alpha`, 2026-08-29).
+- HUD UI languages: Chinese, English, French and Arabic (RTL), shipped in
+  plugin 1.2.0 (2026-09-28). Host UI language coverage still depends on Hermes.
+- Plugin 1.2.2 data-contract corrections (2026-11-01); Desktop remains 0.1.0.
 
 ## Now
 
-- macOS Desktop distribution / signing / notarization (DR-4/DR-5 path)
-- Desktop Alpha public release readiness (Go/No-Go gate)
-- Community feedback on Timeline / Skill Analytics / Cost Intelligence
-- Linux real-machine compatibility verification (community testing welcome)
+- Small compatibility and correctness fixes for the existing Hermes adapter,
+  including the Cron aggregate timestamp defect found in the
+  [0.23.0 check](docs/quality/HERMES_023_COMPATIBILITY_20261109.md).
+- Keep cost provenance, unknown-state handling and incident recovery reliable.
+- Community feedback on Timeline / Skill Analytics / Cost Intelligence.
+- Record fresh-install, Web UI and Desktop acceptance separately from backend
+  checks. The 0.23.0 isolated backend check does not complete those stages.
 
-## Next
+## Next checks (not shipping commitments)
 
-- Plugin SDK v1
-- first external collector design (Observer Core multi-agent direction)
-- Linux / Windows Desktop feasibility
-- One-command installer for the plugin + alert helper
-- Tool-level start/end events (precise tool lifecycle)
+- A pinned Hermes 0.23 compatibility lane alongside the existing 0.19
+  fresh-install lane, without silently dropping older-version coverage.
+- Linux real-machine compatibility verification (community testing welcome).
+- Refresh external-use evidence without equating downloads or stars with users;
+  keep historical validation snapshots intact.
 
-## Exploring
+## Exploring (not active development)
 
-- multi-agent observability (Claude Code · Codex · OpenAI Agents · LangGraph
-  · other collectors)
-- collector ecosystem
-- marketplace / templates
-- mobile companion
-- Billing sync with provider dashboards (actual cost source)
-- I18n for the HUD UI itself (beyond the current Chinese-first UI)
+- Plugin SDK / first external collector only after the existing strategy's
+  demand gate and a separate product decision.
+- Multi-agent observability, collector ecosystem and marketplace / templates.
+- Linux / Windows Desktop feasibility and a mobile companion.
+- One-command plugin + alert-helper installer and precise tool start/end events.
+- Billing sync with provider dashboards, if a verified billing source is added.
+  Current recorded costs are not provider invoices.

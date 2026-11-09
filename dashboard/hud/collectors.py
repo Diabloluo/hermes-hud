@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -673,6 +674,16 @@ def collect_cron_jobs(locale: str = "zh") -> dict:
 
 def collect_cron_executions(limit: int = 60, locale: str = "zh") -> dict:
     """executions.db 执行历史。"""
+    def execution_ts(value: Any) -> Optional[float]:
+        parsed = _parse_ts(value)
+        return parsed if parsed is not None and math.isfinite(parsed) else None
+
+    def elapsed(start: Optional[float], finish: Optional[float]) -> Optional[float]:
+        if start is None or finish is None:
+            return None
+        duration = finish - start
+        return duration if math.isfinite(duration) and duration >= 0 else None
+
     conn = _ro_connect(HERMES_HOME / "cron" / "executions.db")
     if conn is None:
         return {"error": t("err_executions_conn_failed", locale), "executions": [], "summary": {}}
@@ -687,32 +698,39 @@ def collect_cron_executions(limit: int = 60, locale: str = "zh") -> dict:
         out = []
         for r in rows:
             eid, job_id, source, status, claimed_at, started_at, finished_at, pid, error = r
-            st = _parse_ts(started_at) or _parse_ts(claimed_at)
-            ft = _parse_ts(finished_at)
+            st = execution_ts(started_at)
+            if st is None:
+                st = execution_ts(claimed_at)
+            ft = execution_ts(finished_at)
             out.append({
                 "id": eid, "job_id": job_id, "source": source, "status": status,
-                "claimed_at": _parse_ts(claimed_at), "started_at": st,
+                "claimed_at": execution_ts(claimed_at), "started_at": st,
                 "finished_at": ft, "pid": pid,
-                "duration": (ft - st) if (ft and st) else None,
+                "duration": elapsed(st, ft),
                 "error": redact_line(str(error or ""))[:200] or None,
             })
         # 任务成功率统计（最近 30 天）
         cutoff = time.time() - 30 * 86400
-        cur.execute(
-            "SELECT job_id, status, COUNT(*),"
-            " SUM(CASE WHEN started_at IS NOT NULL AND finished_at IS NOT NULL"
-            "     THEN (finished_at - started_at) END)"
-            " FROM executions WHERE claimed_at >= ? GROUP BY job_id, status",
-            (cutoff,),
-        )
+        # Hermes stores aware ISO strings in current ledgers; older fixtures
+        # may contain epoch numbers. SQLite numeric comparison/subtraction on
+        # TEXT includes old ISO rows and reports zero elapsed time. Parse both
+        # representations explicitly, as for the per-execution view above.
+        cur.execute("SELECT job_id, status, claimed_at, started_at, finished_at"
+                    " FROM executions")
         stats: dict[str, dict] = {}
-        for job_id, status, cnt, dur_sum in cur.fetchall():
+        for job_id, status, claimed_at, started_at, finished_at in cur:
+            claimed = execution_ts(claimed_at)
+            if claimed is None or claimed < cutoff:
+                continue
             s = stats.setdefault(job_id, {"ok": 0, "completed": 0, "failed": 0,
                                           "unknown": 0, "total_seconds": 0.0, "runs": 0})
-            s[status if status in ("completed", "failed", "unknown") else "unknown"] += cnt
-            s["runs"] += cnt
-            if dur_sum:
-                s["total_seconds"] += dur_sum
+            s[status if status in ("completed", "failed", "unknown") else "unknown"] += 1
+            s["runs"] += 1
+            duration = elapsed(execution_ts(started_at), execution_ts(finished_at))
+            if duration is not None:
+                total = s["total_seconds"] + duration
+                if math.isfinite(total):
+                    s["total_seconds"] = total
         return {"executions": out, "summary": stats}
     except Exception as exc:
         return {"error": str(exc), "executions": [], "summary": {}}
