@@ -23,8 +23,8 @@ def test_manifest_keeps_runtime_identity():
     assert manifest["api"] == "plugin_api.py"
     desktop = json.loads((ROOT / "experiments/desktop-alpha/tauri.conf.json").read_text())
     assert desktop["identifier"] == "com.diabloluo.hermes-hud-desktop"
-    assert desktop["version"] == "0.1.0"
-    assert desktop["productName"] == "Hermes HUD"
+    assert desktop["version"] == "0.1.1"
+    assert desktop["productName"] == "驿览 · RelayGlance"
 
 
 def test_selected_radar_asset_is_unchanged_and_relative():

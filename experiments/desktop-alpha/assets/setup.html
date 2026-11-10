@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>Hermes HUD</title>
+<title>驿览 · RelayGlance</title>
 <style>
   body { font-family: -apple-system, "PingFang SC", sans-serif; background: #0d1117; color: #e6edf3;
          display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
@@ -10,7 +10,7 @@
   .logo {
     width: 88px; height: 88px; margin: 0 auto 8px;
   }
-  .logo svg { width: 100%; height: 100%; }
+  .logo img { display: block; width: 100%; height: 100%; border-radius: 20%; }
   h1 { font-size: 20px; margin: 12px 0 4px; }
   .ver { font-size: 12px; color: #8b949e; margin-bottom: 16px; }
   .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
@@ -31,38 +31,17 @@
 </head>
 <body>
 <div class="card">
-  <!-- Observer Core Brand Mark（中央 ring + 3 nodes 120° + 分段轨道弧） -->
   <div class="logo">
-    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-      <rect x="2" y="2" width="96" height="96" rx="20" fill="#1A1F2A"/>
-      <defs>
-        <linearGradient id="oc-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#00E5FF"/>
-          <stop offset="100%" stop-color="#6CFFB6"/>
-        </linearGradient>
-      </defs>
-      <!-- 三段轨道弧（缺口 120° 各 60°） -->
-      <path d="M 50 22 A 28 28 0 0 1 72 40" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
-      <path d="M 72 40 A 28 28 0 0 1 74 68" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
-      <path d="M 74 68 A 28 28 0 0 1 26 68" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
-      <path d="M 26 68 A 28 28 0 0 1 28 40" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
-      <path d="M 28 40 A 28 28 0 0 1 50 22" fill="none" stroke="url(#oc-grad)" stroke-width="7" stroke-linecap="round"/>
-      <!-- 3 nodes（120° 分布） -->
-      <circle cx="50" cy="22" r="6.5" fill="#6CFFB6"/>
-      <circle cx="74" cy="54" r="6.5" fill="#6CFFB6"/>
-      <circle cx="26" cy="54" r="6.5" fill="#6CFFB6"/>
-      <!-- 中心 core（强锚点） -->
-      <circle cx="50" cy="50" r="4.5" fill="#6CFFB6"/>
-    </svg>
+    <img src="relayglance-radar.png" alt="" width="88" height="88">
   </div>
-  <h1>Hermes HUD</h1>
-  <div class="ver">macOS Desktop Alpha 0.1.0</div>
+  <h1>驿览 · RelayGlance</h1>
+  <div class="ver">macOS Desktop Alpha 0.1.1<br>原 Hermes HUD · Formerly Hermes HUD</div>
   <div class="state-line"><span class="dot" id="dot"></span><span id="state">检测中…</span></div>
   <p class="detail" id="detail">正在探测本地 Hermes Dashboard。</p>
   <div id="reason"></div>
   <div class="btns" id="btns"></div>
   <div class="about">
-    <div>Desktop version: <code>0.1.0-alpha</code></div>
+    <div>Desktop version: <code>0.1.1-alpha</code></div>
     <div>HUD API schema: <code>1</code> &nbsp;·&nbsp; HUD plugin: <code>≥ 1.1.0</code></div>
     <div>Hermes Agent: <code id="hermes-label">—</code></div>
   </div>
@@ -74,7 +53,7 @@
     "connected": { dot: "#3fb950", text: "● Connected", detail: "Hermes Dashboard 已连接。" },
     "dashboard-not-running": { dot: "#f85149", text: "Dashboard 未运行", detail: "检测到 Hermes Agent，但 Dashboard 尚未启动。" },
     "starting-dashboard": { dot: "#e3b341", text: "正在启动 Dashboard…", detail: "正在安全启动本地 Dashboard（最长 15 秒）。" },
-    "incompatible": { dot: "#f85149", text: "插件版本不兼容", detail: "HUD 插件版本与 Desktop 不兼容，无法继续使用 HUD。" },
+    "incompatible": { dot: "#f85149", text: "插件版本不兼容", detail: "RelayGlance 插件版本与 Desktop 不兼容，无法继续使用 RelayGlance。" },
     "hermes-not-found": { dot: "#f85149", text: "Hermes Agent not found", detail: "未找到 Hermes Agent。请安装 Hermes 后重试。" },
     "connection-failed": { dot: "#f85149", text: "连接失败", detail: "无法连接到 Hermes Dashboard。" }
   };
@@ -100,7 +79,7 @@
     } else if (id === "detecting" || id === "starting-dashboard") {
       btns.innerHTML = '<button disabled>请稍候…</button>';
     } else {
-      btns.innerHTML = '<a href="#" onclick="return false">HUD 已可用（可最小化到菜单栏）</a>';
+      btns.innerHTML = '<a href="#" onclick="return false">RelayGlance 已可用（可最小化到菜单栏）</a>';
     }
   }
   // Rust 状态机推送入口（页面可能先于注入加载——轮询兜底）

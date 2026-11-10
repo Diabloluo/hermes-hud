@@ -1,0 +1,32 @@
+{
+  "source": "dashboard/dist/relayglance-radar.png",
+  "source_sha256": "2b3cb47ffbfcb0570001c394d925ff8ba46452aa5a8905ee28462e6f97366277",
+  "files": {
+    "icons/RelayGlance.iconset/icon_128x128.png": "8b057daaaa65df4a7c9b653b7320c1006261b8b6a3b0fff8bfcbe10021bf4a8b",
+    "icons/RelayGlance.iconset/icon_128x128@2x.png": "0804e90a76f2d7b4f2267ad9896d25cedc690f66e4898010439bda02b085abb1",
+    "icons/RelayGlance.iconset/icon_16x16.png": "0f5beb7b73696f1c6045d3d288ef28c7802d62485e99a23e112b4d84bba6ddff",
+    "icons/RelayGlance.iconset/icon_16x16@2x.png": "cdfeb29415358c0028f92fac95e044749aa6a22125fc0662494e17e2f4e666c7",
+    "icons/RelayGlance.iconset/icon_256x256.png": "0804e90a76f2d7b4f2267ad9896d25cedc690f66e4898010439bda02b085abb1",
+    "icons/RelayGlance.iconset/icon_256x256@2x.png": "45980aa03c5fcac6d878d07e308618a19d2538a748ce7e0b2fa0a55a303639b4",
+    "icons/RelayGlance.iconset/icon_32x32.png": "cdfeb29415358c0028f92fac95e044749aa6a22125fc0662494e17e2f4e666c7",
+    "icons/RelayGlance.iconset/icon_32x32@2x.png": "0111388166918f782e092b5bebc6e8adce9aaf5fe5d17bf25ac9637fc039676d",
+    "icons/RelayGlance.iconset/icon_512x512.png": "45980aa03c5fcac6d878d07e308618a19d2538a748ce7e0b2fa0a55a303639b4",
+    "icons/RelayGlance.iconset/icon_512x512@2x.png": "2556daed49ac51008a5de1d496e0c3fedd3d036403d6c8b5a04c33fb67be70cc",
+    "icons/icon.png": "0804e90a76f2d7b4f2267ad9896d25cedc690f66e4898010439bda02b085abb1",
+    "icons/icon_1024.png": "2556daed49ac51008a5de1d496e0c3fedd3d036403d6c8b5a04c33fb67be70cc",
+    "icons/icon_128.png": "8b057daaaa65df4a7c9b653b7320c1006261b8b6a3b0fff8bfcbe10021bf4a8b",
+    "icons/icon_16.png": "0f5beb7b73696f1c6045d3d288ef28c7802d62485e99a23e112b4d84bba6ddff",
+    "icons/icon_256.png": "0804e90a76f2d7b4f2267ad9896d25cedc690f66e4898010439bda02b085abb1",
+    "icons/icon_32.png": "cdfeb29415358c0028f92fac95e044749aa6a22125fc0662494e17e2f4e666c7",
+    "icons/icon_512.png": "45980aa03c5fcac6d878d07e308618a19d2538a748ce7e0b2fa0a55a303639b4",
+    "icons/icon_64.png": "0111388166918f782e092b5bebc6e8adce9aaf5fe5d17bf25ac9637fc039676d",
+    "icons/tray_template_16.png": "b949bff7fc5d49f2ee30cd09a004ba39a99a81c207d919ff8e34d03992ee91ea",
+    "icons/tray_template_18.png": "6a5762185d1e9bc2ee6eafb09c9224dad6b6906b0710ef0588114169896c674e",
+    "icons/tray_template_20.png": "6dc29715ee08171613cef83b30b4fc64ae84d5e3c57be9afd494fc4b5ad2daa4",
+    "icons/tray_template_32.png": "03a28a8b1e003b0fb612db6d32c1606e9371bed4db2eb70639e9839b1109d840",
+    "icons/tray_template_36.png": "bc870ea005b2e0832d5f040a206e5d8587b71b1d7855e76b7a8a501fd6e85d45",
+    "icons/tray_template_40.png": "c6c9ae7a2cd377d36f8c613c0b66ac7c42ba4d55fa0a0371cadd2960f326c4e6",
+    "icons/icon.icns": "fce8f4b7b0a4123495e0427cd5ac660af7be9de80915d71f3e5b5c589cac1dc5",
+    "assets/relayglance-radar.png": "0804e90a76f2d7b4f2267ad9896d25cedc690f66e4898010439bda02b085abb1"
+  }
+}

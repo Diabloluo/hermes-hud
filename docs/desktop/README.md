@@ -1,5 +1,7 @@
 # Hermes HUD — Desktop (macOS)
 
+> **Brand transition:** 驿览 · RelayGlance Desktop 0.1.1 is a source candidate, not a new released binary. The published 0.1.0 name/assets below remain unchanged. See the [0.1.1 candidate](../release/DESKTOP_ALPHA_0.1.1.md) and [upgrade/rollback plan](UPGRADE_RELAYGLANCE.md).
+
 **Desktop Alpha 0.1.0** · Apple Silicon (arm64) · local-first, read-only
 
 Hermes HUD Desktop is a native macOS window into your Hermes Agent. It is a

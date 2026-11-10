@@ -1,5 +1,7 @@
 # Troubleshooting — Hermes HUD Desktop
 
+> This page describes the published Hermes HUD Desktop 0.1.0. The renamed 驿览 · RelayGlance 0.1.1 is not yet released; see the [candidate upgrade guide](UPGRADE_RELAYGLANCE.md).
+
 > Terminal commands below are for **advanced diagnostics** only. Normal
 > users don't need Terminal.
 
