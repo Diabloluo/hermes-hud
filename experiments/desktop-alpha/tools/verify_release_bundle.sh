@@ -42,26 +42,71 @@ sha256_ok() {
 # arch_ok <lipo_output> — exactly "arm64" passes; anything else fails.
 arch_ok() { [ "$1" = "arm64" ]; }
 
-# Parse hdiutil's structured receipt rather than guessing the mount point.
-# A parent device is used for cleanup; never detach an unrelated volume.
-mount_info() { # attach_plist device|mount
-  python3 - "$1" "$2" <<'MOUNT_INFO_PY'
-import pathlib, plistlib, re, sys
-try:
-    entities = plistlib.loads(pathlib.Path(sys.argv[1]).read_bytes())["system-entities"]
-    if sys.argv[2] == "device":
-        values = [e["dev-entry"] for e in entities
-                  if re.fullmatch(r"/dev/disk[0-9]+", e.get("dev-entry", ""))]
-    elif sys.argv[2] == "mount":
-        values = [e["mount-point"] for e in entities if e.get("mount-point")]
-    else:
-        raise ValueError("unknown field")
-    if len(values) != 1 or not values[0].startswith("/") or "\n" in values[0]:
-        raise ValueError("expected exactly one absolute device/mount path")
-    print(values[0])
-except (KeyError, ValueError, OSError, plistlib.InvalidFileException):
-    sys.exit(1)
-MOUNT_INFO_PY
+# Structured receipts and before/after snapshots establish device ownership.
+# hdiutil may reuse an already-attached image, so a returned device alone is
+# never sufficient permission to detach it.
+mount_info() { python3 "$SCRIPT_DIR/mount_receipt.py" "$2" "$1"; }
+MOUNT_WORK=""
+DEVICE=""
+MNT=""
+MOUNT_UNCERTAIN=0
+
+mount_bundle() { # dmg; caller must always run cleanup_mount, even on failure
+  local dmg="$1" attach_rc=0 candidate actual
+  MOUNT_WORK=$(mktemp -d "${TMPDIR:-/tmp}/relayglance-verify.XXXXXX") || return 1
+  DEVICE=""; MNT=""; MOUNT_UNCERTAIN=0
+  if ! hdiutil info -plist >"$MOUNT_WORK/before.plist" 2>"$MOUNT_WORK/before.stderr"; then
+    cat "$MOUNT_WORK/before.stderr" >&2; return 1
+  fi
+  python3 "$SCRIPT_DIR/mount_receipt.py" free "$MOUNT_WORK/before.plist" "$dmg" || return 1
+  hdiutil attach "$dmg" -readonly -nobrowse -plist \
+    >"$MOUNT_WORK/attach.plist" 2>"$MOUNT_WORK/attach.stderr" || attach_rc=$?
+  if ! hdiutil info -plist >"$MOUNT_WORK/after.plist" 2>"$MOUNT_WORK/after.stderr"; then
+    MOUNT_UNCERTAIN=1; return 1
+  fi
+  if ! DEVICE=$(python3 "$SCRIPT_DIR/mount_receipt.py" owned \
+      "$MOUNT_WORK/before.plist" "$MOUNT_WORK/after.plist" "$dmg"); then
+    DEVICE=""; MOUNT_UNCERTAIN=1; return 1
+  fi
+  # A failed attach may still have created exactly one provable new device.
+  # Keep DEVICE for safe cleanup, but do not report a successful mount.
+  if [ "$attach_rc" != 0 ]; then
+    cat "$MOUNT_WORK/attach.stderr" >&2; return 1
+  fi
+  if [ -z "$DEVICE" ]; then
+    MOUNT_UNCERTAIN=1
+    echo "attach returned without a provably new owned device; no detach will be guessed" >&2
+    return 1
+  fi
+  candidate=$(mount_info "$MOUNT_WORK/attach.plist" device) || return 1
+  if [ "$candidate" != "$DEVICE" ]; then
+    echo "attach did not produce a uniquely owned new device; refusing verification" >&2
+    return 1
+  fi
+  MNT=$(mount_info "$MOUNT_WORK/attach.plist" mount) || return 1
+  actual=$(python3 "$SCRIPT_DIR/mount_receipt.py" owned-mount \
+    "$MOUNT_WORK/after.plist" "$dmg" "$DEVICE") || return 1
+  [ "$MNT" = "$actual" ] || { echo "mount receipt/snapshot mismatch" >&2; return 1; }
+}
+
+cleanup_mount() {
+  [ -n "$MOUNT_WORK" ] || return 0
+  if [ -n "$DEVICE" ]; then
+    if ! hdiutil detach "$DEVICE" >"$MOUNT_WORK/detach.log" 2>&1; then
+      MOUNT_UNCERTAIN=1
+    else
+      DEVICE=""
+    fi
+  fi
+  if [ "$MOUNT_UNCERTAIN" = 1 ]; then
+    echo "cleanup outcome uncertain; no device guessed or force-detached; receipts retained: $MOUNT_WORK" >&2
+    return 1
+  fi
+  rm -f "$MOUNT_WORK/before.plist" "$MOUNT_WORK/before.stderr" \
+    "$MOUNT_WORK/after.plist" "$MOUNT_WORK/after.stderr" \
+    "$MOUNT_WORK/attach.plist" "$MOUNT_WORK/attach.stderr" "$MOUNT_WORK/detach.log"
+  rmdir "$MOUNT_WORK" || return 1
+  MOUNT_WORK=""
 }
 
 if [ "${VERIFY_SOURCE:-}" = "1" ]; then
@@ -104,37 +149,20 @@ esac
 # Fail closed before mounting an incorrectly named or unverified image.
 [ "$FAIL" = "0" ] || { echo "RESULT: FAIL — NOT FOR DISTRIBUTION"; exit 1; }
 
-# 3. Read-only mount at the system-managed /Volumes location. Some macOS
-# versions reject custom mount points on external APFS volumes with ownership
-# disabled. Do not change disk ownership/security settings to work around it.
-ATTACH_PLIST=$(mktemp "${TMPDIR:-/tmp}/relayglance-attach.XXXXXX") || exit 1
-ATTACH_LOG="${ATTACH_PLIST}.stderr"
-DEVICE=""
-cleanup() {
+# 3. Use the system-managed read-only mount, with proved new-device ownership.
+# Custom mount points on ownership-disabled external APFS may be rejected.
+finish() {
   local status=$?
-  if [ -n "$DEVICE" ]; then
-    if ! hdiutil detach "$DEVICE" >/dev/null 2>&1; then
-      echo "cleanup failed: could not detach task-owned $DEVICE" >&2
-      status=1
-    fi
-  fi
-  rm -f "$ATTACH_PLIST" "$ATTACH_LOG"
+  cleanup_mount || status=1
   trap - EXIT
   exit "$status"
 }
-trap cleanup EXIT
-if hdiutil attach "$DMG" -readonly -nobrowse -plist >"$ATTACH_PLIST" 2>"$ATTACH_LOG"; then
-  DEVICE=$(mount_info "$ATTACH_PLIST" device) || {
-    fail "attached device receipt"; exit 1;
-  }
-  MNT=$(mount_info "$ATTACH_PLIST" mount) || {
-    fail "single mounted volume receipt"; exit 1;
-  }
-  pass "DMG mounts read-only"
+trap finish EXIT
+if mount_bundle "$DMG"; then
+  pass "DMG mounts read-only (new owned device)"
 else
-  fail "DMG mounts"
-  cat "$ATTACH_LOG" >&2
-  echo "cannot continue without mounted DMG"
+  fail "DMG mounts / owned-device proof"
+  echo "cannot continue without a verified task-owned mount"
   exit 1
 fi
 

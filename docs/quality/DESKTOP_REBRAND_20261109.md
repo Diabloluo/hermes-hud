@@ -56,3 +56,10 @@ succeeded without changing disk ownership or security settings. The expanded
 verifier fixtures pass 22 cases, including Unicode paths, ambiguous mounts,
 malformed receipts, empty paths and absent parent devices. Only the recorded
 task-owned device is detached.
+
+Mount ownership is verified against before/after image snapshots. An already
+attached target is refused without attachment or detachment. Nine mocked
+end-to-end cases cover new/reused devices, bad snapshots and receipts,
+partial failures and failed cleanup. Uncertain outcomes preserve receipts
+without guessing a device or forcing unmounts. The owned-device flow also
+passed against the task's actual signed candidate DMG.
