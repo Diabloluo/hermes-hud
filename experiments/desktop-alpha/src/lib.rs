@@ -658,8 +658,10 @@ mod tests {
             // POSIX quoting is for this controlled test script only; the
             // product launcher still executes a binary with fixed argv.
             let quoted = output.to_string_lossy().replace('\'', "'\\''");
+            // Publish only after printf has closed the complete output file.
+            // Both paths are in this fixture directory, so rename is atomic.
             std::fs::write(&binary, format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{quoted}'\nexit 0\n"
+                "#!/bin/sh\nset -e\nprintf '%s\\n' \"$@\" > '{quoted}.pending'\n/bin/mv '{quoted}.pending' '{quoted}'\n"
             )).unwrap();
             #[cfg(unix)]
             {
@@ -748,15 +750,23 @@ mod tests {
             .expect("start with fixed argv should work")
             .expect("should spawn (no dashboard at test port)");
         assert!(pid > 0);
-        // 等 fake 脚本写完 argv 文件（spawn 异步）
-        for _ in 0..20 {
-            if argv_path.exists() {
-                break;
+        // The fixture publishes argv.txt by atomic rename after writing it.
+        // Wait for that completion signal, preserving read errors on failure.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let argv = loop {
+            match std::fs::read_to_string(&argv_path) {
+                Ok(argv) => break argv,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    assert!(std::time::Instant::now() < deadline,
+                        "timed out waiting for fake Hermes PID {pid} to publish {}: {error}",
+                        argv_path.display());
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(error) => panic!("cannot read fake Hermes argv {}: {error}",
+                    argv_path.display()),
             }
-            std::thread::sleep(Duration::from_millis(50));
-        }
+        };
         // 固定 argv：dashboard --host 127.0.0.1 --port <p> --no-open（无注入/无 shell 元字符路径）
-        let argv = std::fs::read_to_string(&argv_path).unwrap_or_default();
         let parts: Vec<&str> = argv.split_whitespace().collect();
         assert_eq!(parts, vec!["dashboard", "--host", "127.0.0.1", "--port", "9494", "--no-open"]);
         std::env::remove_var("HUD_HERMES_BIN");
