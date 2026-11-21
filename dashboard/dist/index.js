@@ -890,13 +890,13 @@
     } else if (p.activity === "inactive") {
       label = tt("已停用"); dot = "hud-dot-mute"; color = undefined;
     } else if (!current || !p.state || p.state === "unknown") {
-      label = tt("当前状态未知"); dot = "hud-dot-warn"; color = "#facc15";
+      label = tt("当前状态未知"); dot = "hud-dot-warn"; color = "var(--hud-warning)";
     } else if (p.state !== "connected") {
-      label = stateZh(p.state); dot = "hud-dot-bad"; color = "#f87171";
+      label = stateZh(p.state); dot = "hud-dot-bad"; color = "var(--hud-danger)";
     } else {
       label = tt("报告已连接") + (p.needs_attention ? " · " + tt("需关注") : "") + (stale ? " · " + tt("心跳陈旧") : "") + (thresholdUnknown ? " · " + tt("心跳阈值未知") : "");
       dot = p.needs_attention || stale || thresholdUnknown ? "hud-dot-warn" : "hud-dot-ok";
-      color = p.needs_attention || stale || thresholdUnknown ? "#facc15" : "#4ade80";
+      color = p.needs_attention || stale || thresholdUnknown ? "var(--hud-warning)" : "var(--hud-success)";
     }
     return { label, dot, color, stale,
       heartbeat: current && validAge ? Math.round(p.heartbeat_age) + "s" : tt("未独立验证"),
@@ -957,10 +957,10 @@
   }
 
   function card(title, body, extra) {
-    return h(Card, { key: title },
+    return h(Card, { key: title, className: "hud-card" },
       h(CardContent, { style: { padding: "12px 14px" } },
         h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
-          h("div", { style: { fontSize: 12, fontWeight: 600, opacity: 0.75 } }, title),
+          h("div", { className: "hud-card-title", style: { fontSize: 12, fontWeight: 600 } }, title),
           extra || null),
         body));
   }
@@ -1101,7 +1101,7 @@
             h("div", { style: { fontSize: 15, fontWeight: 700 } },
               h("span", { className: "hud-dot " + dotClass(gw.alive, false) }),
               gw.alive === true ? tt("运行中") : gw.alive === false ? tt("未运行") : tt("未知"),
-              gw.pid ? h("span", { style: { opacity: 0.5, fontSize: 11, marginLeft: 6 } }, "PID " + gw.pid) : null),
+              gw.pid ? h("span", { style: { color: "var(--hud-muted)", fontSize: 11, marginInlineStart: 6 } }, "PID " + gw.pid) : null),
             kv(tt("状态"), gw.state || "-"),
             kv(tt("版本"), gw.code_version || "-"),
             kv(tt("活跃 Agent"), String(gw.active_agents || 0)))),
@@ -1167,7 +1167,7 @@
         card(tt("内存"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtPct(mem.percent),
           h("div", { style: { fontSize: 11, opacity: 0.6, marginTop: 2 } }, fmtBytes(mem.used) + " / " + fmtBytes(mem.total)))),
         card(tt("磁盘剩余"), h("div", {
-          style: { fontSize: 20, fontWeight: 700, color: (sys.disk_free_percent != null && sys.disk_free_percent < 15) ? "#facc15" : undefined },
+          style: { fontSize: 20, fontWeight: 700, color: (sys.disk_free_percent != null && sys.disk_free_percent < 15) ? "var(--hud-warning)" : undefined },
         }, fmtPct(sys.disk_free_percent))),
         card(tt("机器运行"), h("div", { style: { fontSize: 15, fontWeight: 600 } },
           sys.uptime_seconds ? Math.round(sys.uptime_seconds / 86400) + tt(" 天") : "-"))),
@@ -1378,7 +1378,7 @@
         card(tt("Top Sessions（估算费用 · 脱敏标题）"),
           (ciSessions && ciSessions.sessions && ciSessions.sessions.length)
             ? h("div", null, ciSessions.sessions.slice(0, 8).map(function (s) {
-                return h("div", { key: s.session_id, style: { display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12, borderBottom: "1px solid var(--border)" } },
+                return h("div", { key: s.session_id, style: { display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12, borderBottom: "1px solid var(--hud-border)" } },
                   h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
                     (s.title || s.session_id.slice(0, 20))),
                   h("span", { style: { opacity: 0.6, fontSize: 11 } }, s.models.join("/")),
@@ -1388,7 +1388,7 @@
         card(tt("模型分布（估算费用）"),
           (ciModels && ciModels.models && ciModels.models.length)
             ? h("div", null, ciModels.models.slice(0, 8).map(function (m) {
-                return h("div", { key: m.model, style: { display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12, borderBottom: "1px solid var(--border)" } },
+                return h("div", { key: m.model, style: { display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", fontSize: 12, borderBottom: "1px solid var(--hud-border)" } },
                   h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, m.model),
                   h("span", { style: { opacity: 0.6, fontSize: 11 } }, m.sessions + tt(" 会话")),
                   h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, ciCostCell(m)));
@@ -1625,9 +1625,9 @@
     return h(React.Fragment, null,
       h("div", { className: "hud-grid hud-grid-4" },
         card(tt("任务总数"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, summaryCount("total"))),
-        card(tt("启用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "#4ade80" } }, summaryCount("enabled"))),
-        card(tt("暂停/禁用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "#facc15" } }, pausedCount)),
-        card(tt("失败中"), h("div", { style: { fontSize: 20, fontWeight: 700, color: summary.failing ? "#f87171" : undefined } }, summaryCount("failing")))),
+        card(tt("启用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "var(--hud-success)" } }, summaryCount("enabled"))),
+        card(tt("暂停/禁用"), h("div", { style: { fontSize: 20, fontWeight: 700, color: "var(--hud-warning)" } }, pausedCount)),
+        card(tt("失败中"), h("div", { style: { fontSize: 20, fontWeight: 700, color: summary.failing ? "var(--hud-danger)" : undefined } }, summaryCount("failing")))),
 
       h("div", { className: "hud-grid hud-grid-2" },
         card(tt("任务列表 (") + jobs.length + ")",
@@ -1645,7 +1645,7 @@
                   h("td", { className: "mono", style: { fontSize: 11 } }, j.schedule || "-"),
                   h("td", { className: "num", style: { fontSize: 11 } },
                     j.next_run_at ? (j.next_run_at - now < 3600
-                      ? h("b", { style: { color: "#facc15" } }, Math.round((j.next_run_at - now) / 60) + tt("m 后"))
+                      ? h("b", { style: { color: "var(--hud-warning)" } }, Math.round((j.next_run_at - now) / 60) + tt("m 后"))
                       : fmtTime(j.next_run_at).slice(5)) : "-")),
                   h("td", { className: "num", style: { fontSize: 11 } }, j.last_run_at ? timeAgo(j.last_run_at * 1000) : "-"),
                   h("td", null,
@@ -1739,7 +1739,7 @@
     return h(React.Fragment, null,
       h("div", { className: "hud-grid hud-grid-4" },
         card(tt("近 30 分钟错误"), h("div", {
-          style: { fontSize: 20, fontWeight: 700, color: errors.count_30m > 20 ? "#f87171" : undefined },
+          style: { fontSize: 20, fontWeight: 700, color: errors.count_30m > 20 ? "var(--hud-danger)" : undefined },
         }, errors.count_30m == null ? tt("未知") :
           (errors.timestamp_status === "partial" ? "≥ " : "") + String(errors.count_30m))),
         card(tt("错误指纹"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, String((errors.incidents || []).length))),
@@ -2285,16 +2285,16 @@
           }
         },
         style: { display: "flex", gap: 10, alignItems: "baseline", padding: "6px 4px",
-          borderBottom: "1px solid var(--border)", cursor: "pointer", fontSize: 13 },
+          borderBottom: "1px solid var(--hud-border)", cursor: "pointer", fontSize: 13 },
         onClick: function () { setExpanded(open ? null : e.event_id); },
       },
         h("span", { style: { fontFamily: "monospace", fontSize: 12, opacity: 0.7, width: 74, flexShrink: 0 } }, tlTime(e.timestamp)),
         h("span", { role: "img", title: iconLabel, "aria-label": iconLabel, style: { width: 16, flexShrink: 0 } }, statusView.failed ? "✕" : isInc ? "⚠" : statusView.succeeded ? "✓" : "·"),
-        h("span", { style: { color: statusView.failed ? "#e5534b" : "var(--foreground)", width: 120, flexShrink: 0 } }, e.event_type || "—"),
+        h("span", { style: { color: statusView.failed ? "var(--hud-danger)" : "inherit", width: 120, flexShrink: 0 } }, e.event_type || "—"),
         h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, title),
         h("span", { style: { fontFamily: "monospace", fontSize: 12, opacity: 0.75, flexShrink: 0 } }, tlFmt(e.tokens, e.cost_usd, e.duration_ms)));
 
-      const detail = open ? h("div", { key: e.event_id + "-d", style: { padding: "8px 14px 10px", fontSize: 12, background: "var(--card)", borderBottom: "1px solid var(--border)" } },
+      const detail = open ? h("div", { key: e.event_id + "-d", style: { padding: "8px 14px 10px", fontSize: 12, background: "var(--hud-bg)", borderBottom: "1px solid var(--hud-border)" } },
         kv(tt("时间"), fmtTime(e.timestamp)),
         kv(tt("类型"), e.event_type || "—"),
         kv(tt("状态"), statusView.label),
@@ -2313,7 +2313,7 @@
     return card(tt("Agent Timeline — 做了什么？"),
       h("div", { ref: listRef, style: { maxHeight: "62vh", overflowY: "auto" } },
         filters,
-        loadErr && h("div", { style: { fontSize: 12, color: "#e5534b", padding: 6 } }, tt("加载失败: ") + loadErr),
+        loadErr && h("div", { style: { fontSize: 12, color: "var(--hud-danger)", padding: 6 } }, tt("加载失败: ") + loadErr),
         events.length === 0
           ? empty(tt("暂无事件（全新安装的正常状态；有新活动后自动出现）"))
           : rows,
@@ -2403,7 +2403,7 @@
     ];
     const summaryRow = h("div", { style: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 10 } },
       cards.map(function (c) {
-        return h("div", { key: c.k, style: { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px" } },
+        return h("div", { key: c.k, style: { background: "var(--hud-bg)", border: "1px solid var(--hud-border)", borderRadius: 8, padding: "10px 12px" } },
           h("div", { style: { fontSize: 11, opacity: 0.65 } }, c.k),
           h("div", { style: { fontSize: 18, fontWeight: 700, marginTop: 2 } }, c.v));
       }));
@@ -2441,12 +2441,12 @@
         h("option", { value: "recent" }, tt("最近运行"))));
 
     const head = [tt("技能"), tt("来源"), "Review", tt("风险"), tt("运行", "th_runs"), tt("成功"), tt("失败"), tt("成功率"), tt("平均耗时"), tt("最近观测"), tt("覆盖")];
-    const headRow = h("div", { key: "head", style: { display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 0.6fr 0.6fr 0.6fr 0.6fr 0.8fr 0.9fr 1.2fr 0.9fr", gap: 6, padding: "6px 8px", fontSize: 11, opacity: 0.65, fontWeight: 600, borderBottom: "1px solid var(--border)" } },
+    const headRow = h("div", { key: "head", style: { display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 0.6fr 0.6fr 0.6fr 0.6fr 0.8fr 0.9fr 1.2fr 0.9fr", gap: 6, padding: "6px 8px", fontSize: 11, opacity: 0.65, fontWeight: 600, borderBottom: "1px solid var(--hud-border)" } },
       head.map(function (hcol) { return h("span", { key: hcol }, hcol); }));
 
     const rows = skills.map(function (s) {
       const open = expanded === s.skill;
-      const line = h("div", { key: s.skill, style: { display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 0.6fr 0.6fr 0.6fr 0.6fr 0.8fr 0.9fr 1.2fr 0.9fr", gap: 6, padding: "6px 8px", fontSize: 12, borderBottom: "1px solid var(--border)", cursor: "pointer", alignItems: "center" },
+      const line = h("div", { key: s.skill, style: { display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 0.6fr 0.6fr 0.6fr 0.6fr 0.8fr 0.9fr 1.2fr 0.9fr", gap: 6, padding: "6px 8px", fontSize: 12, borderBottom: "1px solid var(--hud-border)", cursor: "pointer", alignItems: "center" },
         onClick: function () {
           setExpanded(open ? null : s.skill);
           if (!open) openDetail(s.skill);
@@ -2456,14 +2456,14 @@
         h("span", { style: { fontSize: 11 } }, s.review_decision || "—"),
         h("span", { style: { fontSize: 11 } }, s.risk || "—"),
         h("span", { style: { textAlign: "right" } }, saNum(s.observed_runs)),
-        h("span", { style: { textAlign: "right", color: "#3fb950" } }, saNum(s.completed)),
-        h("span", { style: { textAlign: "right", color: s.failed ? "#e5534b" : "inherit" } }, saNum(s.failed)),
+        h("span", { style: { textAlign: "right", color: "var(--hud-success)" } }, saNum(s.completed)),
+        h("span", { style: { textAlign: "right", color: s.failed ? "var(--hud-danger)" : "inherit" } }, saNum(s.failed)),
         h("span", { style: { textAlign: "right" } }, saRate(s.success_rate)),
         h("span", { style: { textAlign: "right" } }, saDur(s.avg_duration_ms)),
         h("span", { style: { textAlign: "right", fontSize: 11, opacity: 0.75 } }, saTime(s.last_observed_at)),
         h("span", { style: { fontSize: 11 } }, saCoverageZh(s.runtime_coverage)));
       const detailBlock = open && detail && detail.skill && detail.skill.skill === s.skill
-        ? h("div", { key: s.skill + "-d", style: { padding: "10px 14px", fontSize: 12, background: "var(--card)", borderBottom: "1px solid var(--border)" } },
+        ? h("div", { key: s.skill + "-d", style: { padding: "10px 14px", fontSize: 12, background: "var(--hud-bg)", borderBottom: "1px solid var(--hud-border)" } },
             kv(tt("技能"), s.skill),
             kv(tt("来源 / Provenance"), s.provenance || "—"),
             kv(tt("Review 决策"), s.review_decision || "—"),
@@ -2477,7 +2477,7 @@
             h("div", { style: { fontSize: 11, opacity: 0.65, marginTop: 8, marginBottom: 4 } }, tt("最近 Timeline 事件（直接引用，不复制）")),
             h("div", { style: { maxHeight: 220, overflowY: "auto" } },
               (detail.recent_timeline_events || []).map(function (ev) {
-                return h("div", { key: ev.event_id, style: { padding: "3px 0", fontSize: 11, fontFamily: "monospace", borderBottom: "1px solid var(--border)" } },
+                return h("div", { key: ev.event_id, style: { padding: "3px 0", fontSize: 11, fontFamily: "monospace", borderBottom: "1px solid var(--hud-border)" } },
                   saTime(ev.timestamp) + "  " + ev.event_type + "  " + (ev.status || "") + "  " + (ev.summary || ""));
               }),
               (!detail.recent_timeline_events || !detail.recent_timeline_events.length)
@@ -2491,7 +2491,7 @@
         summaryRow,
         covNotice,
         filters,
-        detailErr && h("div", { style: { fontSize: 12, color: "#e5534b", padding: 6 } }, "详情加载失败: " + detailErr),
+        detailErr && h("div", { style: { fontSize: 12, color: "var(--hud-danger)", padding: 6 } }, "详情加载失败: " + detailErr),
         skills.length === 0
           ? empty(tt("暂无技能数据（registry 或 timeline 不可用时的正常降级）"))
           : [headRow, rows],
