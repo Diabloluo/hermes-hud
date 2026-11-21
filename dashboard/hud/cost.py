@@ -13,6 +13,7 @@ Phase 13：不按网上最新价格重算历史费用——信任 Hermes 已记�
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sqlite3
 from datetime import datetime, timedelta
@@ -246,12 +247,12 @@ def compute_summary(home: Path, time_range: str = "7d",
         input_tok += (r[2] or 0)
         output_tok += (r[3] or 0)
         cache_tok += (r[4] or 0)
-        if _pricing_known(r[9], r[10]):
+        amount = r[7]
+        # Provenance alone cannot make a missing or invalid estimate a known zero.
+        if (_pricing_known(r[9], r[10]) and isinstance(amount, (int, float))
+                and math.isfinite(amount) and amount >= 0):
             pricing_known += 1
-            cost_total += float(r[7] or 0)
-        else:
-            # unknown / legacy-missing 定价：费用不计入可信总额（不冒充 $0）
-            pass
+            cost_total += amount
     total_tokens = input_tok + output_tok
     sessions = _session_count(home, cutoff) if source_ok else None
     # cost_complete：0 行（healthy zero）或全部行 pricing known
@@ -428,7 +429,7 @@ def compute_budget(home: Path, daily_budget_usd: float, now: Optional[int] = Non
     summary = compute_summary(home, "today", now=now)
     today_cost = summary["estimated_cost_usd"]
     base = {"budget_usd": daily_budget_usd, "today_estimated_cost_usd": today_cost,
-            "budget_configured": daily_budget_usd > 0}
+            "budget_configured": daily_budget_usd > 0, "coverage": summary["coverage"]}
     if today_cost is None:
         return {**base, "usage_ratio": None, "remaining_usd": None,
                 "budget_status": "unavailable"}

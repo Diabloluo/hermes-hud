@@ -220,7 +220,7 @@ async def get_timeline(limit: int = 100, before: int | None = None,
                        before_id: str | None = None, after: int | None = None,
                        session_id: str | None = None,
                        event_type: str | None = None, status: str | None = None,
-                       skill: str | None = None) -> dict:
+                       skill: str | None = None, locale: str | None = None) -> dict:
     """Agent Timeline v1：分页查询（limit ≤ 100，limit+1 判断 has_more）。
 
     cursor = (before, before_id)——同 timestamp 下以 event_id 精确续页不重不漏。
@@ -239,7 +239,11 @@ async def get_timeline(limit: int = 100, before: int | None = None,
         rows = current_store.query_timeline(
             limit=limit + 1, before=before, before_id=before_id, after=after,
             session_id=session_id, event_type=event_type, status=status, skill=skill)
-        return timeline.refresh_session_event_costs(home, rows)
+        rows = timeline.refresh_session_event_costs(home, rows)
+        if locale is not None:
+            display_locale = resolve_locale(locale)
+            return [timeline.with_display_summary(row, display_locale) for row in rows]
+        return rows
 
     # Wait before submitting a worker, so timeline contention cannot consume
     # the shared executor needed by snapshots. Only one IO job is in flight.

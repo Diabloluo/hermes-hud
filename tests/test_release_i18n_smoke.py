@@ -121,6 +121,26 @@ def assert_no_static_cjk(cdp, locale, index, skills=None):
                      text[max(0, leak.start()-50):leak.end()+70] if leak else "")
 
 
+NAV_TABS = ".hud-navigation .hud-tab"
+SETTINGS_LABEL = {"zh": "设置", "en": "Settings", "fr": "Paramètres", "ar": "الإعدادات"}
+
+
+def nav_tab_index(cdp, label):
+    labels = cdp.eval(f"[...document.querySelectorAll({json.dumps(NAV_TABS)})]"
+                      ".map(e => e.textContent.trim()).map(t => t.slice(t.indexOf(' ') + 1))")
+    assert labels.count(label) == 1, (label, labels)
+    return labels.index(label)
+
+
+def click_nav_tab(cdp, index):
+    nav = f"document.querySelectorAll({json.dumps(NAV_TABS)})[{index}]"
+    assert cdp.eval("(() => { const tab=" + nav + "; if (!tab) return false;"
+                    "const disclosure=tab.closest('details');"
+                    "if(disclosure && !disclosure.open) disclosure.querySelector('summary').click();"
+                    "tab.click(); return true; })()")
+    wait_for(cdp, nav + "?.getAttribute('aria-pressed') === 'true'")
+
+
 def assert_skill_dom_contract(cdp, hud_env, locale, payload):
     assert cdp.eval("[...document.querySelectorAll('.hud-table thead th')].map(e=>e.textContent)") == SKILL_HEADERS[locale]
     rows = cdp.eval("[...document.querySelectorAll('.hud-table tbody tr')]"
@@ -138,6 +158,34 @@ def assert_skill_dom_contract(cdp, hud_env, locale, payload):
     static_ui_text(cdp, payload)  # validate all rows/category controls, even zh
 
 
+def test_timeline_renders_stored_incident_in_current_locale(hud_env):
+    from hud import storage, timeline
+
+    store = storage.TelemetryStore(db_path=hud_env["home"] / "hud" / "telemetry.db")
+    assert store.record_timeline_event(timeline.normalize_event({
+        "timestamp": int(time.time()), "event_type": "incident.resolved", "status": "resolved",
+        "source": "hud", "source_record_id": "incident:gateway:not-alive:resolved",
+        "correlation_id": "incident:gateway:not-alive", "summary": "Incident resolved: Gateway 不存活",
+    }))
+    cdp = hud_env["cdp"]
+    url = f"http://127.0.0.1:{hud_env['port']}/hud"
+    for locale, nav, expected in (
+        ("zh", "时间线", "事故已恢复：Gateway 不存活"),
+        ("en", "Timeline", "Incident resolved: Gateway is down"),
+        ("fr", "Chronologie", "Incident résolu : Gateway est arrêtée"),
+        ("ar", "الجدول الزمني", "تم حل الحادثة: Gateway متوقفة"),
+    ):
+        cdp.eval(f"localStorage.setItem('hermes-hud-locale', {json.dumps(locale)})")
+        cdp.cmd("Page.navigate", {"url": url})
+        wait_for(cdp, f"document.querySelector('.hud-root')?.lang === {json.dumps(locale)}")
+        click_nav_tab(cdp, nav_tab_index(cdp, nav))
+        row = "[...document.querySelectorAll('.hud-tl-row[role=button]')]"
+        wait_for(cdp, f"{row}.some(e=>e.textContent.includes({json.dumps(expected)})"
+                 f" && e.lang === {json.dumps(locale)}"
+                 f" && e.getAttribute('aria-label')?.startsWith({json.dumps(expected + ' ')})"
+                 " && !e.getAttribute('aria-label').includes('incident.resolved'))")
+
+
 @pytest.mark.parametrize("locale,direction", [("zh", "ltr"), ("en", "ltr"),
                                              ("fr", "ltr"), ("ar", "rtl")])
 def test_four_locale_real_dashboard(hud_env, locale, direction):
@@ -145,7 +193,7 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
     url = f"http://127.0.0.1:{hud_env['port']}/hud"
     cdp.eval(f"localStorage.setItem('hermes-hud-locale', {json.dumps(locale)})")
     cdp.cmd("Page.navigate", {"url": url})
-    wait_for(cdp, "document.querySelectorAll('.hud-tab').length === 13")
+    wait_for(cdp, "document.querySelectorAll('.hud-navigation .hud-tab').length === 13")
     wait_for(cdp, "document.querySelector('.hud-health-badge') && "
              "!document.querySelector('.hud-health-badge').textContent.includes('加载中')")
     assert cdp.eval("document.querySelector('.hud-root').dir") == direction
@@ -162,18 +210,18 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
     cdp.eval("window.__hudErrors=[]; window.addEventListener('error', e=>"
              "window.__hudErrors.push(e.message)); window.addEventListener('unhandledrejection',"
              "e=>window.__hudErrors.push(String(e.reason)))")
+    skills_index = nav_tab_index(cdp, SKILL_HEADERS[locale][0])
     for index in range(13):
-        assert cdp.eval(f"(() => {{ document.querySelectorAll('.hud-tab')[{index}].click();"
-                        "return true; })()")
+        click_nav_tab(cdp, index)
         time.sleep(1.5)
-        active_color = cdp.eval("getComputedStyle(document.querySelector('.hud-tab.active')).color")
+        active_color = cdp.eval("getComputedStyle(document.querySelector('.hud-navigation .hud-tab.active')).color")
         assert active_color not in ("transparent", "rgba(0, 0, 0, 0)"), active_color
         text = cdp.eval("document.querySelector('.hud-root').innerText") or ""
         assert len(text) > 60
         assert "TypeError" not in text and "Internal Server Error" not in text
         assert "undefined" not in text and "NaN" not in text
         skills = None
-        if index == 6:
+        if index == skills_index:
             wait_for(cdp, "!!document.querySelector('.hud-table tbody tr')")
             skills = skill_api_contract(hud_env, locale)
             assert_skill_dom_contract(cdp, hud_env, locale, skills)
@@ -182,6 +230,7 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
             # observed timeline summaries with untranslated UI chrome.
             assert_no_static_cjk(cdp, locale, index, skills)
     assert cdp.eval("window.__hudErrors") == []
+    click_nav_tab(cdp, nav_tab_index(cdp, SETTINGS_LABEL[locale]))
     # Persisted setting + live language selection (without a page reload).
     next_locale = {"zh": "en", "en": "fr", "fr": "ar", "ar": "zh"}[locale]
     endonym = {"zh": "简体中文", "en": "English", "fr": "Français", "ar": "العربية"}[next_locale]
@@ -196,14 +245,14 @@ def test_four_locale_real_dashboard(hud_env, locale, direction):
     assert cdp.eval("(() => { const b=[...document.querySelectorAll('.hud-root button')]"
                     f".find(b=>b.textContent==={json.dumps(endonym)}); b.click();return true; }})()")
     wait_for(cdp, f"document.querySelector('.hud-root').lang === {json.dumps(locale)}")
-    cdp.eval("document.querySelector('.hud-tab').click()")
+    cdp.eval("document.querySelector('.hud-navigation .hud-tab').click()")
     time.sleep(2)
     artifact_dir = os.environ.get("HUD_ACCEPTANCE_ARTIFACT_DIR")
     for width, height in ((1440, 1000), (1024, 900), (390, 844)):
         cdp.cmd("Emulation.setDeviceMetricsOverride", {"width": width, "height": height,
                  "deviceScaleFactor": 1, "mobile": False})
         time.sleep(0.3)
-        assert cdp.eval("document.querySelectorAll('.hud-tab').length") == 13
+        assert cdp.eval("document.querySelectorAll('.hud-navigation .hud-tab').length") == 13
         if artifact_dir:
             target = Path(artifact_dir)
             target.mkdir(parents=True, exist_ok=True)
@@ -218,11 +267,12 @@ def test_skill_static_translation_negative_controls(hud_env, locale):
     cdp = hud_env["cdp"]
     cdp.eval(f"localStorage.setItem('hermes-hud-locale', {json.dumps(locale)})")
     cdp.cmd("Page.navigate", {"url": f"http://127.0.0.1:{hud_env['port']}/hud"})
-    wait_for(cdp, "document.querySelectorAll('.hud-tab').length === 13")
-    cdp.eval("document.querySelectorAll('.hud-tab')[6].click()")
+    wait_for(cdp, "document.querySelectorAll('.hud-navigation .hud-tab').length === 13")
+    skills_index = nav_tab_index(cdp, SKILL_HEADERS[locale][0])
+    click_nav_tab(cdp, skills_index)
     wait_for(cdp, "!!document.querySelector('.hud-table tbody tr')")
     payload = skill_api_contract(hud_env, locale)
-    assert_no_static_cjk(cdp, locale, 6, payload)
+    assert_no_static_cjk(cdp, locale, skills_index, payload)
     for selector in (".hud-table thead th", ".hud-grid-2 button", ".hud-table tbody td"):
         # Restore exactly what was changed, even when a negative check fails.
         cdp.eval(f"(() => {{ window.__hudNegativeNode=document.querySelector({json.dumps(selector)});"
@@ -230,8 +280,8 @@ def test_skill_static_translation_negative_controls(hud_env, locale):
                  "window.__hudNegativeNode.textContent += ' 静态漏翻译'; })()")
         try:
             with pytest.raises(AssertionError):
-                assert_no_static_cjk(cdp, locale, 6, payload)
+                assert_no_static_cjk(cdp, locale, skills_index, payload)
         finally:
             cdp.eval("window.__hudNegativeNode.textContent=window.__hudNegativeOriginal;"
                      "delete window.__hudNegativeNode; delete window.__hudNegativeOriginal;")
-        assert_no_static_cjk(cdp, locale, 6, payload)
+        assert_no_static_cjk(cdp, locale, skills_index, payload)

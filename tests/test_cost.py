@@ -343,6 +343,51 @@ def test_budget_attribution_uncertain(env) -> None:
     assert b["today_estimated_cost_usd"] is not None
 
 
+@pytest.mark.parametrize("rows,total,known,amount", [
+    ([], 0, 0, 0.0),
+    ([(0.0, "estimated", "official_docs_snapshot")], 1, 1, 0.0),
+    ([(0.0, "unknown", "none")], 1, 0, 0.0),
+    ([(1.23, "estimated", "official_docs_snapshot"), (0.0, "unknown", "none")],
+     2, 1, 1.23),
+])
+def test_budget_pricing_coverage_is_for_today(env, rows, total, known, amount):
+    now = datetime(2026, 11, 17, 12, tzinfo=timezone.utc).timestamp()
+    today = [_mk_row_with_provenance(str(i), "m1", cost_usd, status, source, now - 60)
+             for i, (cost_usd, status, source) in enumerate(rows)]
+    yesterday = _row("yesterday", cost=99.0, ts=now - 86400)
+    _mk_state(env["tmp"], today + [yesterday])
+
+    budget = cost.compute_budget(env["tmp"], 10.0, now=now)
+    coverage = budget["coverage"]
+    assert coverage["usage_rows"] == total
+    assert coverage["pricing_known_rows"] == known
+    assert coverage["pricing_unknown_rows"] == total - known
+    assert coverage["cost_complete"] is (total == known)
+    assert budget["today_estimated_cost_usd"] == pytest.approx(amount)
+    assert budget["budget_status"] == "attribution_uncertain"
+    assert budget["usage_ratio"] is None
+    assert budget["remaining_usd"] is None
+
+
+def test_budget_unavailable_source_has_no_pricing_coverage(env):
+    budget = cost.compute_budget(env["tmp"], 10.0)
+    assert budget["budget_status"] == "unavailable"
+    assert budget["today_estimated_cost_usd"] is None
+    assert budget["coverage"]["pricing_known_rows"] is None
+    assert budget["coverage"]["cost_complete"] is False
+
+
+@pytest.mark.parametrize("invalid_amount", [None, -1.0, float("inf"), "not a number"])
+def test_budget_invalid_priced_row_does_not_create_known_zero(env, invalid_amount):
+    now = datetime(2026, 11, 17, 12, tzinfo=timezone.utc).timestamp()
+    _mk_state(env["tmp"], [_row(cost=invalid_amount, ts=now)])
+
+    budget = cost.compute_budget(env["tmp"], 10.0, now=now)
+    assert budget["coverage"]["pricing_known_rows"] == 0
+    assert budget["coverage"]["pricing_unknown_rows"] == 1
+    assert budget["coverage"]["cost_complete"] is False
+
+
 def test_models_sessions_pricing_propagation(env) -> None:
     """models/sessions 每项带 pricing_known_rows/pricing_unknown_rows/
     pricing_coverage_ratio/cost_complete。"""

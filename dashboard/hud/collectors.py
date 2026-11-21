@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import math
 import os
@@ -28,6 +29,7 @@ except Exception:  # pragma: no cover
 import sys
 
 from .i18n import t
+from .semantics import cron_is_inactive, platform_activity
 from .sampling import BackgroundSamples, PeriodicSample
 from .redaction import redact_line, sanitize_cmdline, sanitize_path, sanitize_title
 
@@ -136,6 +138,8 @@ def collect_gateway(locale: str = "zh") -> dict:
     # 渠道
     platforms = state.get("platforms") or {}
     for name, p in platforms.items():
+        if not isinstance(p, dict):
+            p = {}
         upd_ts = _parse_ts(p.get("updated_at"))
         out["platforms"][name] = {
             "state": p.get("state"),
@@ -144,7 +148,12 @@ def collect_gateway(locale: str = "zh") -> dict:
             "error_code": p.get("error_code"),
             "error_message": redact_line(str(p.get("error_message") or ""))[:200],
             "updated_at": upd_ts,
-            "heartbeat_age": max(0.0, _now_epoch() - upd_ts) if upd_ts else None,
+            # gateway/status.py stamps this only when the platform is written.
+            # It is NOT the adapter's in-memory polling heartbeat.
+            "timestamp_semantics": "status_update",
+            "heartbeat_source": None,
+            "heartbeat_age": None,
+            "activity": platform_activity(p, state),
         }
     return out
 
@@ -621,8 +630,9 @@ def collect_cron_jobs(locale: str = "zh") -> dict:
             out_jobs.append({
                 "id": j.get("id"),
                 "name": j.get("name"),
-                "enabled": bool(j.get("enabled")),
+                "enabled": j.get("enabled") if type(j.get("enabled")) is bool else None,
                 "state": j.get("state"),
+                "inactive": cron_is_inactive(j),
                 "schedule": expr,
                 "schedule_kind": kind,
                 "next_run_at": _parse_ts(j.get("next_run_at")),
@@ -648,8 +658,9 @@ def collect_cron_jobs(locale: str = "zh") -> dict:
             out_jobs.append({
                 "id": j.get("id"),
                 "name": j.get("name"),
-                "enabled": bool(j.get("enabled")),
+                "enabled": j.get("enabled") if type(j.get("enabled")) is bool else None,
                 "state": j.get("state"),
+                "inactive": cron_is_inactive(j),
                 "schedule": (sched.get("display") if isinstance(sched, dict) else str(sched)),
                 "schedule_kind": (sched.get("kind", "cron") if isinstance(sched, dict) else "cron"),
                 "next_run_at": None, "last_run_at": None,
@@ -662,10 +673,12 @@ def collect_cron_jobs(locale: str = "zh") -> dict:
             })
     summary = {
         "total": len(out_jobs),
-        "enabled": sum(1 for j in out_jobs if j["enabled"]),
-        "paused": sum(1 for j in out_jobs if not j["enabled"] and j["paused_at"]),
-        "disabled": sum(1 for j in out_jobs if not j["enabled"] and not j["paused_at"]),
-        "failing": sum(1 for j in out_jobs if (j["failure_streak"] or 0) >= 1),
+        "enabled": sum(1 for j in out_jobs if j["enabled"] is True and not j["inactive"]),
+        "paused": sum(1 for j in out_jobs if j["state"] == "paused" or j["paused_at"]),
+        "disabled": sum(1 for j in out_jobs if j["enabled"] is False and not j["paused_at"] and j["state"] != "paused"),
+        "enabled_unknown": sum(1 for j in out_jobs if j["enabled"] is None),
+        "failing": sum(1 for j in out_jobs if not j["inactive"] and (j["failure_streak"] or 0) >= 1),
+        "historical_failing": sum(1 for j in out_jobs if j["inactive"] and (j["failure_streak"] or 0) >= 1),
         "running_state": sum(1 for j in out_jobs if j["state"] in ("running", "claimed", "firing")),
         "parse_warnings": parse_warnings,
     }
@@ -973,28 +986,148 @@ def collect_launchd_check(locale: str = "zh") -> dict:
 # 8. Dashboard 进程
 # ---------------------------------------------------------------------------
 
-def _is_hermes_script_entrypoint(cmdline: list[str]) -> bool:
-    """Match direct or Python-launched ``hermes`` repository scripts."""
+def _managed_hermes_relaunch_args(code: str) -> Optional[list[str]]:
+    """Read, never execute, the observed venv_sync managed module launcher.
+
+    Only the complete five-statement program is accepted. Extra statements,
+    dynamic expressions, other modules and arbitrary inline code do not match.
+    This is a process-classification heuristic, not an authentication boundary.
+    """
+    if len(code) > 16384:
+        return None
+    try:
+        tree = ast.parse(code)
+        if len(tree.body) != 5:
+            return None
+        root_node = tree.body[1].value.args[1]
+        argv_node = tree.body[2].value
+        if not isinstance(root_node, ast.Constant) or not isinstance(root_node.value, str):
+            return None
+        root = root_node.value
+        if not Path(root).is_absolute() or ".." in Path(root).parts:
+            return None
+        if not isinstance(argv_node, ast.List) or not argv_node.elts:
+            return None
+        if not all(isinstance(node, ast.Constant) and isinstance(node.value, str)
+                   for node in argv_node.elts):
+            return None
+        argv = [node.value for node in argv_node.elts]
+        if argv[0] != str(Path(root) / "hermes_cli" / "main.py"):
+            return None
+        expected = ast.parse(
+            f"import sys, runpy; sys.path.insert(0, {root!r}); sys.argv = {argv!r}; "
+            "sys._hermes_relaunched = True; "
+            "runpy.run_module('hermes_cli.main', run_name='__main__', alter_sys=True)"
+        )
+        if ast.dump(tree, include_attributes=False) != ast.dump(expected, include_attributes=False):
+            return None
+        return argv[1:]
+    except (SyntaxError, ValueError, TypeError, AttributeError, IndexError, RecursionError):
+        return None
+
+
+def _hermes_entrypoint_args(cmdline: list[str]) -> Optional[list[str]]:
+    """Return Hermes arguments after a script, exact -m or narrow managed entry.
+
+    Never search later argv for an entrypoint: it may be another program's
+    data, arbitrary Python code passed to -c, or an interpreter option value.
+    """
     if not cmdline:
-        return False
+        return None
     executable = Path(cmdline[0]).name
     if executable == "hermes":
-        return True
-    if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", executable) is None:
-        return False
+        return cmdline[1:]
+    if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", executable, re.IGNORECASE) is None:
+        return None
 
     index = 1
+    isolated = False
     while index < len(cmdline):
         arg = cmdline[index]
         if arg == "--":
             index += 1
             break
-        if arg in {"-c", "-m"}:
-            return False
         if not arg.startswith("-") or arg == "-":
             break
-        index += 2 if arg in {"-W", "-X"} else 1
-    return index < len(cmdline) and Path(cmdline[index]).name == "hermes"
+        if arg == "--check-hash-based-pycs":
+            if index + 1 >= len(cmdline):
+                return None
+            index += 2
+            continue
+        if arg.startswith("--check-hash-based-pycs="):
+            index += 1
+            continue
+        if arg.startswith("--"):
+            return None
+        # Python permits clustered switches; -um, -uWignore and -ucCODE
+        # must keep the same meaning as their separated equivalents.
+        offset = 1
+        consumed = 1
+        while offset < len(arg):
+            flag = arg[offset]
+            if flag in "bBdEiIOPqRsSuvx":
+                isolated = isolated or flag == "I"
+                offset += 1
+                continue
+            if flag not in {"c", "m", "W", "X"}:
+                return None
+            value = arg[offset + 1:]
+            if not value:
+                if index + 1 >= len(cmdline):
+                    return None
+                value = cmdline[index + 1]
+                consumed = 2
+            if flag == "c":
+                if not isolated or index + consumed != len(cmdline):
+                    return None
+                return _managed_hermes_relaunch_args(value)
+            if flag == "m":
+                return cmdline[index + consumed:] if value == "hermes_cli.main" else None
+            break  # W/X consume the rest of this option, not more switches.
+        index += consumed
+    if index < len(cmdline) and Path(cmdline[index]).name == "hermes":
+        return cmdline[index + 1:]
+    return None
+
+
+def _is_dashboard_command(args: list[str]) -> bool:
+    """Match the Hermes subcommand, not a profile/model/prompt or later argument.
+
+    These are supported public top-level CLI flags. Do not import Hermes core
+    to parse them: importing its entrypoint has startup side effects. Unknown
+    options are intentionally not guessed to be valueless.
+    """
+    value_flags = {
+        "-p", "--profile", "-m", "--model", "--provider", "--reasoning",
+        "-t", "--toolsets", "-r", "--resume", "-s", "--skills",
+        "--usage-file", "--in", "--cpu-profile",
+    }
+    optional_flags = {"-c", "--continue"}
+    switch_flags = {
+        "--no-restore-cwd", "-w", "--worktree", "--accept-hooks", "--yolo",
+        "--pass-session-id", "--checkpoints", "--ignore-user-config",
+        "--ignore-rules", "--safe-mode", "--tui", "--native", "--tui-native",
+        "--cli", "--dev",
+    }
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if not arg.startswith("-"):
+            return arg in {"dashboard", "serve"} and not any(
+                option in {"-h", "--help"} for option in args[index + 1:]
+            )
+        flag, separator, _ = arg.partition("=")
+        if flag in value_flags:
+            index += 1 if separator else 2
+        elif flag in optional_flags:
+            index += 1 if separator or index + 1 == len(args) or args[index + 1].startswith("-") else 2
+        elif arg in switch_flags:
+            index += 1
+        elif len(arg) > 2 and arg[:2] in {"-m", "-t", "-r", "-s", "-c"}:
+            index += 1  # argparse's attached short-option value, e.g. -mMODEL
+        else:
+            return False
+    return False
 
 
 def collect_dashboard_procs(locale: str = "zh") -> dict:
@@ -1002,32 +1135,39 @@ def collect_dashboard_procs(locale: str = "zh") -> dict:
     if psutil is None:
         return {"error": t("err_psutil_unavailable", locale), "procs": []}
     out = []
+    incomplete = False
     try:
         for proc in psutil.process_iter(["pid", "name", "cmdline", "create_time", "memory_info"]):
             try:
-                cmdline = proc.info.get("cmdline") or []
+                info = proc.info
+                cmdline = info.get("cmdline")
+                # psutil maps AccessDenied/ZombieProcess attributes to None.
+                # An empty argv is a known non-match; unavailable argv is not.
+                if not isinstance(cmdline, (list, tuple)) or not all(isinstance(arg, str) for arg in cmdline):
+                    incomplete = True
+                    continue
                 cmd = " ".join(cmdline)
-                # ``hermes dashboard`` installed from the repository runs as
-                # ``python /path/to/hermes dashboard`` and does not include
-                # ``hermes_cli.main`` in its argv.  Accept both supported
-                # entrypoint forms while matching command arguments exactly.
-                is_module_entrypoint = any("hermes_cli.main" in arg for arg in cmdline)
-                is_script_entrypoint = _is_hermes_script_entrypoint(cmdline)
-                is_dashboard_command = any(
-                    arg in {"dashboard", "serve"} for arg in cmdline
-                )
-                if (is_module_entrypoint or is_script_entrypoint) and is_dashboard_command:
-                    mem = proc.info.get("memory_info")
+                args = _hermes_entrypoint_args(cmdline)
+                if args is not None and _is_dashboard_command(args):
+                    pid = info.get("pid")
+                    if type(pid) is not int or pid <= 0:
+                        incomplete = True
+                        continue
+                    mem = info.get("memory_info")
                     out.append({
-                        "pid": proc.info["pid"],
+                        "pid": pid,
                         "rss": mem.rss if mem else None,
-                        "started_at": proc.info.get("create_time"),
+                        "started_at": info.get("create_time"),
                         "cmdline": sanitize_cmdline(cmd, 200),
                     })
             except Exception:
-                continue
+                incomplete = True
     except Exception:
         return {"error_key": "err_diagnostic_query", "error": t("err_diagnostic_query", locale), "procs": out}
+    if incomplete and not out:
+        # A positive identity proves presence even if another process is
+        # unreadable. With no match, incomplete coverage cannot prove absence.
+        return {"error_key": "err_diagnostic_query", "error": t("err_diagnostic_query", locale), "procs": []}
     return {"procs": out}
 
 

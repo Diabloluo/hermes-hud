@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from .i18n import t
 from .redaction import redact_line  # 复用 HUD 现有 redaction utility
 
 log = logging.getLogger("hud.timeline")
@@ -223,6 +224,59 @@ def collect_tool_events(home: Path, after_ts: int = 0) -> list[dict]:
             "correlation_id": f"session:{sid}",
         }))
     return out
+
+
+_INCIDENT_SUMMARIES = {
+    "incident.opened": ("Incident opened: ", "timeline_incident_opened"),
+    "incident.resolved": ("Incident resolved: ", "timeline_incident_resolved"),
+}
+_INCIDENT_TITLE_KEYS = {
+    "gateway:not-alive": "gateway_not_alive_title",
+    "gateway:stale-state-file": "gateway_stale_title",
+    "db:unreadable": "db_unreadable_title",
+    "disk:critical": "disk_critical_title",
+    "disk:warn": "disk_warn_title",
+    "mem:pressure": "memory_pressure_title",
+    "logs:error-burst": "error_burst_title",
+    "launchd:not-managed": "launchd_incident_title",
+    "dashboard:not-running": "dashboard_not_running",
+    "budget:daily": "budget_incident_title",
+}
+
+
+def _display_incident_title(fingerprint: str, title: str, locale: str) -> str:
+    key = _INCIDENT_TITLE_KEYS.get(fingerprint)
+    if key and title == t(key, "zh"):
+        return t(key, locale)
+
+    family, _, identity = fingerprint.partition(":")
+    name, _, state = identity.rpartition(":")
+    if family == "channel" and name and state:
+        special = {"attention": "channel_attention_title", "stale": "channel_stale_title"}
+        for key in (special.get(state), "channel_disconnected_title"):
+            if key and title == t(key, "zh", name=name):
+                return t(key, locale, name=name)
+    if family == "cron" and name and state == "fail":
+        key = "cron_fail_title"
+        prefix = t(key, "zh", name="")
+        if title.startswith(prefix):
+            return t(key, locale, name=title[len(prefix):])
+    return title
+
+
+def with_display_summary(event: dict, locale: str) -> dict:
+    """Render a stored HUD incident without changing the canonical event."""
+    template = _INCIDENT_SUMMARIES.get(event.get("event_type"))
+    correlation = event.get("correlation_id") or ""
+    if event.get("source") != "hud" or not template or not correlation.startswith("incident:"):
+        return event
+    prefix, key = template
+    summary = event.get("summary") or ""
+    if not summary.startswith(prefix):
+        return event
+    fingerprint = correlation[len("incident:"):]
+    title = _display_incident_title(fingerprint, summary[len(prefix):], locale)
+    return {**event, "display_summary": t(key, locale, title=title)}
 
 
 def collect_incident_events(storage, after_ts: int = 0) -> list[dict]:

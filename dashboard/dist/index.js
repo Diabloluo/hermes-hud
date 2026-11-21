@@ -37,6 +37,53 @@
 
   // English. Source of truth for fallback when a locale is missing a key.
   const EN = {
+    "记录定价覆盖率": "Record pricing coverage",
+    "来源更新时间未提供": "Source update time not provided",
+    "快照获取失败": "Snapshot retrieval failed",
+    "健康状态未知": "Health status unknown",
+    "成功接收于": "Successfully received at",
+    "今日归属（累计记录，非精确日消耗）": "Attributed to today (cumulative records, not exact daily usage)",
+    "统计范围": "Statistics scope",
+    "全部累计记录": "All cumulative records",
+    "累计记录归属估算": "Attributed cumulative records",
+    "不完整：仅已定价部分": "Incomplete: priced portion only",
+    "价格未知，金额不可用": "Pricing unknown; amount unavailable",
+    "数据源不可用": "Data source unavailable",
+    "输入+输出，不含单列缓存": "Input + output; cache shown separately",
+    "记录定价覆盖；不是 Token 覆盖": "Record pricing coverage; not token coverage",
+    "尚无成功接收": "No successful response yet",
+    "无新警告记录": "No warning records",
+    "采样时间未知": "Sample time unknown",
+
+    "需要关注": "Needs attention",
+    "正常检查（展开查看）": "Normal checks (expand)",
+    "已定价记录": "Priced records",
+    "未知价格记录": "Unknown-price records",
+    "暂无 Token 定价分组": "Token pricing breakdown unavailable",
+    "快照已接收": "Snapshot received",
+    "快照更新失败，保留旧数据": "Snapshot update failed; retaining previous data",
+    "快照尚未取得": "Snapshot not yet received",
+    "深色": "Dark",
+    "浅色": "Light",
+    "主题": "Theme",
+    "资源与诊断": "Resources and diagnostics",
+    "主要导航": "Primary navigation",
+
+    "历史记录 · 当前连接未确认": "Historical record · current connection unconfirmed",
+    "当前状态未知": "Current state unknown",
+    "已停用": "Inactive",
+    "报告已连接": "Reports connected",
+    "心跳陈旧": "Stale heartbeat",
+    "状态更新时间": "Status update time",
+    "未独立验证": "Not independently verified",
+    "心跳阈值未知": "Heartbeat threshold unknown",
+    "已暂停": "Paused",
+    "已禁用": "Disabled",
+    "已完成": "Completed",
+    "启用状态未知": "Enabled state unknown",
+    "历史连续失败 ": "Historical failure streak ",
+    "渠道记录保留历史状态；仅当前实例用于当前告警。状态更新时间不是轮询心跳，连接状态不等于独立健康验证。": "Historical channel records are retained; only current-instance records drive current alerts. Status update time is not a polling heartbeat, and reported connection is not independent health verification.",
+
     "原 Hermes HUD · 非官方 Hermes 社区观察插件": "Formerly Hermes HUD · Unofficial Hermes community dashboard",
     "事故时间线 (最近 ": "Incident Timeline (latest ",
     "运行": "Runs", "观测运行": "Observed runs",
@@ -78,7 +125,7 @@
     "输入 Token": "Input Tokens", "输出 Token": "Output Tokens",
     "平均每 Session": "Avg per Session", "今日归属估算费用": "Today's Attributed Est. Cost",
     "今日预算比例": "Today's Budget Ratio", "不可用（累计数据）": "Unavailable (cumulative data)",
-    "今日预算使用率": "Today's Budget Usage", "已知部分 $": "Known portion $",
+    "今日预算使用率": "Today's Budget Usage", "已知部分 {amount}": "Known portion {amount}",
     "—（定价未知）": "— (pricing unknown)", "Cost Intelligence · 范围": "Cost Intelligence · Range",
     "估算费用 / Estimated cost（非账单）": "Estimated cost (not a bill)",
     "部分成本数据：仅部分 usage 记录含费用，汇总是已知部分。":
@@ -148,7 +195,8 @@
     "活跃事故": "Active Incidents", "事故总数": "Total Incidents",
     "事故时间线 (telemetry.db)": "Incident Timeline (telemetry.db)",
     "暂无事故记录": "No incident records yet", "进行中": "Active", "已恢复": "Resolved",
-    "首次 ": "First seen ", " · 末次 ": " · last seen ", " · 观测 ": " · ", " 次": " times",
+    "恢复待确认": "Recovery pending confirmation",
+    "首次记录 ": "First recorded ", " · 记录更新时间 ": " · record updated ", " · 故障观测次数（非发生次数） ": " · Incident observations (not occurrences) ", " 次": " times",
     "错误指纹 TOP": "Top Error Fingerprints", "近 30 分钟无错误": "No errors in the last 30 min",
     "errors.log 尾部（脱敏）": "errors.log tail (redacted)", "无内容": "No content",
     "agent.log 尾部（脱敏）": "agent.log tail (redacted)",
@@ -243,6 +291,40 @@
 
   // French
   const FR = {
+    "快照尚未取得": "Instantané pas encore reçu",
+    "需要关注": "Points à surveiller",
+    "健康状态未知": "État de santé inconnu",
+    "快照已接收": "Instantané reçu",
+    "记录定价覆盖率": "Part des enregistrements avec un coût connu",
+    "无新警告记录": "Aucun nouvel avertissement enregistré",
+    "今日归属（累计记录，非精确日消耗）": "Estimation attribuée à aujourd’hui (enregistrements cumulés, sans mesure exacte de la consommation du jour)",
+    "已定价记录": "Enregistrements avec un coût connu",
+    "记录定价覆盖；不是 Token 覆盖": "Couverture calculée sur le nombre d’enregistrements, pas sur le nombre de jetons",
+    "正常检查（展开查看）": "Contrôles sans anomalie (développer)",
+    "统计范围": "Périmètre des statistiques",
+    "来源更新时间未提供": "Heure de mise à jour de la source non fournie",
+    "成功接收于": "Dernière réception réussie à",
+    "尚无成功接收": "Aucune réception réussie pour le moment",
+    "输入+输出，不含单列缓存": "Entrée + sortie, hors cache comptabilisé séparément",
+    "主题": "Thème",
+    "主要导航": "Navigation principale",
+    "资源与诊断": "Ressources et diagnostic",
+
+    "历史记录 · 当前连接未确认": "Historique · connexion actuelle non confirmée",
+    "当前状态未知": "État actuel inconnu",
+    "已停用": "Inactif",
+    "报告已连接": "Connexion signalée",
+    "心跳陈旧": "Signal périodique ancien",
+    "状态更新时间": "Heure de mise à jour de l’état",
+    "未独立验证": "Non vérifié indépendamment",
+    "心跳阈值未知": "Seuil du rythme de vie inconnu",
+    "已暂停": "En pause",
+    "已禁用": "Désactivé",
+    "已完成": "Terminé",
+    "启用状态未知": "État d’activation inconnu",
+    "历史连续失败 ": "Échecs historiques consécutifs ",
+    "渠道记录保留历史状态；仅当前实例用于当前告警。状态更新时间不是轮询心跳，连接状态不等于独立健康验证。": "Les états historiques sont conservés ; seule l’instance actuelle détermine les alertes actuelles. La mise à jour d’état n’est pas un signal périodique et ne vérifie pas indépendamment la santé de la connexion.",
+
     "原 Hermes HUD · 非官方 Hermes 社区观察插件": "Anciennement Hermes HUD · Tableau de bord communautaire non officiel pour Hermes",
     "事故时间线 (最近 ": "Chronologie des incidents (derniers ",
     "运行": "Exécutions", "观测运行": "Exécutions observées",
@@ -280,8 +362,12 @@
     "暂无费用数据": "Aucune donnée de coût pour l'instant", "总 Token": "Jetons totaux",
     "输入 Token": "Jetons en entrée", "输出 Token": "Jetons en sortie",
     "平均每 Session": "Moyenne par session", "今日归属估算费用": "Coût estimé attribué du jour",
+    "累计记录归属估算": "Estimation par attribution des données cumulées",
+    "未知价格记录": "Enregistrements sans tarif connu",
+    "数据源不可用": "Source de données indisponible",
+    "价格未知，金额不可用": "Tarif inconnu, montant indisponible",
     "今日预算比例": "Ratio budgétaire du jour", "不可用（累计数据）": "Indisponible (données cumulées)",
-    "今日预算使用率": "Utilisation du budget du jour", "已知部分 $": "Partie connue $",
+    "今日预算使用率": "Utilisation du budget du jour", "已知部分 {amount}": "Partie connue {amount}",
     "—（定价未知）": "— (tarification inconnue)", "Cost Intelligence · 范围": "Cost Intelligence · Plage",
     "估算费用 / Estimated cost（非账单）": "Coût estimé (non facturé)",
     "部分成本数据：仅部分 usage 记录含费用，汇总是已知部分。":
@@ -346,7 +432,8 @@
     "活跃事故": "Incidents actifs", "事故总数": "Incidents au total",
     "事故时间线 (telemetry.db)": "Chronologie des incidents (telemetry.db)",
     "暂无事故记录": "Aucun incident enregistré pour l'instant", "进行中": "En cours", "已恢复": "Résolu",
-    "首次 ": "Première fois ", " · 末次 ": " · dernière fois ", " · 观测 ": " · ", " 次": " fois",
+    "恢复待确认": "Rétablissement en attente de confirmation",
+    "首次记录 ": "Premier enregistrement ", " · 记录更新时间 ": " · enregistrement mis à jour ", " · 故障观测次数（非发生次数） ": " · Observations (pas occurrences) ", " 次": " fois",
     "错误指纹 TOP": "Top des empreintes d'erreurs", "近 30 分钟无错误": "Aucune erreur au cours des 30 dernières minutes",
     "errors.log 尾部（脱敏）": "Fin de errors.log (anonymisé)", "无内容": "Aucun contenu",
     "agent.log 尾部（脱敏）": "Fin de agent.log (anonymisé)",
@@ -433,6 +520,40 @@
 
   // Arabic: HUD root provides RTL even when the minimum host has no Arabic UI.
   const AR = {
+    "快照尚未取得": "لم تُستلم اللقطة بعد",
+    "需要关注": "يتطلب الانتباه",
+    "健康状态未知": "حالة التشغيل غير معروفة",
+    "快照已接收": "تم استلام اللقطة",
+    "记录定价覆盖率": "نسبة السجلات ذات التكلفة المعروفة",
+    "无新警告记录": "لا توجد تحذيرات جديدة مسجّلة",
+    "今日归属（累计记录，非精确日消耗）": "تقدير منسوب إلى اليوم (من سجلات تراكمية، دون قياس دقيق للاستهلاك اليومي)",
+    "已定价记录": "السجلات ذات التكلفة المعروفة",
+    "记录定价覆盖；不是 Token 覆盖": "تُحسب تغطية التسعير بعدد السجلات، لا بعدد الرموز",
+    "正常检查（展开查看）": "الفحوص الخالية من المشكلات (وسّع للعرض)",
+    "统计范围": "نطاق الإحصاءات",
+    "来源更新时间未提供": "وقت تحديث المصدر غير متاح",
+    "成功接收于": "آخر استلام ناجح في",
+    "尚无成功接收": "لم ينجح أي استلام بعد",
+    "输入+输出，不含单列缓存": "الإدخال + الإخراج، من دون التخزين المؤقت المحسوب على حدة",
+    "主题": "السمة",
+    "主要导航": "التنقل الرئيسي",
+    "资源与诊断": "الموارد والتشخيص",
+
+    "历史记录 · 当前连接未确认": "سجل سابق · الاتصال الحالي غير مؤكد",
+    "当前状态未知": "الحالة الحالية غير معروفة",
+    "已停用": "غير نشط",
+    "报告已连接": "تم الإبلاغ عن اتصال",
+    "心跳陈旧": "نبض اتصال قديم",
+    "状态更新时间": "وقت تحديث الحالة",
+    "未独立验证": "لم يتم التحقق بشكل مستقل",
+    "心跳阈值未知": "عتبة نبض الاتصال غير معروفة",
+    "已暂停": "متوقف مؤقتًا",
+    "已禁用": "معطل",
+    "已完成": "مكتمل",
+    "启用状态未知": "حالة التفعيل غير معروفة",
+    "历史连续失败 ": "سلسلة الإخفاقات السابقة ",
+    "渠道记录保留历史状态；仅当前实例用于当前告警。状态更新时间不是轮询心跳，连接状态不等于独立健康验证。": "تُحفظ حالات القنوات السابقة؛ تحدد بيانات المثيل الحالي فقط التنبيهات الحالية. وقت تحديث الحالة ليس نبض اتصال دوريًا ولا يثبت سلامة الاتصال بشكل مستقل.",
+
     "原 Hermes HUD · 非官方 Hermes 社区观察插件": "Hermes HUD سابقًا · لوحة مراقبة مجتمعية غير رسمية لـ Hermes",
     "事故时间线 (最近 ": "الجدول الزمني للحوادث (الأحدث ",
     "运行": "عمليات التشغيل", "观测运行": "عمليات التشغيل المرصودة",
@@ -470,8 +591,12 @@
     "暂无费用数据": "لا توجد بيانات تكلفة بعد", "总 Token": "إجمالي الرموز",
     "输入 Token": "رموز الإدخال", "输出 Token": "رموز الإخراج",
     "平均每 Session": "المتوسط لكل جلسة", "今日归属估算费用": "التكلفة المقدّرة المنسوبة لليوم",
+    "累计记录归属估算": "تقدير بإسناد السجلات التراكمية",
+    "未知价格记录": "السجلات ذات الأسعار المجهولة",
+    "数据源不可用": "مصدر البيانات غير متاح",
+    "价格未知，金额不可用": "السعر مجهول، والمبلغ غير متاح",
     "今日预算比例": "نسبة ميزانية اليوم", "不可用（累计数据）": "غير متاح (بيانات تراكمية)",
-    "今日预算使用率": "استخدام ميزانية اليوم", "已知部分 $": "الجزء المعروف $",
+    "今日预算使用率": "استخدام ميزانية اليوم", "已知部分 {amount}": "الجزء المعروف {amount}",
     "—（定价未知）": "— (التسعير غير معروف)", "Cost Intelligence · 范围": "Cost Intelligence · النطاق",
     "估算费用 / Estimated cost（非账单）": "تكلفة مقدّرة (ليست فاتورة)",
     "部分成本数据：仅部分 usage 记录含费用，汇总是已知部分。":
@@ -536,7 +661,8 @@
     "活跃事故": "الحوادث النشطة", "事故总数": "إجمالي الحوادث",
     "事故时间线 (telemetry.db)": "الجدول الزمني للحوادث (telemetry.db)",
     "暂无事故记录": "لا توجد سجلات حوادث بعد", "进行中": "نشطة", "已恢复": "تم الحل",
-    "首次 ": "أول ظهور ", " · 末次 ": " · آخر ظهور ", " · 观测 ": " · ", " 次": " مرة",
+    "恢复待确认": "التعافي بانتظار التأكيد",
+    "首次记录 ": "أول تسجيل ", " · 记录更新时间 ": " · تحديث السجل ", " · 故障观测次数（非发生次数） ": " · مشاهدات الحادث (ليست مرات حدوثه) ", " 次": " مرة",
     "错误指纹 TOP": "أهم بصمات الأخطاء", "近 30 分钟无错误": "لا توجد أخطاء في آخر 30 دقيقة",
     "errors.log 尾部（脱敏）": "نهاية errors.log (مموَّه)", "无内容": "لا يوجد محتوى",
     "agent.log 尾部（脱敏）": "نهاية agent.log (مموَّه)",
@@ -673,13 +799,51 @@
     return (n / 1000000000).toFixed(2) + "B";
   }
 
+  // R09: presentation only. No inference from missing numbers; no storage writes.
+  function snapshotState(snap, error) {
+    if (error) return {label: tt(snap ? "快照更新失败，保留旧数据" : "快照获取失败"), css: "hud-health-warning"};
+    if (!snap) return {label: tt("快照尚未取得"), css: "hud-health-unknown"};
+    const health = snap._health;
+    const counts = health && health.counts;
+    if (health && (health.overall === "critical" || counts && counts.critical > 0))
+      return {label: tt("需要关注"), css: "hud-health-critical"};
+    if (health && (health.overall === "warning" || counts && counts.warning > 0))
+      return {label: tt("需要关注"), css: "hud-health-warning"};
+    if (!health || health.overall !== "normal" || !counts ||
+        ![counts.warning, counts.critical].every(function(n) { return typeof n === "number" && Number.isFinite(n) && n >= 0; }))
+      return {label: tt("健康状态未知"), css: "hud-health-unknown"};
+    return {label: tt("快照已接收"), css: "hud-health-normal"};
+  }
+
+  function costTruth(s) {
+    const coverage = s && (s.coverage || s);
+    const amount = s && s.estimated_cost_usd;
+    const valid = typeof amount === "number" && Number.isFinite(amount) && amount >= 0;
+    if (!s || s.source_status === "unavailable" || s.cost_source_status === "unavailable")
+      return {amount: "—", note: tt("数据源不可用")};
+    if (!valid || !coverage || (coverage.cost_complete !== true && !(coverage.pricing_known_rows > 0)))
+      return {amount: "—", note: tt("价格未知，金额不可用")};
+    return {amount: fmtUSD(amount), note: tt(coverage.cost_complete === true ? "估算" : "不完整：仅已定价部分")};
+  }
+
+  function incidentObservationCount(inc) {
+    const value = inc && (inc.observations != null ? inc.observations : inc.count);
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : "—";
+  }
+
+  function incidentObservationText(inc) {
+    const count = incidentObservationCount(inc);
+    return typeof count === "number" ? count + tt(" 次") : "—";
+  }
+
   function pricingCostCell(s) {
-    if (!s) return "—";
-    if (s.cost_complete) return fmtUSD(s.estimated_cost_usd);
-    if (s.pricing_known_rows > 0)
-      return tt("已知部分 $") + (s.estimated_cost_usd || 0).toFixed(4) +
-        " · " + Math.round((s.pricing_coverage_ratio || 0) * 100) + "%";
-    return tt("—（定价未知）");
+    const view = costTruth(s);
+    const coverage = s && (s.coverage || s);
+    const ratio = coverage && coverage.pricing_coverage_ratio;
+    const validRatio = typeof ratio === "number" && Number.isFinite(ratio) && ratio >= 0 && ratio <= 1;
+    const suffix = coverage && coverage.cost_complete !== true && validRatio
+      ? " · " + tt("记录定价覆盖率") + " " + (ratio < 1 && Math.round(ratio * 100) === 100 ? "<100" : Math.round(ratio * 100)) + "%" : "";
+    return view.amount + " · " + view.note + suffix;
   }
 
   function fmtUSD(n) {
@@ -703,6 +867,47 @@
 
   function fmtDay(day) {
     return day; // "2026-08-23"
+  }
+
+  // Pure display contracts. Do not rewrite the raw history into a healthy state.
+  function channelView(p, thresholds) {
+    const current = p.activity === "current";
+    const validAge = p.heartbeat_source === "periodic" && typeof p.heartbeat_age === "number" && Number.isFinite(p.heartbeat_age) && p.heartbeat_age >= 0;
+    const threshold = thresholds && thresholds.heartbeat_critical_s;
+    const validThreshold = typeof threshold === "number" && Number.isFinite(threshold) && threshold >= 0;
+    const thresholdUnknown = current && validAge && !validThreshold;
+    const stale = current && validAge && validThreshold && p.heartbeat_age > threshold;
+    let label, dot, color;
+    if (p.activity === "historical") {
+      label = tt("历史记录 · 当前连接未确认") + " · " + (stateZh(p.state) || tt("未知"));
+      dot = "hud-dot-mute"; color = undefined;
+    } else if (p.activity === "inactive") {
+      label = tt("已停用"); dot = "hud-dot-mute"; color = undefined;
+    } else if (!current || !p.state || p.state === "unknown") {
+      label = tt("当前状态未知"); dot = "hud-dot-warn"; color = "#facc15";
+    } else if (p.state !== "connected") {
+      label = stateZh(p.state); dot = "hud-dot-bad"; color = "#f87171";
+    } else {
+      label = tt("报告已连接") + (p.needs_attention ? " · " + tt("需关注") : "") + (stale ? " · " + tt("心跳陈旧") : "") + (thresholdUnknown ? " · " + tt("心跳阈值未知") : "");
+      dot = p.needs_attention || stale || thresholdUnknown ? "hud-dot-warn" : "hud-dot-ok";
+      color = p.needs_attention || stale || thresholdUnknown ? "#facc15" : "#4ade80";
+    }
+    return { label, dot, color, stale,
+      heartbeat: current && validAge ? Math.round(p.heartbeat_age) + "s" : tt("未独立验证"),
+      timeLabel: p.timestamp_semantics === "status_update" ? tt("状态更新时间") : tt("更新时间") };
+  }
+
+  function cronView(j) {
+    const inactive = j.inactive === true || j.enabled === false || ["paused", "completed", "disabled"].includes(j.state) || !!j.paused_at;
+    const bad = j.last_status === "error" || j.last_status === "failed" || (j.failure_streak || 0) > 0;
+    const status = statusZh(j.last_status);
+    if (inactive) {
+      const label = j.state === "completed" ? tt("已完成") : j.state === "paused" || j.paused_at ? tt("已暂停") : tt("已禁用");
+      return {variant:"secondary", label:label + ((j.failure_streak || 0) > 0 ? " · " + tt("历史连续失败 ") + j.failure_streak : ""), inactive:true};
+    }
+    const unknown = j.enabled !== true;
+    return {variant:bad ? "destructive" : unknown ? "warning" : (j.last_status === "ok" || j.last_status === "completed") ? "default" : "outline",
+      label:(unknown ? tt("启用状态未知") + " · " : "") + status + (j.failure_streak ? "×" + j.failure_streak : ""), inactive:false};
   }
 
   function dotClass(ok, warn) {
@@ -776,18 +981,19 @@
         try {
           const d = await SDK.fetchJSON(fullUrl);
           if (!alive) return;
-          setData(d);
+          setData({ url: fullUrl, value: d });
           setError(null);
           setLastAt(Date.now());
         } catch (e) {
-          if (alive) setError(String(e && e.message ? e.message : e));
+          if (alive) setError({ url: fullUrl, value: String(e && e.message ? e.message : e) });
         }
       }
       tick();
       const t = setInterval(tick, interval);
       return () => { alive = false; clearInterval(t); };
     }, [fullUrl, interval]);
-    return { data, error, lastAt };
+    return { data: data && data.url === fullUrl ? data.value : null,
+      error: error && error.url === fullUrl ? error.value : null, lastAt };
   }
 
   /** 单次 fetch（点击/搜索触发），同样带上当前语言。 */
@@ -839,6 +1045,7 @@
     const db = snap.db || {};
     const cron = snap.cron || {};
     const today = db.today_sessions || {};
+    const todayCost = costTruth(db.today_sessions);
     const mem = sys.memory || {};
     const platforms = gw.platforms || {};
 
@@ -846,14 +1053,22 @@
     const checks = (health && health.checks) || [];
     const incidents = (health && health.incidents) || [];
 
-    return h(React.Fragment, null,
+    return h("div", { className: "hud-overview-page" },
+      h("section", { className: "hud-attention", "aria-label": tt("需要关注") },
+        h("h2", null, tt("需要关注")),
+        !health ? h("p", null, tt("当前状态未知")) : checks.every(function(c) { return c.severity === "normal"; }) ? h("p", null, tt("无新警告记录")) : null,
+        checks.filter(function(c) { return c.severity !== "normal"; }).map(function(c) {
+          const job = c.key && c.key.startsWith("cron:") ? (cron.jobs || []).find(function (j) { return "cron:" + j.id === c.key; }) : null;
+          const detail = job && !cronView(job).inactive && job.enabled !== true ? " · " + tt("启用状态未知") : "";
+          return h("div", { key: c.key, className: "hud-incident " + (c.severity === "critical" ? "critical" : "warning") }, c.message + detail);
+        })),
       // 快速指标行
       h("div", { className: "hud-grid hud-grid-4" },
         card("Gateway",
           h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
             h("div", { style: { fontSize: 15, fontWeight: 700 } },
               h("span", { className: "hud-dot " + dotClass(gw.alive, false) }),
-              gw.alive ? tt("运行中") : tt("未运行"),
+              gw.alive === true ? tt("运行中") : gw.alive === false ? tt("未运行") : tt("未知"),
               gw.pid ? h("span", { style: { opacity: 0.5, fontSize: 11, marginLeft: 6 } }, "PID " + gw.pid) : null),
             kv(tt("状态"), gw.state || "-"),
             kv(tt("版本"), gw.code_version || "-"),
@@ -862,24 +1077,24 @@
           h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
             Object.keys(platforms).map(function (name) {
               const p = platforms[name];
-              const ok = p.state === "connected";
-              const stale = (p.heartbeat_age || 0) > 60;
+              const view = channelView(p, snap._health && snap._health.thresholds);
               return h("div", { key: name, style: { display: "flex", alignItems: "center", gap: 8 } },
-                h("span", { className: "hud-dot " + dotClass(ok, stale) }),
+                h("span", { className: "hud-dot " + view.dot }),
                 h("span", { style: { fontWeight: 600, width: 70 } }, name),
-                h("span", { style: { opacity: ok ? 0.85 : 1, color: ok ? undefined : "#f87171" } },
-                  stateZh(p.state) + (stale ? tt("（心跳陈旧）") : "")),
-                stale ? h(Badge, { variant: "warning" }, tt("抖动")) : null);
+                h("span", { style: { color: view.color } }, view.label));
             }))),
-        card(tt("今日 Token / 费用"),
+        card(tt("今日归属（累计记录，非精确日消耗）"),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
             kv(tt("输入"), fmtTokens(today.input_tokens)),
             kv(tt("输出"), fmtTokens(today.output_tokens)),
             kv(tt("Cache 读"), fmtTokens(today.cache_read_tokens)),
-            h("div", { style: { display: "flex", alignItems: "baseline", gap: 6 } },
+            h("div", { style: { display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 6 } },
               h("span", { className: "k" }, tt("估算费用")),
-              h("span", { className: "v", style: { fontSize: 16, fontWeight: 700 } }, pricingCostCell(today)),
-              h(Badge, { variant: "secondary" }, tt("估算"))),
+              h("span", { className: "v", style: { fontSize: 16, fontWeight: 700 } }, todayCost.amount),
+              h(Badge, { tone: "secondary" }, todayCost.note)),
+            kv(tt("已定价记录"), today.pricing_known_rows == null ? "—" : String(today.pricing_known_rows)),
+            kv(tt("未知价格记录"), today.pricing_unknown_rows == null ? "—" : String(today.pricing_unknown_rows)),
+            h("div", { className: "hud-footnote" }, tt("记录定价覆盖；不是 Token 覆盖")),
             db.sampled_at ? h("div", { className: "hud-footnote" }, tt("采集于 ") + fmtTime(db.sampled_at)) : null)),
         card(tt("Cron / 会话"),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
@@ -891,12 +1106,18 @@
       // 健康检查 + 事故
       h("div", { className: "hud-grid hud-grid-2" },
         card(tt("健康检查 (") + (checks.length) + tt(" 项)"),
-          h("div", { className: "hud-scroll" },
-            checks.map(function (c) {
+          h("details", { className: "hud-scroll" },
+            h("summary", null, tt("正常检查（展开查看）")),
+            checks.filter(function(c) { return c.severity === "normal"; }).map(function (c) {
               const sev = c.severity;
+              const platform = c.key && c.key.startsWith("channel:") ? platforms[c.key.slice(8)] : null;
+              const job = c.key && c.key.startsWith("cron:") ? (cron.jobs || []).find(function (j) { return "cron:" + j.id === c.key; }) : null;
+              // Health and snapshot may come from different sampling moments.
+              // Never let provenance metadata mute an observed warning/critical.
+              const dot = sev === "critical" || sev === "warning" ? dotClass(false, sev === "warning") : platform ? channelView(platform, snap._health && snap._health.thresholds).dot : job && cronView(job).inactive ? "hud-dot-mute" : job && job.enabled !== true && sev === "normal" ? "hud-dot-warn" : dotClass(sev === "normal", sev === "warning");
               return h("div", { key: c.key, className: "hud-check" },
-                h("span", { className: "hud-dot " + dotClass(sev === "normal", sev === "warning") }),
-                h("span", { style: { flex: 1 } }, c.message));
+                h("span", { className: "hud-dot " + dot }),
+                h("span", { style: { flex: 1 } }, c.message + (job && !cronView(job).inactive && job.enabled !== true ? " · " + tt("启用状态未知") : "")));
             }))),
         card(tt("事故时间线 (最近 ") + Math.min(10, incidents.length) + ")",
           incidents.length === 0
@@ -979,7 +1200,7 @@
               return h("tr", { key: i },
                 h("td", { className: "num", style: { fontSize: 11 } }, fmtTime(t.ts).slice(11)),
                 h("td", { style: { maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, t.title),
-                h("td", null, h(Badge, { variant: "secondary" }, t.tool_name)),
+                h("td", null, h(Badge, { tone: "secondary" }, t.tool_name)),
                 h("td", { style: { fontSize: 10.5, opacity: 0.7 } },
                   (t.tool_calls || []).join(", ") || "-"));
             }))))),
@@ -1003,7 +1224,8 @@
     const byTask = (data && data.by_task) || [];
 
     // —— Cost Intelligence v1（canonical = session_model_usage，估算语义）——
-    const ci = usePoll(API + "/cost/summary?range=" + ciRange, 15000).data;
+    const ciPoll = usePoll(API + "/cost/summary?range=" + ciRange, 15000);
+    const ci = ciPoll.data;
     const ciModels = usePoll(API + "/cost/models?range=" + ciRange, 15000).data;
     const ciSessions = usePoll(API + "/cost/sessions?range=" + ciRange + "&limit=10", 15000).data;
     const ciBudget = usePoll(API + "/cost/budget", 15000).data;
@@ -1014,10 +1236,10 @@
       { id: "7d", label: "7d" }, { id: "30d", label: "30d" }, { id: "all", label: "All" },
     ];
     const ciFmt = function (v) {
-      return (v === null || v === undefined) ? "—" : "$" + v.toFixed(2);
+      return (typeof v !== "number" || !Number.isFinite(v) || v < 0) ? "—" : fmtUSD(v);
     };
     const ciFmtTok = function (v) {
-      return (v === null || v === undefined) ? "—" : v.toLocaleString();
+      return (typeof v !== "number" || !Number.isFinite(v) || v < 0) ? "—" : v.toLocaleString();
     };
     const ciPart = ci && (ci.partial || ci.coverage && !ci.coverage.cost_complete);
     // 非 All 范围：累计 usage row 归属估算（window_exact=false）
@@ -1025,20 +1247,11 @@
     const ciBudgetUncertain = ciBudget && ciBudget.budget_status === "attribution_uncertain";
     // 金额显示规则（partial row truth）：complete → $X；known>0 → 已知部分；
     // known=0 → —（定价未知）；禁止 $0.000 冒充
-    function ciCostCell(s) {
-      if (!s) return "—";
-      if (s.cost_complete) return "$" + (s.estimated_cost_usd || 0).toFixed(3);
-      if (s.pricing_known_rows > 0) {
-        return tt("已知部分 $") + (s.estimated_cost_usd || 0).toFixed(3) +
-          " · " + Math.round((s.pricing_coverage_ratio || 0) * 100) + "%";
-      }
-      return tt("—（定价未知）");
-    }
+    const ciCostCell = pricingCostCell;
     const ciEmptyText = (ci && ci.source_status === "unavailable")
       ? tt("费用数据源不可用") : tt("暂无费用数据");
 
     const ciCards = [
-      { k: tt("估算费用"), v: ciFmt(ci && ci.estimated_cost_usd) },
       { k: tt("总 Token"), v: ciFmtTok(ci && ci.total_tokens) },
       { k: tt("输入 Token"), v: ciFmtTok(ci && ci.input_tokens) },
       { k: tt("输出 Token"), v: ciFmtTok(ci && ci.output_tokens) },
@@ -1046,7 +1259,31 @@
       { k: tt("平均每 Session"), v: ciFmt(ci && ci.avg_cost_per_session_usd) },
     ];
     if (ciBudget && ciBudget.budget_configured) {
-      ciCards.push({ k: tt("今日归属估算费用"), v: ciFmt(ciBudget.today_estimated_cost_usd) });
+      const budgetAmount = ciBudget.today_estimated_cost_usd;
+      const budgetCoverage = ciBudget.coverage;
+      const budgetUnavailable = ciBudget.budget_status === "unavailable" ||
+        budgetCoverage?.source_status?.usage === "unavailable";
+      const hasKnownRows = budgetCoverage
+        ? Number.isSafeInteger(budgetCoverage.pricing_known_rows) && budgetCoverage.pricing_known_rows > 0
+        : budgetAmount > 0; // Older backends report a known subtotal without coverage.
+      let budgetText = tt("—（定价未知）");
+      const validBudgetAmount = typeof budgetAmount === "number" && Number.isFinite(budgetAmount) && budgetAmount >= 0;
+      const showBudgetAmount = !budgetUnavailable && validBudgetAmount &&
+        (budgetCoverage?.cost_complete === true || hasKnownRows);
+      if (budgetUnavailable) {
+        budgetText = tt("数据源不可用");
+      } else if (showBudgetAmount) {
+        const formatted = fmtUSD(budgetAmount);
+        budgetText = budgetCoverage?.cost_complete === true
+          ? formatted : tt("已知部分 {amount}").replace("{amount}", formatted);
+      }
+      const unknownRows = budgetCoverage?.pricing_unknown_rows;
+      ciCards.push({
+        k: tt("今日归属估算费用"), v: budgetText,
+        note: showBudgetAmount && ciBudgetUncertain ? tt("累计记录归属估算") : null,
+        detail: !budgetUnavailable && Number.isSafeInteger(unknownRows) && unknownRows > 0
+          ? tt("未知价格记录") + " · " + unknownRows : null,
+      });
       if (ciBudgetUncertain) {
         ciCards.push({ k: tt("今日预算比例"), v: tt("不可用（累计数据）") });
       } else if (ciBudget.usage_ratio !== null && ciBudget.usage_ratio !== undefined) {
@@ -1063,27 +1300,47 @@
     const dayLabels = byDay.map(function (d) { return d.day.slice(5); });
     const inVals = byDay.map(function (d) { return d.input; });
 
-    return h(React.Fragment, null,
+    return h("div", { className: "hud-usage-page" },
       // —— Cost Intelligence 区块（Phase 10-11）——
       h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 } },
         h("span", { className: "k", style: { fontSize: 12, opacity: 0.6 } }, tt("Cost Intelligence · 范围")),
         ciRanges.map(function (r) {
           return h(Button, {
-            key: r.id, size: "sm", variant: ciRange === r.id ? "default" : "outline",
+            key: r.id, size: "sm", outlined: ciRange !== r.id,
             onClick: function () { setCiRange(r.id); },
             style: { padding: "2px 10px", fontSize: 12 },
           }, r.label);
         }),
-        h(Badge, { variant: "secondary", style: { marginLeft: 8 } }, tt("估算费用 / Estimated cost（非账单）"))),
+        h(Badge, { tone: "secondary", style: { marginLeft: 8 } }, tt("估算费用 / Estimated cost（非账单）"))),
       ciPart ? h("div", { style: { fontSize: 12, padding: "6px 10px", background: "rgba(255,193,7,.12)", border: "1px solid rgba(255,193,7,.4)", borderRadius: 6, margin: "6px 0" } },
         tt("部分成本数据：仅部分 usage 记录含费用，汇总是已知部分。") +
         tt("（Partial cost data — coverage ") +
-        (ci && ci.coverage ? Math.round((ci.coverage.pricing_coverage_ratio || 0) * 100) + tt("%）") : "—" + tt("%）"))) : null,
+        (ci && ci.coverage && typeof ci.coverage.pricing_coverage_ratio === "number" && Number.isFinite(ci.coverage.pricing_coverage_ratio) && ci.coverage.pricing_coverage_ratio >= 0 && ci.coverage.pricing_coverage_ratio <= 1 ? (ci.coverage.pricing_coverage_ratio < 1 && Math.round(ci.coverage.pricing_coverage_ratio * 100) === 100 ? "<100" : Math.round(ci.coverage.pricing_coverage_ratio * 100)) + tt("%）") : "—" + tt("%）"))) : null,
       ciAttrib ? h("div", { style: { fontSize: 11, padding: "4px 10px", opacity: 0.85, marginBottom: 4 } },
         tt("时间范围费用为归属估算：Hermes 当前仅保存累计 usage row，跨时间边界的调用无法精确拆分。（Time-window cost is attribution-based.）")) : null,
-      h("div", { className: "hud-grid hud-grid-4", style: { marginTop: 8 } },
+      h("section", { className: "hud-cost-summary", "aria-label": tt("估算费用") },
+        h("div", { className: "hud-cost-hero" },
+          h("div", { className: "hud-cost-amount" },
+            h("h2", null, tt("估算费用")),
+            h("div", { className: "hud-metric-value" }, costTruth(ci).amount),
+            h("p", null, costTruth(ci).note),
+            h("p", null, tt("费用为本地估算，非账单"))),
+          h("div", { className: "hud-cost-coverage" },
+            kv(tt("已定价记录"), ci && ci.coverage && ci.coverage.pricing_known_rows != null ? String(ci.coverage.pricing_known_rows) : "—"),
+            kv(tt("未知价格记录"), ci && ci.coverage && ci.coverage.pricing_unknown_rows != null ? String(ci.coverage.pricing_unknown_rows) : "—"),
+            h("p", { className: "hud-footnote" }, tt("记录定价覆盖；不是 Token 覆盖")))),
+        h("div", { className: "hud-cost-provenance" },
+          h("div", null, tt("统计范围") + ": " + ciRange + " · " + tt(ciRange === "all" ? "全部累计记录" : "累计记录归属估算")),
+          h("div", null, tt("来源更新时间未提供")),
+          h("div", null, ciPoll.lastAt ? tt("成功接收于") + " " + fmtTime(ciPoll.lastAt / 1000) : tt("尚无成功接收"))),
+        ciPoll.error ? h("div", { className: "hud-incident warning" }, tt(ci ? "快照更新失败，保留旧数据" : "快照获取失败")) : null),
+      h("div", { className: "hud-grid hud-grid-4 hud-usage-metrics", style: { marginTop: 8 } },
         ciCards.map(function (c) {
-          return card(c.k, h("div", { style: { fontSize: 20, fontWeight: 700 } }, c.v));
+          return card(c.k, h(React.Fragment, null,
+            h("div", { className: "hud-metric-value" }, c.v),
+            c.note ? h("div", { className: "hud-footnote" }, c.note) : null,
+            c.detail ? h("div", { className: "hud-footnote" }, c.detail) : null,
+            c.k === tt("总 Token") ? h("div", { className: "hud-footnote" }, tt("输入+输出，不含单列缓存")) : null));
         })),
       h("div", { className: "hud-grid hud-grid-2", style: { marginTop: 8 } },
         card(tt("Top Sessions（估算费用 · 脱敏标题）"),
@@ -1105,13 +1362,13 @@
                   h("span", { style: { fontWeight: 600, fontVariantNumeric: "tabular-nums" } }, ciCostCell(m)));
               }))
             : empty(ciEmptyText)),
-        h(Badge, { variant: "secondary" }, tt("费用为本地估算，非账单"))),
+        h(Badge, { tone: "secondary" }, tt("费用为本地估算，非账单"))),
 
       h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 4 } },
         h("span", { className: "k", style: { fontSize: 12, opacity: 0.6 } }, tt("统计窗口")),
         [7, 30, 90].map(function (d) {
           return h(Button, {
-            key: d, size: "sm", variant: days === d ? "default" : "outline",
+            key: d, size: "sm", outlined: days !== d,
             onClick: function () { setDays(d); },
             style: { padding: "2px 10px", fontSize: 12 },
           }, d + tt(" 天"));
@@ -1121,7 +1378,7 @@
         card(tt("输入 Token"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.input))),
         card(tt("输出 Token"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.output))),
         card(tt("Cache 读"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.cache_read))),
-        card(tt("API 调用"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.api_calls || 0)))),
+        card(tt("API 调用"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, fmtTokens(totals.api_calls)))),
 
       h("div", { className: "hud-grid hud-grid-2" },
         card(tt("每日估算费用（") + ciRange + tt(" · canonical /cost/timeseries）"),
@@ -1200,15 +1457,15 @@
             if (e.key === "Enter" && q.trim()) { searchRun(API + "/sessions/search?q=" + encodeURIComponent(q.trim())); }
           },
         }),
-        h(Button, { size: "sm", variant: "outline", onClick: function () { if (q.trim()) searchRun(API + "/sessions/search?q=" + encodeURIComponent(q.trim())); } }, tt("搜索")),
+        h(Button, { size: "sm", outlined: true, onClick: function () { if (q.trim()) searchRun(API + "/sessions/search?q=" + encodeURIComponent(q.trim())); } }, tt("搜索")),
         [3, 7, 14].map(function (d) {
           return h(Button, {
-            key: d, size: "sm", variant: days === d ? "default" : "outline",
+            key: d, size: "sm", outlined: days !== d,
             onClick: function () { setDays(d); setSearchState ? null : null; },
             style: { padding: "2px 10px", fontSize: 12 },
           }, d + tt(" 天"));
         }),
-        h(Badge, { variant: "secondary" }, searchState.data ? tt("搜索: ") + searchState.data.length + tt(" 条") : (data ? data.length + tt(" 条") : "…"))),
+        h(Badge, { tone: "secondary" }, searchState.data ? tt("搜索: ") + searchState.data.length + tt(" 条") : (data ? data.length + tt(" 条") : "…"))),
 
       h("div", { className: "hud-grid hud-grid-2" },
         card(detail && detail.data ? tt("会话详情") : tt("会话列表"),
@@ -1216,7 +1473,7 @@
             ? h("div", { className: "hud-detail" },
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
                   h("div", { style: { fontWeight: 700, fontSize: 14 } }, (detail.data.title || tt("(无标题)")).slice(0, 80)),
-                  h(Button, { size: "sm", variant: "outline", onClick: function () { setDetail(null); } }, tt("返回列表"))),
+                  h(Button, { size: "sm", outlined: true, onClick: function () { setDetail(null); } }, tt("返回列表"))),
                 h("div", { className: "hud-grid hud-grid-4", style: { marginBottom: 8 } },
                   kv(tt("来源"), detail.data.source || "-"), kv(tt("模型"), detail.data.model || "-"),
                   kv(tt("消息"), String(detail.data.message_count || 0)),
@@ -1348,8 +1605,7 @@
                 h("th", null, tt("任务")), h("th", null, tt("排程")), h("th", null, tt("下次运行")),
                 h("th", { className: "num" }, tt("上次")), h("th", null, tt("状态")), h("th", null, tt("投递")))),
               h("tbody", null, sorted.map(function (j) {
-                const ok = j.last_status === "ok" || j.last_status === "completed";
-                const bad = j.last_status === "error" || j.last_status === "failed" || (j.failure_streak || 0) > 0;
+                const view = cronView(j);
                 return h("tr", { key: j.id },
                   h("td", { style: { maxWidth: 220 } },
                     h("div", { style: { fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, j.name),
@@ -1361,8 +1617,7 @@
                       : fmtTime(j.next_run_at).slice(5)) : "-")),
                   h("td", { className: "num", style: { fontSize: 11 } }, j.last_run_at ? timeAgo(j.last_run_at * 1000) : "-"),
                   h("td", null,
-                    h(Badge, { variant: !j.enabled ? "secondary" : bad ? "destructive" : ok ? "default" : "outline" },
-                      !j.enabled ? tt("暂停") : bad ? (statusZh(j.last_status)) + (j.failure_streak ? "×" + j.failure_streak : "") : statusZh(j.last_status)),
+                    h(Badge, { tone: view.variant }, view.label),
                   h("td", { style: { fontSize: 10.5, opacity: 0.7, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
                     j.deliver || "-"));
               }))))),
@@ -1377,7 +1632,7 @@
                 return h("tr", { key: r.id },
                   h("td", { style: { maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 } }, jobName),
                   h("td", null, h(Badge, {
-                    variant: r.status === "completed" ? "default" : r.status === "failed" ? "destructive" : "outline",
+                    tone: r.status === "completed" ? "default" : r.status === "failed" ? "destructive" : "outline",
                   }, statusZh(r.status))),
                   h("td", { className: "num" }, r.duration != null ? Math.round(r.duration) + "s" : "-"),
                   h("td", { className: "num", style: { fontSize: 11 } }, r.started_at ? fmtTime(r.started_at).slice(5) : "-"),
@@ -1405,29 +1660,38 @@
           ? card(tt("渠道"), empty(tt("无渠道数据")))
           : names.map(function (name) {
             const p = platforms[name];
-            const connected = p.state === "connected";
-            const stale = (p.heartbeat_age || 0) > 60;
-            const status = connected ? (stale ? tt("已连接 · 心跳陈旧") : tt("已连接")) : (stateZh(p.state) || tt("未知"));
+            const view = channelView(p, snap._health && snap._health.thresholds);
             return card(name,
               h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
                 h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                  h("span", { className: "hud-dot " + dotClass(connected, stale) }),
-                  h("span", { style: { fontSize: 16, fontWeight: 700, color: connected ? (stale ? "#facc15" : "#4ade80") : "#f87171" } }, status)),
+                  h("span", { className: "hud-dot " + view.dot }),
+                  h("span", { style: { fontSize: 16, fontWeight: 700, color: view.color } }, view.label)),
                 h("div", { className: "hud-grid hud-grid-2" },
-                  kv(tt("更新时间"), p.updated_at ? fmtTime(p.updated_at) : "-"),
-                  kv(tt("心跳龄"), p.heartbeat_age != null ? Math.round(p.heartbeat_age) + "s" : "-"),
+                  kv(view.timeLabel, typeof p.updated_at === "number" && Number.isFinite(p.updated_at) && p.updated_at >= 0 ? fmtTime(p.updated_at) : "-"),
+                  kv(tt("心跳龄"), view.heartbeat),
                   kv(tt("需关注"), p.needs_attention ? tt("是") : tt("否")),
                   kv(tt("错误码"), p.error_code || "-"),
-                p.error_message ? h("div", { className: "hud-logline err", style: { whiteSpace: "normal" } }, p.error_message) : null,
-                (connected && stale) ? h(Badge, { variant: "warning" },
-                  tt("已连接但持续抖动：") + Math.round(p.heartbeat_age) + tt(" 无状态更新 — 需结合错误日志判断")) : null)));})),
+                p.error_message ? h("div", { className: "hud-logline" + (p.activity === "current" ? " err" : ""), style: { whiteSpace: "normal" } }, p.error_message) : null)));})),
       h("div", { className: "hud-footnote" },
-        tt("渠道状态来自 gateway_state.json。'connected' 是瞬时快照，稳定性要结合心跳龄与 errors.log 判定 —— 例如飞书当前 connected 但日志每 ~2 分钟重连。重连计数等更细的抖动指标在错误事故页。")));
+        tt("渠道记录保留历史状态；仅当前实例用于当前告警。状态更新时间不是轮询心跳，连接状态不等于独立健康验证。")));
   }
 
   // -------------------------------------------------------------------------
   // 错误与事故
   // -------------------------------------------------------------------------
+
+  function incidentIsUnresolved(inc) {
+    return inc.status === "active" || inc.status === "pending_recovery";
+  }
+
+  function incidentStatusView(inc) {
+    // Only an explicit recovered state confirms completion. The backend keeps
+    // pending_recovery unresolved until its recovery lifecycle is settled.
+    if (inc.status === "recovered") return { label: tt("已恢复"), variant: "secondary" };
+    const label = inc.status === "active" ? tt("进行中") :
+      inc.status === "pending_recovery" ? tt("恢复待确认") : tt("未知");
+    return { label, variant: inc.severity === "critical" ? "destructive" : "warning" };
+  }
 
   function IncidentsTab({ snap }) {
     if (!snap) return empty(tt("加载中…"));
@@ -1448,7 +1712,7 @@
           (errors.timestamp_status === "partial" ? "≥ " : "") + String(errors.count_30m))),
         card(tt("错误指纹"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, String((errors.incidents || []).length))),
         card(tt("活跃事故"), h("div", { style: { fontSize: 20, fontWeight: 700 } },
-          String(activeNow.length + (incidents || []).filter(function (i) { return i.status === "active"; }).length))),
+          String(activeNow.length + (incidents || []).filter(incidentIsUnresolved).length))),
         card(tt("事故总数"), h("div", { style: { fontSize: 20, fontWeight: 700 } }, String((incidents || []).length)))),
 
       h("div", { className: "hud-grid hud-grid-2" },
@@ -1456,15 +1720,15 @@
           (incidents || []).length === 0 ? empty(tt("暂无事故记录")) :
           h("div", { className: "hud-scroll" },
             (incidents || []).map(function (inc) {
+              const statusView = incidentStatusView(inc);
               return h("div", { key: inc.id, className: "hud-incident " + inc.severity + " " + inc.status },
                 h("div", { style: { display: "flex", justifyContent: "space-between", gap: 8 } },
                   h("div", { style: { fontWeight: 600, fontSize: 13 } }, incTitle(inc)),
-                  h(Badge, { variant: inc.status === "active" ? (inc.severity === "critical" ? "destructive" : "warning") : "secondary" },
-                    inc.status === "active" ? tt("进行中") : tt("已恢复"))),
+                  h(Badge, { tone: statusView.variant }, statusView.label)),
                 h("div", { style: { opacity: 0.7, fontSize: 11.5, marginTop: 2 } }, incDetail(inc)),
                 h("div", { style: { opacity: 0.55, fontSize: 10.5, marginTop: 4 } },
-                  tt("首次 ") + fmtTime(inc.first_seen) + tt(" · 末次 ") + fmtTime(inc.last_seen) +
-                  tt(" · 观测 ") + (inc.observations != null ? inc.observations : inc.count) + tt(" 次") +
+                  tt("首次记录 ") + fmtTime(inc.first_seen) + tt(" · 记录更新时间 ") + fmtTime(inc.last_seen) +
+                  tt(" · 故障观测次数（非发生次数） ") + incidentObservationText(inc) +
                   (inc.fingerprint ? " · " + inc.fingerprint : "")));
             }))),
         card(tt("错误指纹 TOP"),
@@ -1537,7 +1801,7 @@
             kv(tt("剩余"), fmtPct(sys.disk_free_percent)),
             kv(tt("可用"), fmtBytes((sys.disk || {}).free)),
             kv(tt("总容量"), fmtBytes((sys.disk || {}).total))),
-          h(Badge, { variant: sys.disk_free_percent < 15 ? "warning" : "default" },
+          h(Badge, { tone: sys.disk_free_percent < 15 ? "warning" : "default" },
             sys.disk_free_percent < 15 ? tt("磁盘压力") : tt("正常")))),
 
       h("div", { className: "hud-grid hud-grid-3" },
@@ -1578,7 +1842,7 @@
             kv(tt("服务定义"), launchd.label || tt("无 plist")),
             launchd.note ? h("div", { className: "mono", style: { fontSize: 10.5, opacity: 0.6 } }, launchd.note) : null,
             launchd.sampled_at ? h("div", { className: "hud-footnote" }, tt("采集于 ") + fmtTime(launchd.sampled_at)) : null,
-            !launchdUnknown && launchdApplicable && !launchd.managed ? h(Badge, { variant: "warning" }, tt("Gateway 重启后可能不自启 — 建议修复")) : null))),
+            !launchdUnknown && launchdApplicable && !launchd.managed ? h(Badge, { tone: "warning" }, tt("Gateway 重启后可能不自启 — 建议修复")) : null))),
 
       h("div", { className: "hud-grid hud-grid-3" },
         card(tt("CPU 趋势 (telemetry)"),
@@ -1630,10 +1894,10 @@
             }))),
         card(tt("分类筛选"),
           h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-            h(Button, { size: "sm", variant: cat === "全部" ? "default" : "outline", onClick: function () { setCat("全部"); } }, tt("全部") + " (" + (summary.total || 0) + ")"),
+            h(Button, { size: "sm", outlined: cat !== "全部", onClick: function () { setCat("全部"); } }, tt("全部") + " (" + (summary.total || 0) + ")"),
             cats.slice(0, 12).map(function (c) {
               return h(Button, {
-                key: c, size: "sm", variant: cat === c ? "default" : "outline",
+                key: c, size: "sm", outlined: cat !== c,
                 onClick: function () { setCat(c); }, style: { fontSize: 11.5 },
               }, c);
             })))),
@@ -1696,7 +1960,7 @@
         card(tt("采集器数据质量"),
           quality ? h("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
             h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
-              h(Badge, { variant: quality.overall === "ok" ? "default" : "warning" },
+              h(Badge, { tone: quality.overall === "ok" ? "default" : "warning" },
                 quality.overall === "ok" ? tt("全部采集器正常") : tt("部分采集器异常")),
               h("span", { style: { fontSize: 11, opacity: 0.6 } }, tt("采集于 ") + fmtTime(quality.collected_at))),
             Object.keys(quality.sections || {}).map(function (name) {
@@ -1740,11 +2004,11 @@
             h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
               HUD_LOCALE_OPTIONS.map(function (o) {
                 return h(Button, {
-                  key: o.code, size: "sm", variant: locale === o.code ? "default" : "outline",
+                  key: o.code, size: "sm", outlined: locale !== o.code,
                   onClick: function () { setLocale(o.code); },
                 }, o.name);
               }),
-              h(Button, { size: "sm", variant: "outline", onClick: function () { setLocale(null); } }, tt("跟随 Dashboard"))),
+              h(Button, { size: "sm", outlined: true, onClick: function () { setLocale(null); } }, tt("跟随 Dashboard"))),
             h("div", { style: { fontSize: 11.5, opacity: 0.65, lineHeight: 1.5 } },
               CURRENT_LOCALE === "zh" ? "默认跟随 Dashboard。此处仅切换 HUD，并保存在浏览器 localStorage；不会向旧版宿主设置不支持的语言。" :
               CURRENT_LOCALE === "fr" ? "Par défaut, suit Dashboard. Ce choix ne change que HUD et est enregistré dans localStorage ; il ne modifie pas la langue de l'hôte." :
@@ -1803,11 +2067,30 @@
       second: "2-digit", hour12: false });
   }
 
+  // Timeline metrics are observed numeric values, never coerced from strings/booleans.
+  function tlStatusView(status) {
+    const succeeded = status === "success" || status === "ok" || status === "completed";
+    const failed = status === "failed" || status === "error";
+    const label = succeeded ? tt("成功") : failed ? tt("失败")
+      : typeof status === "string" && status.trim() ? statusZh(status) : tt("未知");
+    return { succeeded: succeeded, failed: failed, label: label };
+  }
+
+  function tlMetrics(tokens, cost, dur) {
+    const nonnegative = function (n) { return typeof n === "number" && Number.isFinite(n) && n >= 0; };
+    return {
+      duration: nonnegative(dur) ? (dur / 1000).toFixed(1) + "s" : "—",
+      tokens: nonnegative(tokens) && Number.isSafeInteger(tokens) ? tokens.toLocaleString() : "—",
+      cost: nonnegative(cost) ? "$" + cost.toFixed(4) : "—",
+    };
+  }
+
   function tlFmt(tokens, cost, dur) {
+    const view = tlMetrics(tokens, cost, dur);
     const parts = [];
-    if (dur !== null && dur !== undefined) parts.push((dur / 1000).toFixed(1) + "s");
-    if (tokens !== null && tokens !== undefined) parts.push(tokens.toLocaleString() + " tokens");
-    if (cost !== null && cost !== undefined) parts.push("$" + cost.toFixed(4));
+    if (view.duration !== "—") parts.push(view.duration);
+    if (view.tokens !== "—") parts.push(view.tokens + " tokens");
+    if (view.cost !== "—") parts.push(view.cost);
     return parts.length ? parts.join(" · ") : "—";
   }
 
@@ -1815,12 +2098,34 @@
     const [type, setType] = useState("all");
     const [status, setStatus] = useState("all");
     const [sessionId, setSessionId] = useState("");
-    const [events, setEvents] = useState([]);
+    const [timeline, setTimeline] = useState({ events: [], pendingIds: [] });
+    const events = timeline.events;
+    const newCount = timeline.pendingIds.length;
+    function setEvents(update) {
+      setTimeline(function (prev) {
+        const next = typeof update === "function" ? update(prev.events) : update;
+        const visibleIds = new Set(next.map(function (e) { return e.event_id; }));
+        const pendingIds = prev.pendingIds.filter(function (id) { return !visibleIds.has(id); });
+        if (next === prev.events && pendingIds.length === prev.pendingIds.length) return prev;
+        return { events: next, pendingIds: pendingIds };
+      });
+    }
     const [hasMore, setHasMore] = useState(false);
     const [expanded, setExpanded] = useState(null);
-    const [newCount, setNewCount] = useState(0);
     const [loadErr, setLoadErr] = useState(null);
     const listRef = useRef(null);
+    const requestScope = useRef({ generation: 0, page: null, refresh: null, paginated: false });
+    function resetQuery() {
+      const scope = requestScope.current;
+      scope.generation += 1; scope.page = null; scope.refresh = null; scope.paginated = false;
+      setTimeline({ events: [], pendingIds: [] }); setHasMore(false); setExpanded(null); setLoadErr(null);
+    }
+    // Invalidate pending manual requests when the component unmounts.
+    useEffect(function () { return function () {
+      requestScope.current.generation += 1;
+      requestScope.current.page = null;
+      requestScope.current.refresh = null;
+    }; }, []);
 
     function buildUrl(extra) {
       const p = new URLSearchParams({ limit: "100" });
@@ -1834,49 +2139,74 @@
     // 轮询（5s；事件进入后 prepend；用户停留在历史位置时不强制跳顶）
     const { data, error } = usePoll(buildUrl(), 5000);
     useEffect(function () {
-      if (!data || !data.events) return;
+      if (!data || !data.events || requestScope.current.refresh) return;
       setLoadErr(null);
-      setEvents(function (prev) {
-        if (!prev.length) return data.events;
-        const seen = {};
-        prev.forEach(function (e) { seen[e.event_id] = 1; });
-        const fresh = [];
-        data.events.forEach(function (e) {
-          if (!seen[e.event_id]) { seen[e.event_id] = 1; fresh.push(e); }
+      // Capture UI position/authority once; the state updater itself is pure.
+      const atTop = listRef.current && listRef.current.scrollTop < 30
+        && !requestScope.current.paginated && !requestScope.current.page;
+      setTimeline(function (prev) {
+        const seen = new Set(prev.events.map(function (e) { return e.event_id; }));
+        const fresh = data.events.filter(function (e) {
+          if (seen.has(e.event_id)) return false;
+          seen.add(e.event_id); return true;
         });
-        if (fresh.length) {
-          const atTop = listRef.current && listRef.current.scrollTop < 30;
-          if (atTop) {
-            setNewCount(0);
-            return fresh.concat(prev).slice(0, 300);
-          }
-          setNewCount(function (n) { return n + fresh.length; });
-        }
-        return prev;
+        if (!prev.events.length) return { events: fresh, pendingIds: [] };
+        if (!fresh.length) return prev;
+        if (atTop) return { events: fresh.concat(prev.events).slice(0, 300), pendingIds: [] };
+        const pendingIds = Array.from(new Set(prev.pendingIds.concat(fresh.map(function (e) { return e.event_id; }))));
+        return pendingIds.length === prev.pendingIds.length ? prev : { events: prev.events, pendingIds: pendingIds };
       });
-      setHasMore(!!data.has_more);
+      if (!requestScope.current.paginated && !requestScope.current.page) setHasMore(!!data.has_more);
     }, [data]);
     useEffect(function () { if (error) setLoadErr(String(error)); }, [error]);
 
     function loadMore() {
       const last = events[events.length - 1];
-      if (!last) return;
-      SDK.fetchJSON(buildUrl({ before: String(last.timestamp), before_id: last.event_id }))
+      const scope = requestScope.current;
+      if (!last || scope.page || scope.refresh) return;
+      const generation = scope.generation;
+      const page = {};
+      scope.page = page;
+      function current() { return scope.generation === generation && scope.page === page; }
+      SDK.fetchJSON(withLocale(buildUrl({ before: String(last.timestamp), before_id: last.event_id })))
         .then(function (d) {
-          const seen = {};
-          events.forEach(function (e) { seen[e.event_id] = 1; });
-          const more = (d.events || []).filter(function (e) { return !seen[e.event_id]; });
-          setEvents(events.concat(more));
+          if (!current()) return;
+          scope.paginated = true;
+          setLoadErr(null);
+          // Merge against committed state, not the request-time snapshot:
+          // a poll or another page may have arrived while this request was pending.
+          setEvents(function (prev) {
+            const seen = new Set(prev.map(function (e) { return e.event_id; }));
+            const more = (d.events || []).filter(function (e) {
+              if (seen.has(e.event_id)) return false;
+              seen.add(e.event_id);
+              return true;
+            });
+            return prev.concat(more);
+          });
           setHasMore(!!d.has_more);
         })
-        .catch(function (e) { setLoadErr(String(e && e.message ? e.message : e)); });
+        .catch(function (e) { if (current()) setLoadErr(String(e && e.message ? e.message : e)); })
+        .finally(function () { if (current()) scope.page = null; });
     }
 
     function showNew() {
-      setNewCount(0);
-      SDK.fetchJSON(buildUrl()).then(function (d) {
-        if (d && d.events) setEvents(d.events);
-      }).catch(function () {});
+      const scope = requestScope.current;
+      if (scope.refresh) return;
+      const generation = ++scope.generation;
+      const refresh = {};
+      scope.page = null; scope.refresh = refresh;
+      function current() { return scope.generation === generation && scope.refresh === refresh; }
+      SDK.fetchJSON(withLocale(buildUrl())).then(function (d) {
+        if (!current()) return;
+        if (d && d.events) {
+          scope.paginated = false;
+          setTimeline({ events: d.events, pendingIds: [] }); setHasMore(!!d.has_more);
+          setLoadErr(null);
+        }
+      }).catch(function (e) {
+        if (current()) setLoadErr(String(e && e.message ? e.message : e));
+      }).finally(function () { if (current()) scope.refresh = null; });
     }
 
     const filters = h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap",
@@ -1885,18 +2215,18 @@
         return h("button", {
           key: t.id, className: "hud-tab" + (type === t.id ? " active" : ""),
           style: { padding: "4px 10px", fontSize: 12 },
-          onClick: function () { setType(t.id); setNewCount(0); },
+          onClick: function () { if (type !== t.id) { resetQuery(); setType(t.id); } },
         }, t.label);
       }),
       h("select", {
         value: status, style: { fontSize: 12, padding: "3px 6px" },
-        onChange: function (e) { setStatus(e.target.value); setNewCount(0); },
+        onChange: function (e) { if (status !== e.target.value) { resetQuery(); setStatus(e.target.value); } },
       }, TIMELINE_STATUS.map(function (s) {
         return h("option", { key: s.id, value: s.id }, tt(s.label));
       })),
       h("input", {
         placeholder: "session id…", value: sessionId, style: { fontSize: 12, padding: "3px 6px", width: 180 },
-        onChange: function (e) { setSessionId(e.target.value); setNewCount(0); },
+        onChange: function (e) { if (sessionId.trim() !== e.target.value.trim()) resetQuery(); setSessionId(e.target.value); },
       }),
       newCount > 0 && h("button", {
         style: { fontSize: 12, padding: "4px 10px", fontWeight: 600 },
@@ -1904,33 +2234,44 @@
       }, "↓ " + newCount + tt(" 条新事件")));
 
     const rows = events.map(function (e, idx) {
-      const ok = e.status !== "failed";
+      const statusView = tlStatusView(e.status);
       const isInc = (e.event_type || "").indexOf("incident.") === 0;
-      const title = e.summary || (e.event_type || "");
+      const iconLabel = isInc ? tt("事故记录") + ": " + statusView.label : statusView.label;
+      const title = e.display_summary || e.summary || (e.event_type || "");
       const open = expanded === e.event_id;
+      const metrics = tlMetrics(e.tokens, e.cost_usd, e.duration_ms);
       const line = h("div", {
         key: e.event_id,
         className: "hud-tl-row",
+        role: "button", tabIndex: 0, "aria-expanded": open,
+        "aria-label": isInc ? title + " " + tlTime(e.timestamp) : undefined,
+        lang: isInc ? CURRENT_LOCALE : undefined,
+        onKeyDown: function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            if (!event.repeat) setExpanded(open ? null : e.event_id);
+          }
+        },
         style: { display: "flex", gap: 10, alignItems: "baseline", padding: "6px 4px",
           borderBottom: "1px solid var(--border)", cursor: "pointer", fontSize: 13 },
         onClick: function () { setExpanded(open ? null : e.event_id); },
       },
         h("span", { style: { fontFamily: "monospace", fontSize: 12, opacity: 0.7, width: 74, flexShrink: 0 } }, tlTime(e.timestamp)),
-        h("span", { style: { width: 16, flexShrink: 0 } }, isInc ? (ok ? "⚠" : "✕") : (ok ? "✓" : "✕")),
-        h("span", { style: { color: ok ? "var(--foreground)" : "#e5534b", width: 120, flexShrink: 0 } }, e.event_type || "—"),
+        h("span", { role: "img", title: iconLabel, "aria-label": iconLabel, style: { width: 16, flexShrink: 0 } }, statusView.failed ? "✕" : isInc ? "⚠" : statusView.succeeded ? "✓" : "·"),
+        h("span", { style: { color: statusView.failed ? "#e5534b" : "var(--foreground)", width: 120, flexShrink: 0 } }, e.event_type || "—"),
         h("span", { style: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, title),
         h("span", { style: { fontFamily: "monospace", fontSize: 12, opacity: 0.75, flexShrink: 0 } }, tlFmt(e.tokens, e.cost_usd, e.duration_ms)));
 
       const detail = open ? h("div", { key: e.event_id + "-d", style: { padding: "8px 14px 10px", fontSize: 12, background: "var(--card)", borderBottom: "1px solid var(--border)" } },
         kv(tt("时间"), fmtTime(e.timestamp)),
         kv(tt("类型"), e.event_type || "—"),
-        kv(tt("状态"), statusZh(e.status) || e.status || "—"),
+        kv(tt("状态"), statusView.label),
         kv("Session", e.session_id || "—"),
         kv("Skill", e.skill || "—"),
         kv("Tool", e.tool || "—"),
-        kv(tt("时长"), e.duration_ms !== null && e.duration_ms !== undefined ? (e.duration_ms / 1000).toFixed(1) + "s" : "—"),
-        kv("Tokens", e.tokens !== null && e.tokens !== undefined ? e.tokens.toLocaleString() : "—"),
-        kv(tt("费用"), e.cost_usd !== null && e.cost_usd !== undefined ? "$" + e.cost_usd.toFixed(4) : "—"),
+        kv(tt("时长"), metrics.duration),
+        kv("Tokens", metrics.tokens),
+        kv(tt("费用"), metrics.cost),
         kv(tt("关联"), e.correlation_id || "—"),
         kv(tt("来源"), e.source || "—"),
         kv("Incident", e.incident_id || "—")) : null;
@@ -2141,7 +2482,8 @@
     const [localeOverride, setLocaleOverride] = useState(function () {
       try { return localStorage.getItem("hermes-hud-locale"); } catch (e) { return null; }
     });
-    const locale = localeOverride || (hostI18n && hostI18n.locale) || "zh";
+    const rawLocale = localeOverride || (hostI18n && hostI18n.locale) || "zh";
+    const locale = /^zh[-_]cn$/i.test(rawLocale) ? "zh" : rawLocale;
     CURRENT_LOCALE = locale;
     const setHudLocale = function (value) {
       setLocaleOverride(value);
@@ -2151,7 +2493,8 @@
       } catch (e) { /* privacy mode: in-memory selection still works */ }
     };
     const [tab, setTab] = useState("overview");
-    const { data: snap } = usePoll(API + "/snapshot", 2000);
+    const [theme, setTheme] = useState("dark");
+    const { data: snap, error: snapshotError, lastAt: snapshotLastAt } = usePoll(API + "/snapshot", 2000);
     const [events, setEvents] = useState([]);
     const [wsState, setWsState] = useState("idle");
     const wsRef = useRef(null);
@@ -2235,35 +2578,47 @@
 
     const gw = (snap && snap.gateway) || {};
     const cronSum = (snap && snap.cron && snap.cron.summary) || {};
+    const snapshotView = snapshotState(snap, snapshotError);
 
-    return h("div", { className: "hud-root", lang: locale, dir: locale === "ar" ? "rtl" : "ltr" },
+    return h("div", { className: "hud-root", "data-hud-theme": theme, lang: locale, dir: locale === "ar" ? "rtl" : "ltr" },
       h(BrandHeader, null),
+      h("div", { className: "hud-theme-picker", "aria-label": tt("主题") },
+        ["dark", "light"].map(function (value) { return h("button", {
+          key: value, type: "button", "aria-pressed": theme === value,
+          onClick: function () { setTheme(value); }
+        }, tt(value === "dark" ? "深色" : "浅色")); })),
       // 顶部状态条
       h("div", { className: "hud-header" },
-        h("span", { className: "hud-health-badge " + (health ? healthClass(health.overall) : "") },
-          (health ? healthLabel(health.overall) : tt("加载中")) +
-          (health ? " · " + health.counts.critical + tt(" 红 / ") + health.counts.warning + tt(" 黄") : "")),
-        kv("Gateway", gw.alive ? tt("运行中") : tt("离线")),
+        h("span", { className: "hud-health-badge " + snapshotView.css }, snapshotView.label),
+        kv("Gateway", gw.alive === true ? tt("运行中") : gw.alive === false ? tt("离线") : tt("未知")),
+        kv(tt("成功接收于"), snapshotLastAt ? fmtTime(snapshotLastAt / 1000) : "—"),
         kv(tt("活跃会话"), String((snap && snap.active_sessions) ? snap.active_sessions.length : "-")),
         kv("Cron", (cronSum.enabled != null ? cronSum.enabled + tt(" 启用") : "-")),
         kv(tt("模式"), wsState === "connected" ? tt("WS 实时") : (wsState === "reconnecting" ? tt("WS 重连中") : tt("轮询")))),
 
-      // Tab 栏
-      h("div", { className: "hud-tabs" },
-        TABS.map(function (t) {
-          return h("button", {
-            key: t.id,
-            className: "hud-tab" + (tab === t.id ? " active" : ""),
-            onClick: function () { setTab(t.id); },
-          }, t.icon + " " + tt(t.label));
-        })),
+      // Primary work stays visible; secondary resources are a named native disclosure.
+      h("nav", { className: "hud-navigation", "aria-label": tt("主要导航") },
+        h("div", { className: "hud-tabs hud-primary-tabs" },
+          TABS.filter(function(t) { return ["overview", "live", "usage", "sessions", "timeline", "incidents", "settings"].includes(t.id); }).map(function(t) {
+            return h("button", { key: t.id, type: "button", "aria-pressed": tab === t.id,
+              className: "hud-tab" + (tab === t.id ? " active" : ""),
+              onClick: function() { setTab(t.id); } }, t.icon + " " + tt(t.label));
+          })),
+        h("details", { className: "hud-secondary-nav" },
+          h("summary", null, tt("资源与诊断")),
+          h("div", { className: "hud-tabs" },
+            TABS.filter(function(t) { return !["overview", "live", "usage", "sessions", "timeline", "incidents", "settings"].includes(t.id); }).map(function(t) {
+              return h("button", { key: t.id, type: "button", "aria-pressed": tab === t.id,
+                className: "hud-tab" + (tab === t.id ? " active" : ""),
+                onClick: function() { setTab(t.id); } }, t.icon + " " + tt(t.label));
+            })))),
 
       // 内容
       tab === "overview" ? h(Overview, { snap: snap, health: health }) :
       tab === "live" ? h(Live, { snap: snap, events: events, wsState: wsState }) :
       tab === "usage" ? h(Usage, null) :
       tab === "sessions" ? h(SessionsTab, null) :
-      tab === "timeline" ? h(TimelineTab, null) :
+      tab === "timeline" ? h(TimelineTab, { key: locale }) :
       tab === "memory" ? h(MemoryTab, { snap: snap }) :
       tab === "skills" ? h(SkillsTab, null) :
       tab === "skillanalytics" ? h(SkillAnalyticsTab, null) :

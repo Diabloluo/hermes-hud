@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -116,10 +117,12 @@ def hud_env():
     seed_synthetic_skills(home)
     shutil.copytree(str(REPO), str(home / "plugins" / "hermes-hud"),
                     ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    # enable 插件
-    subprocess.run([sys.executable, str(REPO / "scripts" / "enable_dashboard_plugin.py"),
-                    "enable"], env={**os.environ, "HERMES_HOME": str(home)},
-                   capture_output=True, timeout=60, check=True)
+    # Use the same CLI for setup and launch, including the fallback outside PATH.
+    subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "enable_dashboard_plugin.py"), "enable"],
+        env={**os.environ, "HERMES_HOME": str(home), "HUD_HERMES_CLI": hermes_bin},
+        capture_output=True, timeout=60, check=True,
+    )
     port = _free_port()
     env = {k: v for k, v in os.environ.items()}
     for k in ("HERMES_WEB_DIST", "HERMES_DESKTOP", "HERMES_SERVE_HEADLESS"):
@@ -173,9 +176,15 @@ def hud_env():
     except Exception:  # noqa: BLE001  demo 注入失败不阻塞 smoke
         pass
     dbg_log = Path(tempfile.mkdtemp(prefix="hud-smoke-log-")) / "dashboard.log"
+    dashboard = [hermes_bin, "dashboard"]
+    help_result = subprocess.run(
+        [*dashboard, "--help"], capture_output=True, text=True, timeout=15, check=True, env=env,
+    )
+    # Newer hosts share a single dashboard by default. Keep synthetic acceptance separate.
+    if re.search(r"(?<![\w-])--isolated\b", help_result.stdout):
+        dashboard.append("--isolated")
     proc = subprocess.Popen(
-        [hermes_bin, "dashboard", "--host", "127.0.0.1", "--port", str(port),
-         "--no-open", "--skip-build"],
+        [*dashboard, "--host", "127.0.0.1", "--port", str(port), "--no-open", "--skip-build"],
         stdout=open(dbg_log, "w"), stderr=subprocess.STDOUT, env=env,
         cwd=str(home))
     # 等 HTTP ready
@@ -232,7 +241,7 @@ def hud_env():
     cdp.cmd("Page.navigate", {"url": f"http://127.0.0.1:{port}/hud"})
     time.sleep(4)
     cdp.cmd("Page.removeScriptToEvaluateOnNewDocument", {"identifier": init_script["result"]["identifier"]})
-    yield {"port": port, "cdp": cdp, "chrome": chrome,
+    yield {"port": port, "cdp": cdp, "chrome": chrome, "home": home,
            "synthetic_skills": SYNTHETIC_SKILLS}
     # cleanup：owned 进程精确回收
     cdp.connection.close()
@@ -301,12 +310,31 @@ def test_status_filter(hud_env) -> None:
 def test_event_detail_expand(hud_env) -> None:
     cdp = hud_env["cdp"]
     _click_timeline(cdp)
-    r = cdp.eval("(() => { const row = document.querySelector('[class*=tl-row], .hud-tl-row');"
-                 " if (!row) return false; row.click(); return true; })()")
-    assert r is True
-    time.sleep(1)
-    txt = cdp.eval("document.body.textContent") or ""
-    assert "来源" in txt  # 详情含结构化字段
+    # The module-scoped browser keeps the filters set by earlier tests.
+    assert cdp.eval("""(() => {
+        const allTypes = [...document.querySelectorAll('.hud-tab')]
+            .find(button => button.textContent === 'All');
+        const eventStatus = [...document.querySelectorAll('select')]
+            .find(select => [...select.options].some(option => option.value === 'failed'));
+        if (!allTypes || !eventStatus) return false;
+        allTypes.click();
+        eventStatus.value = 'all';
+        eventStatus.dispatchEvent(new Event('change', {bubbles: true}));
+        return true;
+    })()""") is True
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if cdp.eval("!!document.querySelector('.hud-tl-row')"):
+            break
+        time.sleep(0.2)
+    assert cdp.eval("""(() => {
+        const row = document.querySelector('.hud-tl-row');
+        if (!row) return false;
+        row.click();
+        return true;
+    })()""") is True
+    assert cdp.eval("document.querySelector('.hud-tl-row').getAttribute('aria-expanded')") == "true"
+    assert "来源" in (cdp.eval("document.body.textContent") or "")
 
 
 def test_load_more_button(hud_env) -> None:
@@ -413,8 +441,10 @@ def test_ci_summary_cards_and_estimated_semantics(hud_env) -> None:
     assert "Asia/Shanghai" not in txt   # 硬编码时区已删
     assert "日界线使用 HUD 配置时区" in txt
     assert "/cost/timeseries" in txt    # 趋势图标注 canonical 源
-    assert "已知部分 $" in txt          # partial（known+unknown 混合 demo）→ 已知部分
-    assert "定价未知" in txt            # unknown-only 行 → —（定价未知）
+    summary = cdp.eval("document.querySelector('.hud-cost-summary')?.textContent") or ""
+    assert "$0.0500" in summary
+    assert "不完整：仅已定价部分" in summary
+    assert "价格未知，金额不可用" in txt
 
 
 def test_ci_range_and_tables(hud_env) -> None:

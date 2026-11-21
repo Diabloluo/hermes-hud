@@ -23,11 +23,14 @@ locale 由调用方（plugin_api.py，读取请求的 locale query param）传�
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from typing import Any
 
 from .i18n import t
+from .semantics import cron_is_inactive
+from .redaction import redact_obj
 
 # 阈值（可被 HUD_* 环境变量覆盖）
 DISK_FREE_CRITICAL = float(os.environ.get("HUD_DISK_CRITICAL", "5"))
@@ -70,6 +73,8 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
     incidents: list[dict] = []
     unknown_incident_prefixes: list[str] = []
     now = time.time()
+    # Bind presentation metadata to this evaluation, not a separate settings poll.
+    channel_heartbeat_threshold = HEARTBEAT_CRITICAL
 
     gw = snap.get("gateway") or {}
 
@@ -181,7 +186,20 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
     platforms = gw.get("platforms") or {}
     for name, p in platforms.items():
         state = p.get("state")
-        age = p.get("heartbeat_age")
+        age = p.get("heartbeat_age") if p.get("heartbeat_source") == "periodic" else None
+        activity = p.get("activity", "unknown")
+        if activity in {"inactive", "historical"}:
+            checks.append({"key": f"channel:{name}", "status": "normal", "severity": "normal",
+                           "message": t("channel_" + activity, locale, name=name)})
+            if activity == "historical":
+                # Unknown current state must not falsely recover old incidents.
+                unknown_incident_prefixes.append(f"channel:{name}:")
+            continue
+        if activity != "current" or state in (None, "unknown", ""):
+            checks.append({"key": f"channel:{name}", "status": "warning", "severity": "warning",
+                           "message": t("channel_unknown", locale, name=name)})
+            unknown_incident_prefixes.append(f"channel:{name}:")
+            continue
         needs_attn = p.get("needs_attention")
         if state == "connected" and needs_attn:
             checks.append({"key": f"channel:{name}", "status": "warning", "severity": "warning",
@@ -195,7 +213,7 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
             incidents.append({"fingerprint": f"channel:{name}:{state}", "severity": "critical",
                               **_inc_text("channel_disconnected_title", "channel_disconnected_detail",
                                           locale, name=name, state=state)})
-        elif age is not None and age > HEARTBEAT_CRITICAL:
+        elif age is not None and age > channel_heartbeat_threshold:
             checks.append({"key": f"channel:{name}", "status": "warning", "severity": "warning",
                            "message": t("channel_stale", locale, name=name, age=int(age))})
             incidents.append({"fingerprint": f"channel:{name}:stale", "severity": "warning",
@@ -203,7 +221,7 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
                                           locale, name=name, age=int(age))})
         else:
             checks.append({"key": f"channel:{name}", "status": "normal", "severity": "normal",
-                           "message": t("channel_ok", locale, name=name)})
+                           "message": t("channel_reported_connected", locale, name=name)})
 
     # ---- warning: 错误速率 ----
     err = snap.get("errors") or {}
@@ -268,6 +286,14 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
     # ---- critical: Cron 连续失败 ----
     cron = snap.get("cron") or {}
     for j in cron.get("jobs", []):
+        if j.get("inactive") is True or cron_is_inactive(j):
+            # No current failure observation, but stopping scheduling does not
+            # prove the old failure recovered. Preserve its historical lifecycle.
+            unknown_incident_prefixes.append(f"cron:{j['id']}:")
+            checks.append({"key": f"cron:{j['id']}", "status": "normal", "severity": "normal",
+                           "message": t("cron_inactive_history", locale, name=j["name"],
+                                        streak=j.get("failure_streak") or 0)})
+            continue
         streak = j.get("failure_streak") or 0
         if streak >= CYCLE_FAIL_CRITICAL:
             checks.append({"key": f"cron:{j['id']}", "status": "critical", "severity": "critical",
@@ -329,4 +355,12 @@ def evaluate_snapshot(snap: dict, locale: str = "zh") -> dict:
         "incidents": incidents,
         "unknown_incident_prefixes": unknown_incident_prefixes,
         "evaluated_at": now,
+        # Additive read-only contract. Invalid configuration is unknown, not 60.
+        # This does not normalize configuration or change Gateway rule policy.
+        "thresholds": redact_obj({
+            "heartbeat_critical_s": channel_heartbeat_threshold
+            if type(channel_heartbeat_threshold) in (int, float)
+            and math.isfinite(channel_heartbeat_threshold)
+            and channel_heartbeat_threshold >= 0 else None,
+        }),
     }

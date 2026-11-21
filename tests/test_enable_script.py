@@ -3,7 +3,7 @@
 脚本通过 Hermes config CLI（hermes config get/set --json）读写
 plugins.enabled，不解析 YAML。本测试覆盖 6 种 config 格式 + fail-closed。
 
-要求真实 hermes CLI（本机具备）；CI runner 无 hermes 时自动 skip。
+实际 CLI 用例需要 Hermes，使用模拟 CLI 或 API 的用例可在无 Hermes 的 CI 中运行。
 """
 
 from __future__ import annotations
@@ -19,9 +19,10 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "enable_dashboard_plugin.py"
 
-pytestmark = pytest.mark.skipif(
+requires_hermes_cli = pytest.mark.skipif(
     shutil.which("hermes") is None,
-    reason="需要真实 hermes CLI（本机验证；CI runner 无 hermes）")
+    reason="需要真实 Hermes CLI",
+)
 
 # 6 种 config 格式（cases 1-6）
 CONFIG_CASES = {
@@ -134,6 +135,7 @@ def _unrelated_keys_via_cli(tmp_home: Path) -> dict:
     return out
 
 
+@requires_hermes_cli
 @pytest.mark.parametrize("name,cfg", list(CONFIG_CASES.items()))
 def test_enable_and_disable_6_formats(tmp_path, name, cfg) -> None:
     """对每种格式：enable 只加 hermes-hud；disable 只删 hermes-hud；无关配置语义不变；幂等。"""
@@ -232,6 +234,7 @@ def test_fail_closed_when_cli_missing(tmp_path) -> None:
     assert "ERROR" in r.stderr
 
 
+@requires_hermes_cli
 def test_no_config_file_key_not_set_is_empty(tmp_path) -> None:
     """全新 home（无 config）→ 'Config key not set' 视为空列表，enable 成功。"""
     home = tmp_path / "fresh"
