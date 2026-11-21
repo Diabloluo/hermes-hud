@@ -79,7 +79,7 @@
   padding: 6px 12px;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background-color 0.12s ease, color 0.12s ease;
   position: relative;
   z-index: 5;
 }
@@ -154,3 +154,47 @@
 
 /* 数据新鲜度脚注 */
 .hud-footnote { font-size: 11px; opacity: 0.55; margin-top: 10px; }
+
+/* R08 isolated candidate. Variables scoped to the plugin, never host root. */
+.hud-root { --hud-bg:#101620; --hud-fg:#e8eef6; --hud-border:#45536a; background:var(--hud-bg); color:var(--hud-fg); padding:16px; border-radius:16px; min-width:0; color-scheme:dark; }
+.hud-root[data-hud-theme="light"] { --hud-bg:#f4f7fb; --hud-fg:#172334; --hud-border:#8593a5; color-scheme:light; }
+.hud-root > *, .hud-grid > * { min-width:0; }
+.hud-grid-4,.hud-grid-3,.hud-grid-2 { grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); }
+.hud-root button:focus-visible,.hud-root summary:focus-visible,.hud-root input:focus-visible,.hud-root a:focus-visible { outline:3px solid #60a5fa; outline-offset:3px; }
+.hud-root[data-hud-theme="light"] :focus-visible { outline-color:#1d4ed8; }
+.hud-theme-picker { display:flex; gap:8px; }
+.hud-theme-picker button { padding:7px 12px; border:1px solid var(--hud-border); border-radius:8px; }
+.hud-theme-picker button[aria-pressed="true"] { background:#334a70; color:#fff; }
+.hud-attention h2 { margin:0 0 8px; font-size:16px; font-weight:700; }
+.hud-root .hud-incident.warning { background:#3f2b08; border:1px solid #fbbf24; border-inline-start-width:4px; color:#fef3c7; }
+.hud-root .hud-incident.critical { background:#431c25; border:1px solid #fb7185; border-inline-start-width:4px; color:#ffe4e6; }
+.hud-root[data-hud-theme="light"] .hud-incident.warning { background:#fff1c2; color:#633600; border-color:#a65e00; }
+.hud-root[data-hud-theme="light"] .hud-incident.critical { background:#ffe4e6; color:#881337; border-color:#be123c; }
+.hud-root .hud-footnote { opacity:.85; overflow-wrap:anywhere; }
+.hud-root .hud-scroll { overflow:auto; }
+.hud-root .hud-tabs { gap:6px; }
+.hud-root .hud-check,.hud-root .hud-incident { overflow-wrap:anywhere; }
+@media(max-width:480px) { .hud-root { padding:10px; } .hud-header { align-items:flex-start; } .hud-tab { padding:8px; } }
+
+.hud-root .hud-health-unknown { color:var(--hud-fg); background:transparent; border:1px solid var(--hud-border); }
+
+/* R25 named navigation; no hidden settings or incident/recovery entry. */
+.hud-root .hud-navigation { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.hud-root .hud-primary-tabs { flex-wrap:wrap; }
+.hud-root .hud-secondary-nav { border:1px solid var(--hud-border); border-radius:8px; padding:8px 12px; }
+.hud-root .hud-secondary-nav summary { cursor:pointer; font-size:13px; font-weight:600; }
+.hud-root .hud-secondary-nav[open] summary { margin-bottom:10px; }
+
+/* R25 Overview/Usage hierarchy: estimates and provenance remain inseparable. */
+.hud-root .hud-overview-page,.hud-root .hud-usage-page { display:flex; flex-direction:column; gap:16px; min-width:0; }
+.hud-root .hud-attention { border:1px solid var(--hud-border); border-radius:12px; padding:16px; }
+.hud-root .hud-cost-summary { border:1px solid var(--hud-border); border-radius:12px; padding:18px; }
+.hud-root .hud-cost-hero { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:24px; align-items:start; }
+.hud-root .hud-cost-amount h2 { margin:0 0 10px; font-size:15px; }
+.hud-root .hud-cost-amount p { margin:8px 0; font-size:13px; }
+.hud-root .hud-metric-value { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.hud-root .hud-cost-amount .hud-metric-value { font-size:30px; }
+.hud-root .hud-cost-coverage { display:flex; flex-direction:column; gap:10px; }
+.hud-root .hud-cost-provenance { display:flex; flex-wrap:wrap; gap:8px 20px; border-top:1px solid var(--hud-border); padding-top:12px; margin-top:14px; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.hud-root .hud-cost-summary > .hud-incident { margin-top:12px; }
+@media(max-width:640px) { .hud-root .hud-cost-hero { grid-template-columns:minmax(0,1fr); gap:16px; } .hud-root .hud-cost-summary { padding:14px; } }

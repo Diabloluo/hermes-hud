@@ -24,6 +24,12 @@ from __future__ import annotations
 _SUPPORTED = {"zh", "en", "fr", "ar"}
 
 TEMPLATES: dict[str, dict[str, str]] = {
+    'channel_historical': {'zh': '{name} 为旧实例历史状态，当前连接未确认', 'en': '{name}: historical writer record; current connection unconfirmed', 'fr': '{name} : ancien enregistrement ; connexion actuelle non confirmée', 'ar': '{name}: سجل سابق؛ الاتصال الحالي غير مؤكد'},
+    'channel_inactive': {'zh': '{name} 已明确停用，保留历史状态', 'en': '{name}: explicitly inactive; history retained', 'fr': '{name} : inactif explicite ; historique conservé', 'ar': '{name}: غير نشط صراحة؛ السجل محفوظ'},
+    'channel_unknown': {'zh': '{name} 当前实例或状态未确认', 'en': '{name}: current instance or state unconfirmed', 'fr': '{name} : instance ou état actuel non confirmé', 'ar': '{name}: المثيل أو الحالة الحالية غير مؤكدة'},
+    'channel_reported_connected': {'zh': '{name} 当前实例报告已连接（非独立心跳验证）', 'en': '{name}: current instance reports connected (not independent heartbeat verification)', 'fr': '{name} : instance actuelle connectée selon son état (sans vérification indépendante)', 'ar': '{name}: المثيل الحالي يبلغ عن اتصال (دون تحقق مستقل من نبض الاتصال)'},
+    'cron_inactive_history': {'zh': '{name} 未启用调度，历史连续失败 {streak} 次', 'en': '{name}: scheduling inactive; historical failure streak {streak}', 'fr': '{name} : planification inactive ; échecs historiques consécutifs {streak}', 'ar': '{name}: الجدولة غير نشطة؛ سلسلة الإخفاقات السابقة {streak}'},
+
     "diagnostic_pending": {
         "zh": "{name} 诊断待更新，当前状态未知", "en": "{name} diagnostic pending; current state unknown",
         "fr": "Diagnostic {name} en attente ; état actuel inconnu",
@@ -37,6 +43,18 @@ TEMPLATES: dict[str, dict[str, str]] = {
         "zh": "部分日志时间不可确定，错误计数不完整", "en": "Some log timestamps are unknown; error count is incomplete",
         "fr": "Certains horodatages sont inconnus ; nombre d’erreurs incomplet",
         "ar": "بعض أوقات السجل غير معروفة؛ عدد الأخطاء غير مكتمل",
+    },
+    "timeline_incident_opened": {
+        "zh": "事故已发生：{title}",
+        "en": "Incident opened: {title}",
+        "fr": "Incident ouvert : {title}",
+        "ar": "حادثة مفتوحة: {title}",
+    },
+    "timeline_incident_resolved": {
+        "zh": "事故已恢复：{title}",
+        "en": "Incident resolved: {title}",
+        "fr": "Incident résolu : {title}",
+        "ar": "تم حل الحادثة: {title}",
     },
     # -- rules.py: gateway --
     "gateway_alive": {
