@@ -461,3 +461,93 @@ def test_ci_range_and_tables(hud_env) -> None:
     assert "模型分布" in txt
     # unknown-only 行不得显示 $0.000（ciCostCell → —定价未知）
     assert "$0.000" not in txt
+
+
+def test_snapshot_freshness_and_reconnect_in_narrow_window(hud_env, tmp_path):
+    """Keep the actual dashboard and socket; control only snapshot delivery."""
+    cdp = hud_env["cdp"]
+    url = f"http://127.0.0.1:{hud_env['port']}/hud"
+    script = cdp.cmd("Page.addScriptToEvaluateOnNewDocument", {"source": """
+        (() => {
+        const qa = window.snapshotQA = {mode: "live", held: [], sockets: [], frames: 0, hits: 0};
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = async function (input, ...args) {
+          const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+          if (path !== "/api/plugins/hermes-hud/snapshot") return nativeFetch(input, ...args);
+          if (qa.mode === "hold") return new Promise(resolve => qa.held.push(resolve));
+          if (qa.mode === "fail") throw new TypeError("Synthetic snapshot delivery failure");
+          if (qa.mode === "cached") {
+            qa.hits++;
+            return new Response(JSON.stringify(qa.sample), {headers: {"Content-Type": "application/json"}});
+          }
+          const response = await nativeFetch(input, ...args);
+          if (response.ok) qa.sample = await response.clone().json();
+          return response;
+        };
+        window.WebSocket = class extends WebSocket {
+          constructor(url, ...options) {
+            super(url, ...options);
+            if (new URL(url, location.href).pathname === "/api/plugins/hermes-hud/events") {
+              qa.sockets.push(this);
+              this.qaFrames = 0;
+              this.addEventListener("message", () => { qa.frames++; this.qaFrames++; });
+            }
+          }
+        };
+        })();
+    """})["result"]["identifier"]
+
+    def wait_for(expression, timeout=18):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if cdp.eval(expression):
+                return
+            time.sleep(0.15)
+        badge = cdp.eval("document.querySelector('.hud-health-badge')?.textContent")
+        state = cdp.eval("({sample: !!window.snapshotQA?.sample, sockets: window.snapshotQA?.sockets.map(ws=>ws.readyState), frames: window.snapshotQA?.frames, header: document.querySelector('.hud-header')?.textContent})")
+        raise AssertionError(f"{expression}; snapshot badge: {badge!r}, state: {state!r}")
+
+    badge = "document.querySelector('.hud-health-badge[role=status]')"
+    stale = f"{badge}?.textContent.includes('快照已过期，正在显示旧数据')"
+    explicitly_failed = f"{badge}?.textContent.includes('快照更新失败，保留旧数据')"
+    header = "document.querySelector('.hud-header')"
+    cdp.cmd("Emulation.setDeviceMetricsOverride", {
+        "width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": False,
+    })
+    try:
+        cdp.cmd("Page.navigate", {"url": url})
+        wait_for(f"snapshotQA.sample && {badge} && {header}.textContent.includes('WS 实时') && snapshotQA.frames > 0")
+        wait_for(f"!({stale}) && !({explicitly_failed})")
+        cdp.eval("window.beforeTab = document.querySelector('.hud-navigation .hud-tab.active'); snapshotQA.mode = 'hold'")
+        wait_for("snapshotQA.held.length > 0")
+        wait_for(stale)
+        assert cdp.eval("document.querySelector('.hud-navigation .hud-tab.active') === beforeTab")
+        assert cdp.eval(f"{badge}.classList.contains('hud-health-warning')")
+        assert cdp.eval(f"""(() => {{
+            const root = document.querySelector('.hud-root');
+            const box = {badge}.getBoundingClientRect();
+            return innerWidth === 390 && root.scrollWidth <= root.clientWidth + 1 &&
+              box.left >= 0 && box.right <= innerWidth && box.width > 0;
+        }})()""")
+        capture = cdp.cmd("Page.captureScreenshot", {"format": "png"})["result"]["data"]
+        (tmp_path / "stale-snapshot-390x844.png").write_bytes(base64.b64decode(capture))
+
+        # Successful responses repeating the old payload must not clear the warning.
+        cdp.eval("snapshotQA.mode = 'cached'; snapshotQA.held.forEach(done => done(new Response(JSON.stringify(snapshotQA.sample))))")
+        wait_for("snapshotQA.hits >= 2")
+        assert cdp.eval(stale)
+        cdp.eval("snapshotQA.mode = 'fail'")
+        wait_for(explicitly_failed)
+        assert cdp.eval("document.querySelector('.hud-navigation .hud-tab.active') === beforeTab")
+
+        # A real close event takes the UI through reconnecting. A new socket must receive data.
+        cdp.eval("snapshotQA.sockets.at(-1).close(4000, 'QA disconnect')")
+        wait_for(f"{header}?.textContent.includes('WS 重连中')")
+        wait_for(f"{header}?.textContent.includes('WS 实时') && snapshotQA.sockets.length >= 2 && snapshotQA.sockets.at(-1).qaFrames > 0")
+        assert cdp.eval(explicitly_failed), "WS connection alone must not make the snapshot fresh"
+        cdp.eval("snapshotQA.mode = 'live'")
+        wait_for(f"!({stale}) && !({explicitly_failed})")
+    finally:
+        cdp.cmd("Page.removeScriptToEvaluateOnNewDocument", {"identifier": script})
+        cdp.cmd("Emulation.clearDeviceMetricsOverride")
+        cdp.cmd("Page.navigate", {"url": url})
