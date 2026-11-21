@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-11-21
+
+### Added
+- Localize the presentation of stored incident summaries in four languages and
+  expose localized names on timeline controls. Original event records remain intact.
+- Show record-level pricing coverage, distinct alert states, and clearer keyboard
+  focus in the Dashboard.
+
+### Fixed
+- Warn when the snapshot is 10 seconds old and keep showing the last data.
+  Repeated responses containing old samples and WebSocket recovery alone do
+  not clear the warning. A fresh snapshot clears it.
+- Keep late poll completions from replacing newer results.
+
 ## [1.2.4] - 2026-11-09
 
 ### Changed
