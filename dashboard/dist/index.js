@@ -28,6 +28,8 @@
   const useI18n = SDK.useI18n;
 
   const API = "/api/plugins/hermes-hud";
+  const SNAPSHOT_POLL_MS = 2000;
+  const SNAPSHOT_MAX_AGE_MS = 5 * SNAPSHOT_POLL_MS;
 
   // -------------------------------------------------------------------------
   // i18n
@@ -61,6 +63,7 @@
     "未知价格记录": "Unknown-price records",
     "暂无 Token 定价分组": "Token pricing breakdown unavailable",
     "快照已接收": "Snapshot received",
+    "快照已过期，正在显示旧数据": "Snapshot is stale; showing previous data",
     "快照更新失败，保留旧数据": "Snapshot update failed; retaining previous data",
     "快照尚未取得": "Snapshot not yet received",
     "深色": "Dark",
@@ -295,6 +298,7 @@
     "需要关注": "Points à surveiller",
     "健康状态未知": "État de santé inconnu",
     "快照已接收": "Instantané reçu",
+    "快照已过期，正在显示旧数据": "Instantané périmé : affichage des données précédentes",
     "记录定价覆盖率": "Part des enregistrements avec un coût connu",
     "无新警告记录": "Aucun nouvel avertissement enregistré",
     "今日归属（累计记录，非精确日消耗）": "Estimation attribuée à aujourd’hui (enregistrements cumulés, sans mesure exacte de la consommation du jour)",
@@ -524,6 +528,7 @@
     "需要关注": "يتطلب الانتباه",
     "健康状态未知": "حالة التشغيل غير معروفة",
     "快照已接收": "تم استلام اللقطة",
+    "快照已过期，正在显示旧数据": "اللقطة قديمة؛ يتم عرض البيانات السابقة",
     "记录定价覆盖率": "نسبة السجلات ذات التكلفة المعروفة",
     "无新警告记录": "لا توجد تحذيرات جديدة مسجّلة",
     "今日归属（累计记录，非精确日消耗）": "تقدير منسوب إلى اليوم (من سجلات تراكمية، دون قياس دقيق للاستهلاك اليومي)",
@@ -800,9 +805,10 @@
   }
 
   // R09: presentation only. No inference from missing numbers; no storage writes.
-  function snapshotState(snap, error) {
+  function snapshotState(snap, error, stale) {
     if (error) return {label: tt(snap ? "快照更新失败，保留旧数据" : "快照获取失败"), css: "hud-health-warning"};
     if (!snap) return {label: tt("快照尚未取得"), css: "hud-health-unknown"};
+    if (stale) return {label: tt("快照已过期，正在显示旧数据"), css: "hud-health-warning"};
     const health = snap._health;
     const counts = health && health.counts;
     if (health && (health.overall === "critical" || counts && counts.critical > 0))
@@ -973,27 +979,53 @@
   function usePoll(url, interval) {
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
-    const [lastAt, setLastAt] = useState(null);
     const fullUrl = withLocale(url);
     useEffect(() => {
       let alive = true;
+      let issued = 0;
+      let applied = 0;
       async function tick() {
+        const request = ++issued;
         try {
           const d = await SDK.fetchJSON(fullUrl);
-          if (!alive) return;
-          setData({ url: fullUrl, value: d });
+          if (!alive || request < applied) return;
+          applied = request;
+          setData({ url: fullUrl, value: d, receivedAt: Date.now() });
           setError(null);
-          setLastAt(Date.now());
         } catch (e) {
-          if (alive) setError({ url: fullUrl, value: String(e && e.message ? e.message : e) });
+          if (!alive || request < applied) return;
+          applied = request;
+          setError({ url: fullUrl, value: String(e && e.message ? e.message : e) });
         }
       }
       tick();
       const t = setInterval(tick, interval);
       return () => { alive = false; clearInterval(t); };
     }, [fullUrl, interval]);
-    return { data: data && data.url === fullUrl ? data.value : null,
-      error: error && error.url === fullUrl ? error.value : null, lastAt };
+    const current = data && data.url === fullUrl ? data : null;
+    return { data: current ? current.value : null,
+      error: error && error.url === fullUrl ? error.value : null,
+      lastAt: current ? current.receivedAt : null };
+  }
+
+  function useSnapshotStale(snap, receivedAt) {
+    const [, invalidate] = useState(0);
+    const collectedAt = Number.isFinite(snap?.collected_at) && snap.collected_at > 0
+      ? snap.collected_at * 1000 : receivedAt;
+    const deadline = receivedAt === null ? null
+      : Math.min(receivedAt, collectedAt) + SNAPSHOT_MAX_AGE_MS;
+    useEffect(function () {
+      if (deadline === null || deadline <= Date.now()) return;
+      let timer;
+      function expire() {
+        const remaining = deadline - Date.now();
+        if (remaining > 0) timer = setTimeout(expire, remaining);
+        else invalidate(function (revision) { return revision + 1; });
+      }
+      expire();
+      return function () { clearTimeout(timer); };
+    }, [deadline]);
+    return deadline !== null && Date.now() >= deadline;
   }
 
   /** 单次 fetch（点击/搜索触发），同样带上当前语言。 */
@@ -2494,7 +2526,8 @@
     };
     const [tab, setTab] = useState("overview");
     const [theme, setTheme] = useState("dark");
-    const { data: snap, error: snapshotError, lastAt: snapshotLastAt } = usePoll(API + "/snapshot", 2000);
+    const { data: snap, error: snapshotError, lastAt: snapshotLastAt } = usePoll(API + "/snapshot", SNAPSHOT_POLL_MS);
+    const snapshotStale = useSnapshotStale(snap, snapshotLastAt);
     const [events, setEvents] = useState([]);
     const [wsState, setWsState] = useState("idle");
     const wsRef = useRef(null);
@@ -2578,7 +2611,7 @@
 
     const gw = (snap && snap.gateway) || {};
     const cronSum = (snap && snap.cron && snap.cron.summary) || {};
-    const snapshotView = snapshotState(snap, snapshotError);
+    const snapshotView = snapshotState(snap, snapshotError, snapshotStale);
 
     return h("div", { className: "hud-root", "data-hud-theme": theme, lang: locale, dir: locale === "ar" ? "rtl" : "ltr" },
       h(BrandHeader, null),
@@ -2589,7 +2622,7 @@
         }, tt(value === "dark" ? "深色" : "浅色")); })),
       // 顶部状态条
       h("div", { className: "hud-header" },
-        h("span", { className: "hud-health-badge " + snapshotView.css }, snapshotView.label),
+        h("span", { className: "hud-health-badge " + snapshotView.css, role: "status" }, snapshotView.label),
         kv("Gateway", gw.alive === true ? tt("运行中") : gw.alive === false ? tt("离线") : tt("未知")),
         kv(tt("成功接收于"), snapshotLastAt ? fmtTime(snapshotLastAt / 1000) : "—"),
         kv(tt("活跃会话"), String((snap && snap.active_sessions) ? snap.active_sessions.length : "-")),
