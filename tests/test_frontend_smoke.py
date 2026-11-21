@@ -264,6 +264,78 @@ def _click_timeline(cdp: CDP) -> None:
 
 # ---------- smoke cases ----------
 
+def test_overview_contrast_with_hermes_teal(hud_env):
+    """The HUD picker must style cards even when the host remains dark."""
+    cdp = hud_env["cdp"]
+    try:
+        for theme, label in (("light", "浅色"), ("dark", "深色")):
+            cdp.eval("Array.from(document.querySelectorAll('.hud-theme-picker button'))"
+                     f".find(button => button.textContent === {json.dumps(label)}).click()")
+            deadline = time.monotonic() + 6
+            while time.monotonic() < deadline:
+                if cdp.eval(f"document.querySelector('.hud-root')?.dataset.hudTheme === '{theme}'"):
+                    break
+                time.sleep(0.1)
+            cdp.cmd("Runtime.evaluate", {"awaitPromise": True, "expression": """
+                (async () => {
+                    const tabs = [...document.querySelectorAll('.hud-primary-tabs .hud-tab')];
+                    await new Promise(requestAnimationFrame);
+                    await Promise.allSettled(tabs.flatMap(tab => tab.getAnimations().map(animation => animation.finished)));
+                })()
+            """})
+            result = cdp.eval("""(() => {
+                const root = document.querySelector('.hud-root');
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 1;
+                const ctx = canvas.getContext('2d', {willReadFrequently: true});
+                const rgba = value => {
+                    ctx.clearRect(0, 0, 1, 1);
+                    ctx.fillStyle = value;
+                    ctx.fillRect(0, 0, 1, 1);
+                    return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+                };
+                const blend = (fg, bg, alpha) =>
+                    fg.slice(0, 3).map((n, i) => n * alpha + bg[i] * (1 - alpha));
+                const luminance = rgb => rgb.map(n => {
+                    const s = n / 255;
+                    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+                }).reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
+                const ratios = {};
+                const selectors = {
+                    heading: '.hud-overview-page .hud-grid-4 > div > div > div:first-child > div:first-child',
+                    labels: '.hud-overview-page .hud-grid-4 .hud-kv .k',
+                    values: '.hud-overview-page .hud-grid-4 .hud-kv .v',
+                    estimate: '.hud-overview-page .hud-grid-4 span.border',
+                    tabs: '.hud-primary-tabs .hud-tab:not(.active)',
+                    status: '.hud-health-badge',
+                };
+                for (const [name, selector] of Object.entries(selectors)) {
+                    const nodes = root.querySelectorAll(selector);
+                    ratios[name] = nodes.length ? Math.min(...Array.from(nodes, node => {
+                        let background = rgba(getComputedStyle(root).backgroundColor);
+                        const trail = [];
+                        for (let el = node; el !== root; el = el.parentElement) trail.unshift(el);
+                        for (const el of trail) {
+                            const paint = rgba(getComputedStyle(el).backgroundColor);
+                            background = blend(paint, background, paint[3] / 255);
+                        }
+                        const style = getComputedStyle(node);
+                        const ink = rgba(style.color);
+                        const fg = luminance(blend(ink, background, ink[3] / 255 * Number(style.opacity)));
+                        const bg = luminance(background);
+                        return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+                    })) : null;
+                }
+                return {theme: root.dataset.hudTheme, ratios};
+            })()""")
+            print(f"{theme}: {result['ratios']}")
+            assert result["theme"] == theme
+            assert all(ratio is not None and ratio >= 4.5 for ratio in result["ratios"].values()), result
+    finally:
+        cdp.eval("Array.from(document.querySelectorAll('.hud-theme-picker button'))"
+                 ".find(button => button.textContent === '深色')?.click()")
+
+
 def test_timeline_tab_renders_events(hud_env) -> None:
     cdp = hud_env["cdp"]
     _click_timeline(cdp)
